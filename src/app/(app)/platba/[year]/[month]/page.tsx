@@ -13,6 +13,10 @@ import { getMonthlyBillingRows, type MonthlyPlayerRow } from "@/lib/monthly-bill
 import { formatCzkFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import {
+  PAYMENT_MARK_PAID_BUTTON_CLASS,
+  PAYMENT_MARK_UNDO_BUTTON_CLASS,
+} from "@/components/payment-mark-styles";
 
 function PaymentMarkForms({
   row,
@@ -32,11 +36,8 @@ function PaymentMarkForms({
           <input type="hidden" name="year" value={year} />
           <input type="hidden" name="month" value={month} />
           <input type="hidden" name="marked" value="true" />
-          <button
-            type="submit"
-            className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900 hover:bg-emerald-100"
-          >
-            Platba dorazila
+          <button type="submit" className={PAYMENT_MARK_PAID_BUTTON_CLASS}>
+            Zaplaceno
           </button>
         </form>
       ) : (
@@ -45,10 +46,7 @@ function PaymentMarkForms({
           <input type="hidden" name="year" value={year} />
           <input type="hidden" name="month" value={month} />
           <input type="hidden" name="marked" value="false" />
-          <button
-            type="submit"
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-          >
+          <button type="submit" className={PAYMENT_MARK_UNDO_BUTTON_CLASS}>
             Zrušit označení
           </button>
         </form>
@@ -171,7 +169,7 @@ export default async function PlatbaMesicPage({
                       month={month}
                     />
                   </td>
-                  <td className="px-4 py-3 align-top">
+                  <td className="px-4 py-3 align-middle">
                     <PaymentMarkForms row={r} year={year} month={month} />
                   </td>
                 </tr>
@@ -214,7 +212,7 @@ export default async function PlatbaMesicPage({
                   </td>
                   <td className="px-4 py-3">{r.sessionCount}</td>
                   <td className="px-4 py-3">{formatCzkFromCents(r.totalCents)}</td>
-                  <td className="px-4 py-3 align-top">
+                  <td className="px-4 py-3 align-middle">
                     <PaymentMarkForms row={r} year={year} month={month} />
                   </td>
                 </tr>

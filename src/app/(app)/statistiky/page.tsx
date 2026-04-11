@@ -1,20 +1,28 @@
 import { GroupFilterNav } from "@/components/GroupFilterNav";
+import { StatisticsPeriodControls } from "@/components/StatisticsPeriodControls";
 import { Panel } from "@/components/ui";
+import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { parsePlayerGroupFilter } from "@/lib/player-groups";
+import { parseStatisticsPeriod } from "@/lib/statistics-period";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 
 export default async function StatistikyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ skupina?: string }>;
+  searchParams: Promise<{ skupina?: string; od?: string; do?: string }>;
 }) {
   const userId = await requireUserId();
   const sp = await searchParams;
   const skupina = parsePlayerGroupFilter(sp.skupina);
+  const period = parseStatisticsPeriod({ od: sp.od, do: sp.do });
 
   const trainings = await prisma.training.findMany({
-    where: { userId, cancelled: false },
+    where: {
+      userId,
+      cancelled: false,
+      startsAt: { gte: period.start, lte: period.end },
+    },
     select: { id: true },
   });
   const trainingIds = trainings.map((t) => t.id);
@@ -46,21 +54,35 @@ export default async function StatistikyPage({
     }),
   );
 
+  const periodLabel = `${formatDateDdMmYyyy(period.start)} – ${formatDateDdMmYyyy(
+    new Date(period.end.getFullYear(), period.end.getMonth(), period.end.getDate()),
+  )}`;
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Statistiky docházky</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Podíl přítomností u nezrušených tréninků (všechna období).
+          Podíl přítomností u nezrušených tréninků v zvoleném období (datum = den konání tréninku).
         </p>
-        <p className="mt-2 text-sm text-slate-500">
-          Počet započítaných tréninků celkem:{" "}
+        <p className="mt-2 text-sm text-slate-700">
+          Období: <span className="font-medium tabular-nums">{periodLabel}</span>
+        </p>
+        <p className="mt-1 text-sm text-slate-500">
+          Počet započítaných tréninků v období:{" "}
           <span className="text-slate-700">{totalTrainings}</span>
         </p>
       </div>
 
-      <Panel>
-        <GroupFilterNav basePath="/statistiky" current={skupina} />
+      <Panel className="space-y-5">
+        <StatisticsPeriodControls odIso={period.odIso} doIso={period.doIso} skupina={skupina} />
+        <div className="border-t border-slate-100 pt-4">
+          <GroupFilterNav
+            basePath="/statistiky"
+            current={skupina}
+            extraQuery={{ od: period.odIso, do: period.doIso }}
+          />
+        </div>
       </Panel>
 
       <Panel className="overflow-x-auto !p-0">
@@ -76,7 +98,7 @@ export default async function StatistikyPage({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
-                  Žádní hráči pro tento filtr nebo žádné tréninky.
+                  Žádní hráči pro tento filtr nebo žádné tréninky v období.
                 </td>
               </tr>
             )}

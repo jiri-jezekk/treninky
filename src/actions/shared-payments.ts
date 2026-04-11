@@ -5,8 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
-import { parseCzkToCents } from "@/lib/money";
-import { splitTotalCents } from "@/lib/split";
+import { parseCzkToCents, parseCzkToCentsCeilWholeKoruny } from "@/lib/money";
+import { splitTotalCentsCeilWholeKc } from "@/lib/split";
 
 const createSchema = z.object({
   title: z.string().min(1).max(200),
@@ -27,7 +27,7 @@ export async function createSharedPayment(formData: FormData) {
   if (!parsed.success) {
     throw new Error(parsed.error.flatten().formErrors.join(", ") || "Neplatný vstup.");
   }
-  const totalCents = parseCzkToCents(parsed.data.totalKc.replace(",", "."));
+  const totalCents = parseCzkToCentsCeilWholeKoruny(parsed.data.totalKc.replace(",", "."));
   if (totalCents === null || totalCents <= 0) {
     throw new Error("Zadejte platnou celkovou částku.");
   }
@@ -40,14 +40,15 @@ export async function createSharedPayment(formData: FormData) {
     throw new Error("Někteří hráči nejsou platní.");
   }
 
-  const amounts = splitTotalCents(totalCents, players.length);
+  const amounts = splitTotalCentsCeilWholeKc(totalCents, players.length);
+  const splitTotal = amounts.reduce((a, b) => a + b, 0);
 
   const sp = await prisma.sharedPayment.create({
     data: {
       userId,
       title: parsed.data.title.trim(),
       description: parsed.data.description?.trim() || null,
-      totalAmountCents: totalCents,
+      totalAmountCents: splitTotal,
       participants: {
         create: players.map((p, i) => ({
           playerId: p.id,
@@ -59,6 +60,79 @@ export async function createSharedPayment(formData: FormData) {
 
   revalidatePath("/skupinove-platby");
   redirect(`/skupinove-platby/${sp.id}`);
+}
+
+/** Uloží částky všech účastníků a přepočítá celkový součet platby. */
+export async function updateSharedPaymentAmounts(formData: FormData) {
+  const userId = await requireUserId();
+  const sharedPaymentId = String(formData.get("sharedPaymentId") ?? "").trim();
+  if (!sharedPaymentId) throw new Error("Chybí platba.");
+
+  const sp = await prisma.sharedPayment.findFirst({
+    where: { id: sharedPaymentId, userId },
+    include: { participants: true },
+  });
+  if (!sp) throw new Error("Záznam nenalezen.");
+
+  const updates: { id: string; amountCents: number }[] = [];
+  for (const p of sp.participants) {
+    const raw = String(formData.get(`amount_${p.id}`) ?? "").trim();
+    const cents = parseCzkToCentsCeilWholeKoruny(raw.replace(",", "."));
+    if (cents === null || cents < 0) {
+      throw new Error("Neplatná částka u jednoho z hráčů.");
+    }
+    updates.push({ id: p.id, amountCents: cents });
+  }
+
+  const sum = updates.reduce((s, u) => s + u.amountCents, 0);
+  if (sum <= 0) throw new Error("Součet částek musí být větší než nula.");
+
+  await prisma.$transaction([
+    ...updates.map((u) =>
+      prisma.sharedPaymentParticipant.update({
+        where: { id: u.id },
+        data: { amountCents: u.amountCents },
+      }),
+    ),
+    prisma.sharedPayment.update({
+      where: { id: sharedPaymentId },
+      data: { totalAmountCents: sum },
+    }),
+  ]);
+
+  revalidatePath("/skupinove-platby");
+  revalidatePath(`/skupinove-platby/${sharedPaymentId}`);
+}
+
+export async function redistributeSharedPaymentEvenly(sharedPaymentId: string) {
+  const userId = await requireUserId();
+  const sp = await prisma.sharedPayment.findFirst({
+    where: { id: sharedPaymentId, userId },
+    include: { participants: true },
+  });
+  if (!sp) throw new Error("Záznam nenalezen.");
+  const n = sp.participants.length;
+  if (n === 0) return;
+
+  const amounts = splitTotalCentsCeilWholeKc(sp.totalAmountCents, n);
+  const sorted = [...sp.participants].sort((a, b) => a.id.localeCompare(b.id));
+  const newTotal = amounts.reduce((a, b) => a + b, 0);
+
+  await prisma.$transaction([
+    ...sorted.map((p, i) =>
+      prisma.sharedPaymentParticipant.update({
+        where: { id: p.id },
+        data: { amountCents: amounts[i]! },
+      }),
+    ),
+    prisma.sharedPayment.update({
+      where: { id: sharedPaymentId },
+      data: { totalAmountCents: newTotal },
+    }),
+  ]);
+
+  revalidatePath("/skupinove-platby");
+  revalidatePath(`/skupinove-platby/${sharedPaymentId}`);
 }
 
 export async function toggleParticipantPaid(participantId: string, paid: boolean) {

@@ -8,12 +8,24 @@ import type { PlayerGroup } from "@prisma/client";
 export function GroupFilterNav({
   basePath,
   current,
+  extraQuery,
 }: {
   basePath: string;
   current: PlayerGroup | null;
+  /** Další query parametry (např. období statistik), které se zachovají při přepnutí skupiny. */
+  extraQuery?: Record<string, string | undefined>;
 }) {
-  const href = (skupina: PlayerGroup | null) =>
-    skupina ? `${basePath}?skupina=${skupina}` : basePath;
+  const href = (skupina: PlayerGroup | null) => {
+    const params = new URLSearchParams();
+    if (skupina) params.set("skupina", skupina);
+    if (extraQuery) {
+      for (const [k, v] of Object.entries(extraQuery)) {
+        if (v !== undefined && v !== "") params.set(k, v);
+      }
+    }
+    const q = params.toString();
+    return q ? `${basePath}?${q}` : basePath;
+  };
 
   const cls = (active: boolean) =>
     `rounded-md border px-2.5 py-1 text-sm transition ${

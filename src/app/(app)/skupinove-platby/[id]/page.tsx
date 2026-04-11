@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SharedPaymentQrPanel } from "@/components/SharedPaymentQrPanel";
+import { SharedPaymentParticipantsEditor } from "@/components/SharedPaymentParticipantsEditor";
+import { SharedPaymentUniversalQrPanel } from "@/components/SharedPaymentUniversalQrPanel";
 import { Panel } from "@/components/ui";
 import { formatCzkFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import { splitTotalCentsCeilWholeKc } from "@/lib/split";
 import {
   deleteSharedPayment,
+  redistributeSharedPaymentEvenly,
   setSharedPaymentArchived,
-  toggleParticipantPaid,
 } from "@/actions/shared-payments";
 
 export default async function SharedPaymentDetailPage({
@@ -25,16 +27,29 @@ export default async function SharedPaymentDetailPage({
       user: { select: { bankIban: true } },
       participants: {
         include: { player: { select: { name: true } } },
-        orderBy: { player: { name: "asc" } },
       },
     },
   });
 
   if (!sp) notFound();
 
+  const paidCount = sp.participants.filter((x) => x.paidAt != null).length;
+  const totalPeople = sp.participants.length;
+
   const allPaid =
     sp.participants.length > 0 &&
     sp.participants.every((x) => x.paidAt != null);
+
+  const sortedById = [...sp.participants].sort((a, b) => a.id.localeCompare(b.id));
+  const evenSplit = splitTotalCentsCeilWholeKc(sp.totalAmountCents, sortedById.length);
+  const universalDefaultCents = evenSplit[0] ?? 0;
+
+  const participantRows = sp.participants.map((p) => ({
+    id: p.id,
+    amountCents: p.amountCents,
+    paidAt: p.paidAt,
+    player: p.player,
+  }));
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -51,57 +66,74 @@ export default async function SharedPaymentDetailPage({
             {sp.description}
           </p>
         )}
-        <p className="mt-2 text-sm text-slate-600">
-          Celkem:{" "}
-          <span className="text-slate-800">{formatCzkFromCents(sp.totalAmountCents)}</span>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+          <p className="text-slate-600">
+            Celkem po účastnících:{" "}
+            <span className="font-medium text-slate-800">
+              {formatCzkFromCents(sp.totalAmountCents)}
+            </span>
+          </p>
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium tabular-nums ${
+              paidCount === totalPeople && totalPeople > 0
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+          >
+            Zaplaceno {paidCount} / {totalPeople}
+          </span>
           {sp.archived && (
-            <span className="ml-2 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
+            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
               Archiv
             </span>
           )}
-        </p>
+        </div>
       </div>
 
       <Panel>
-        <h2 className="text-sm font-medium text-slate-800">Účastníci</h2>
+        <h2 className="text-sm font-medium text-slate-800">Sdílené QR (hromadná platba)</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Částka na osobu je dopočítaná tak, aby součet přesně odpovídal celku.
+          Jedno QR bez jména hráče v poznámce — vhodné k rozeslání skupině. Výchozí částka odpovídá
+          rovnoměrnému rozdělení celku; můžete ji upravit, QR se přepočítá.
         </p>
-        <ul className="mt-4 divide-y divide-slate-100">
-          {sp.participants.map((part) => (
-            <li
-              key={part.id}
-              className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
-            >
-              <div className="min-w-[120px]">
-                <div className="font-medium text-slate-800">{part.player.name}</div>
-                <div className="text-sm text-slate-600">
-                  {formatCzkFromCents(part.amountCents)}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <SharedPaymentQrPanel
-                  iban={sp.user.bankIban}
-                  title={sp.title}
-                  playerName={part.player.name}
-                  amountCents={part.amountCents}
-                />
-                <form action={toggleParticipantPaid.bind(null, part.id, !part.paidAt)}>
-                  <button
-                    type="submit"
-                    className={`rounded-md border px-3 py-1.5 text-sm ${
-                      part.paidAt
-                        ? "border-slate-200 text-slate-700 hover:bg-slate-50"
-                        : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                    }`}
-                  >
-                    {part.paidAt ? "Zrušit zaplaceno" : "Označit zaplaceno"}
-                  </button>
-                </form>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-4">
+          <SharedPaymentUniversalQrPanel
+            iban={sp.user.bankIban}
+            title={sp.title}
+            defaultAmountCents={universalDefaultCents}
+          />
+        </div>
+      </Panel>
+
+      <Panel>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-medium text-slate-800">Účastníci</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Stejně jako u měsíční platby: nahoře „K úhradě“ s QR u každého, dole přehled „Zaplaceno“
+              bez QR. Částky se po úpravě po krátké pauze uloží samy.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <SharedPaymentParticipantsEditor
+            sharedPaymentId={sp.id}
+            iban={sp.user.bankIban}
+            title={sp.title}
+            participants={participantRows}
+            belowList={
+              <form action={redistributeSharedPaymentEvenly.bind(null, sp.id)}>
+                <button
+                  type="submit"
+                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Rozdělit rovnoměrně podle celku
+                </button>
+              </form>
+            }
+          />
+        </div>
       </Panel>
 
       <div className="flex flex-wrap gap-3">

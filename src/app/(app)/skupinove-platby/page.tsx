@@ -31,6 +31,9 @@ export default async function SkupinovePlatbyPage({
       where: { userId, archived: false },
       orderBy: { createdAt: "desc" },
       take: 50,
+      include: {
+        participants: { select: { paidAt: true } },
+      },
     }),
   ]);
 
@@ -38,6 +41,9 @@ export default async function SkupinovePlatbyPage({
     where: { userId, archived: true },
     orderBy: { createdAt: "desc" },
     take: 30,
+    include: {
+      participants: { select: { paidAt: true } },
+    },
   });
 
   return (
@@ -45,17 +51,58 @@ export default async function SkupinovePlatbyPage({
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Skupinové platby</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Společné výdaje — rozdělení částky a QR. Filtr omezí seznam hráčů u nové
-          platby.
+          Společné výdaje — rozdělení částky a QR. Aktivní platby jsou nahoře; novou založíte níže.
         </p>
       </div>
 
-      <Panel>
-        <GroupFilterNav basePath="/skupinove-platby" current={skupina} />
-      </Panel>
+      <div>
+        <h2 className="mb-2 text-sm font-medium text-slate-700">Aktivní</h2>
+        <Panel className="!p-0">
+          <ul className="divide-y divide-slate-100">
+            {payments.length === 0 && (
+              <li className="px-4 py-8 text-center text-sm text-slate-500">
+                Žádné záznamy.
+              </li>
+            )}
+            {payments.map((p) => {
+              const total = p.participants.length;
+              const paid = p.participants.filter((x) => x.paidAt != null).length;
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                >
+                  <div>
+                    <div className="font-medium text-slate-800">{p.title}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-slate-600">
+                      <span>Celkem {formatCzkFromCents(p.totalAmountCents)}</span>
+                      <span className="text-slate-400">·</span>
+                      <span className="tabular-nums">
+                        Zaplaceno {paid} / {total}
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    href={`/skupinove-platby/${p.id}`}
+                    className="text-sm text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                  >
+                    Detail
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
+      </div>
 
       <Panel>
         <h2 className="text-sm font-medium text-slate-800">Nová platba</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Filtr skupin (muži / ženy / …) omezuje jen výběr hráčů pro tuto platbu.
+        </p>
+        <div className="mt-4">
+          <GroupFilterNav basePath="/skupinove-platby" current={skupina} />
+        </div>
         <form action={createSharedPayment} className="mt-4 space-y-4">
           <label className="block text-sm text-slate-600">
             Název / událost
@@ -114,63 +161,39 @@ export default async function SkupinovePlatbyPage({
       </Panel>
 
       <div>
-        <h2 className="mb-2 text-sm font-medium text-slate-700">Aktivní</h2>
-        <Panel className="!p-0">
-          <ul className="divide-y divide-slate-100">
-            {payments.length === 0 && (
-              <li className="px-4 py-8 text-center text-sm text-slate-500">
-                Žádné záznamy.
-              </li>
-            )}
-            {payments.map((p) => (
-              <li
-                key={p.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-              >
-                <div>
-                  <div className="font-medium text-slate-800">{p.title}</div>
-                  <div className="text-sm text-slate-600">
-                    Celkem {formatCzkFromCents(p.totalAmountCents)}
-                  </div>
-                </div>
-                <Link
-                  href={`/skupinove-platby/${p.id}`}
-                  className="text-sm text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
-                >
-                  Detail
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      </div>
-
-      <div>
         <h2 className="mb-2 text-sm font-medium text-slate-700">Archiv (uhrazeno)</h2>
         <Panel className="!bg-slate-50/80 !p-0">
           <ul className="divide-y divide-slate-100">
             {archived.length === 0 && (
               <li className="px-4 py-6 text-center text-sm text-slate-500">Prázdné.</li>
             )}
-            {archived.map((p) => (
-              <li
-                key={p.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-              >
-                <div>
-                  <div className="font-medium text-slate-800">{p.title}</div>
-                  <div className="text-sm text-slate-600">
-                    {formatCzkFromCents(p.totalAmountCents)}
-                  </div>
-                </div>
-                <Link
-                  href={`/skupinove-platby/${p.id}`}
-                  className="text-sm text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
+            {archived.map((p) => {
+              const total = p.participants.length;
+              const paid = p.participants.filter((x) => x.paidAt != null).length;
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
                 >
-                  Otevřít
-                </Link>
-              </li>
-            ))}
+                  <div>
+                    <div className="font-medium text-slate-800">{p.title}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-slate-600">
+                      <span>{formatCzkFromCents(p.totalAmountCents)}</span>
+                      <span className="text-slate-400">·</span>
+                      <span className="tabular-nums">
+                        Zaplaceno {paid} / {total}
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    href={`/skupinove-platby/${p.id}`}
+                    className="text-sm text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
+                  >
+                    Otevřít
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </Panel>
       </div>

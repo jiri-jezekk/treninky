@@ -1,8 +1,10 @@
 "use client";
 
-import { QRCodeSVG } from "qrcode.react";
+import { useRef } from "react";
+import { QRCodeCanvas } from "qrcode.react";
+import { CopyQrImageButton } from "@/components/CopyQrImageButton";
 import { buildSpaydString } from "@/lib/spayd";
-import { formatCzkFromCents } from "@/lib/money";
+import { ceilCentsToWholeKoruny, formatCzkFromCents } from "@/lib/money";
 
 export function SharedPaymentQrPanel({
   iban,
@@ -15,6 +17,8 @@ export function SharedPaymentQrPanel({
   playerName: string;
   amountCents: number;
 }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   if (!iban) {
     return (
       <span className="text-xs text-slate-500">Doplňte IBAN v nastavení.</span>
@@ -22,11 +26,13 @@ export function SharedPaymentQrPanel({
   }
   if (amountCents <= 0) return null;
 
+  const payCents = ceilCentsToWholeKoruny(amountCents);
+
   let spayd: string;
   try {
     spayd = buildSpaydString({
       iban,
-      amountKc: amountCents / 100,
+      amountKc: payCents / 100,
       message: `${title} — ${playerName}`.slice(0, 60),
     });
   } catch {
@@ -34,9 +40,18 @@ export function SharedPaymentQrPanel({
   }
 
   return (
-    <div className="flex flex-col items-center">
-      <QRCodeSVG value={spayd} size={120} level="M" />
-      <span className="mt-1 text-xs text-slate-500">{formatCzkFromCents(amountCents)}</span>
+    <div className="flex items-start gap-1">
+      <div className="flex flex-col items-center">
+        <QRCodeCanvas
+          ref={canvasRef}
+          value={spayd}
+          size={120}
+          level="M"
+          marginSize={2}
+        />
+        <span className="mt-1 text-xs text-slate-500">{formatCzkFromCents(payCents)}</span>
+      </div>
+      <CopyQrImageButton canvasRef={canvasRef} size="md" />
     </div>
   );
 }
