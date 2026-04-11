@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
+model User {
+  id                        String   @id @default(cuid())
+  email                     String   @unique
+  passwordHash              String
+  name                      String?
+  defaultTrainingPriceCents Int?
+  bankIban                  String?
+  bankMessagePrefix         String?
+  createdAt                 DateTime @default(now())
+  players                   Player[]
+  trainings                 Training[]
+  sharedPayments            SharedPayment[]
+}
+
+model Player {
+  id           String                     @id @default(cuid())
+  userId       String
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  active       Boolean                    @default(true)
+  createdAt    DateTime                   @default(now())
+  attendances  Attendance[]
+  billings     TrainingPlayerBilling[]
+  sharedParts  SharedPaymentParticipant[]
+
+  @@index([userId])
+}
+
+model Training {
+  id                String                  @id @default(cuid())
+  userId            String
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startsAt          DateTime
+  cancelled         Boolean                 @default(false)
+  notes             String?
+  defaultPriceCents Int?
+  attendances       Attendance[]
+  billings          TrainingPlayerBilling[]
+
+  @@index([userId, startsAt])
+}
+
+model Attendance {
+  id         String           @id @default(cuid())
+  trainingId String
+  training   Training         @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     Player           @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  status     AttendanceStatus @default(ABSENT)
+
+  @@unique([trainingId, playerId])
+}
+
+model TrainingPlayerBilling {
+  id         String   @id @default(cuid())
+  trainingId String
+  training   Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  priceCents Int?
+  prepaid    Boolean  @default(false)
+
+  @@unique([trainingId, playerId])
+}
+
+model SharedPayment {
+  id               String                     @id @default(cuid())
+  userId           String
+  user             User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?
+  totalAmountCents Int
+  archived         Boolean                    @default(false)
+  createdAt        DateTime                   @default(now())
+  participants     SharedPaymentParticipant[]
+
+  @@index([userId, archived])
+}
+
+model SharedPaymentParticipant {
+  id              String        @id @default(cuid())
+  sharedPaymentId String
+  sharedPayment   SharedPayment @relation(fields: [sharedPaymentId], references: [id], onDelete: Cascade)
+  playerId        String
+  player          Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  amountCents     Int
+  paidAt          DateTime?
+
+  @@unique([sharedPaymentId, playerId])
+}
