@@ -91,16 +91,16 @@ export default async function PlatbaMesicPage({
   const next = new Date(year, month, 1);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+    <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6">
+      <div className="flex w-full min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold text-slate-800">Platba za tréninky</h1>
           <p className="mt-1 text-sm text-slate-600">
             QR jen pro hráče s částkou k úhradě. Po označení platby zmizí z hlavního
             seznamu a přejdou níže jako zaplacení.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Link
             href={`/platba/${prev.getFullYear()}/${prev.getMonth() + 1}`}
             className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
@@ -138,29 +138,43 @@ export default async function PlatbaMesicPage({
       )}
 
       {unpaid.length > 0 && (
-        <Panel className="!overflow-x-auto !p-0">
+        <Panel className="touch-pan-x !overflow-x-auto !p-0">
           <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
             K úhradě
           </p>
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
               <tr>
-                <th className="px-4 py-3 font-medium">Hráč</th>
-                <th className="px-4 py-3 font-medium">Tréninky (přítomen)</th>
-                <th className="px-4 py-3 font-medium">Částka</th>
-                <th className="px-4 py-3 font-medium">QR</th>
-                <th className="px-4 py-3 font-medium">Platba</th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  Hráč
+                </th>
+                <th className="max-w-[5rem] whitespace-normal px-2 py-2 text-left text-xs font-medium leading-snug sm:max-w-none sm:px-4 sm:py-3 sm:text-sm">
+                  Tréninky (přítomen)
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  Částka
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  QR
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  Platba
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {unpaid.map((r) => (
                 <tr key={r.playerId}>
-                  <td className="px-4 py-3 font-medium text-slate-800">{r.playerName}</td>
-                  <td className="px-4 py-3 text-slate-700">{r.sessionCount}</td>
-                  <td className="px-4 py-3 text-slate-700">
+                  <td className="min-w-0 break-words px-2 py-2.5 text-sm font-medium text-slate-800 sm:px-4 sm:py-3 sm:text-base">
+                    {r.playerName}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2.5 text-sm text-slate-700 sm:px-4 sm:py-3 sm:text-base">
+                    {r.sessionCount}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2.5 text-sm text-slate-700 sm:px-4 sm:py-3 sm:text-base">
                     {formatCzkFromCents(r.totalCents)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-2 py-2.5 sm:px-4 sm:py-3">
                     <MonthlyPlayerQr
                       iban={user.bankIban}
                       playerName={r.playerName}
@@ -169,7 +183,7 @@ export default async function PlatbaMesicPage({
                       month={month}
                     />
                   </td>
-                  <td className="px-4 py-3 align-middle">
+                  <td className="align-middle px-2 py-2.5 sm:px-4 sm:py-3">
                     <PaymentMarkForms row={r} year={year} month={month} />
                   </td>
                 </tr>
@@ -188,31 +202,43 @@ export default async function PlatbaMesicPage({
       )}
 
       {paid.length > 0 && (
-        <Panel className="!overflow-x-auto !p-0">
+        <Panel className="touch-pan-x !overflow-x-auto !p-0">
           <p className="border-b border-slate-100 bg-emerald-50/60 px-4 py-2 text-xs font-medium text-emerald-900">
             Zaplaceno (tento měsíc)
           </p>
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
               <tr>
-                <th className="px-4 py-3 font-medium">Hráč</th>
-                <th className="px-4 py-3 font-medium">Tréninky (přítomen)</th>
-                <th className="px-4 py-3 font-medium">Částka</th>
-                <th className="px-4 py-3 font-medium">Platba</th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  Hráč
+                </th>
+                <th className="max-w-[5rem] whitespace-normal px-2 py-2 text-left text-xs font-medium leading-snug sm:max-w-none sm:px-4 sm:py-3 sm:text-sm">
+                  Tréninky (přítomen)
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  Částka
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
+                  Platba
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paid.map((r) => (
                 <tr key={r.playerId} className="bg-slate-50/40 text-slate-600">
-                  <td className="px-4 py-3 font-medium text-slate-700">
+                  <td className="min-w-0 break-words px-2 py-2.5 text-sm font-medium text-slate-700 sm:px-4 sm:py-3 sm:text-base">
                     {r.playerName}
-                    <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-normal text-emerald-800">
+                    <span className="ml-2 inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-normal text-emerald-800">
                       zaplaceno
                     </span>
                   </td>
-                  <td className="px-4 py-3">{r.sessionCount}</td>
-                  <td className="px-4 py-3">{formatCzkFromCents(r.totalCents)}</td>
-                  <td className="px-4 py-3 align-middle">
+                  <td className="whitespace-nowrap px-2 py-2.5 text-sm sm:px-4 sm:py-3 sm:text-base">
+                    {r.sessionCount}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2.5 text-sm sm:px-4 sm:py-3 sm:text-base">
+                    {formatCzkFromCents(r.totalCents)}
+                  </td>
+                  <td className="align-middle px-2 py-2.5 sm:px-4 sm:py-3">
                     <PaymentMarkForms row={r} year={year} month={month} />
                   </td>
                 </tr>

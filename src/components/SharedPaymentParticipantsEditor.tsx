@@ -111,17 +111,17 @@ export function SharedPaymentParticipantsEditor({
 
       {unpaid.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-slate-200/90">
-          <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
+          <p className="border-b border-slate-100 bg-slate-50/80 px-3 py-2 text-xs font-medium text-slate-600 sm:px-4">
             K úhradě
           </p>
           <ul className="divide-y divide-slate-100">
             {unpaid.map((part) => (
               <li
                 key={part.id}
-                className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
+                className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:px-4"
               >
-                <div className="min-w-[140px] flex-1 space-y-3">
-                  <span className="font-medium text-slate-800">{part.player.name}</span>
+                <div className="min-w-0 flex-1 space-y-3">
+                  <span className="break-words font-medium text-slate-800">{part.player.name}</span>
                   <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                     Částka (Kč)
                     <input
@@ -138,7 +138,7 @@ export function SharedPaymentParticipantsEditor({
                     />
                   </label>
                 </div>
-                <div className="flex flex-wrap items-center gap-4 sm:justify-end">
+                <div className="flex min-w-0 w-full flex-wrap items-center gap-3 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] sm:w-auto sm:justify-end">
                   <SharedPaymentQrPanel
                     iban={iban}
                     title={title}
@@ -164,7 +164,7 @@ export function SharedPaymentParticipantsEditor({
           <p className="border-b border-slate-100 bg-emerald-50/60 px-4 py-2 text-xs font-medium text-emerald-900">
             Zaplaceno
           </p>
-          <div className="overflow-x-auto">
+          <div className="touch-pan-x overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
                 <tr>

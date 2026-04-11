@@ -59,7 +59,7 @@ export default async function StatistikyPage({
   )}`;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto w-full min-w-0 max-w-3xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Statistiky docházky</h1>
         <p className="mt-1 text-sm text-slate-600">
@@ -85,30 +85,32 @@ export default async function StatistikyPage({
         </div>
       </Panel>
 
-      <Panel className="overflow-x-auto !p-0">
+      <Panel className="touch-pan-x overflow-x-auto !p-0">
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Hráč</th>
-              <th className="px-4 py-2.5 font-medium">Přítomen</th>
-              <th className="px-4 py-2.5 font-medium">Účast</th>
+              <th className="px-2 py-2.5 text-xs font-medium sm:px-4 sm:text-sm">Hráč</th>
+              <th className="px-2 py-2.5 text-xs font-medium sm:px-4 sm:text-sm">Přítomen</th>
+              <th className="px-2 py-2.5 text-xs font-medium sm:px-4 sm:text-sm">Účast</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={3} className="px-3 py-8 text-center text-sm text-slate-500 sm:px-4">
                   Žádní hráči pro tento filtr nebo žádné tréninky v období.
                 </td>
               </tr>
             )}
             {rows.map((r) => (
               <tr key={r.id}>
-                <td className="px-4 py-2.5 font-medium text-slate-800">{r.name}</td>
-                <td className="px-4 py-2.5 text-slate-600">
+                <td className="min-w-0 break-words px-2 py-2.5 text-sm font-medium text-slate-800 sm:px-4 sm:text-base">
+                  {r.name}
+                </td>
+                <td className="whitespace-nowrap px-2 py-2.5 text-sm text-slate-600 sm:px-4 sm:text-base">
                   {r.present} / {totalTrainings}
                 </td>
-                <td className="px-4 py-2.5">
+                <td className="px-2 py-2.5 sm:px-4">
                   <div className="flex items-center gap-2">
                     <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200">
                       <div

@@ -8,8 +8,8 @@ export default async function HomePage() {
   if (session) redirect("/prehled");
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">
-      <div className="max-w-lg rounded-lg border border-slate-200 bg-white px-8 py-10 text-center shadow-sm">
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-8 px-4">
+      <div className="w-full max-w-lg min-w-0 rounded-lg border border-slate-200 bg-white px-5 py-8 text-center shadow-sm sm:px-8 sm:py-10">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-800">
           Docházka na tréninky
         </h1>

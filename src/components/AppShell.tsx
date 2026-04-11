@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="truncate text-sm font-medium text-slate-800">Treninky</span>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 sm:p-6 md:p-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-auto p-4 sm:p-6 md:p-8">{children}</main>
       </div>
 
       {mobileOpen ? (

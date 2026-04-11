@@ -33,14 +33,14 @@ export function SharedPaymentQrPanel({
     spayd = buildSpaydString({
       iban,
       amountKc: payCents / 100,
-      message: `${title} — ${playerName}`.slice(0, 60),
+      message: `${title} - ${playerName}`.slice(0, 60),
     });
   } catch {
     return <span className="text-xs text-red-600">Neplatný IBAN</span>;
   }
 
   return (
-    <div className="flex items-start gap-1">
+    <div className="flex min-w-0 shrink-0 items-start gap-1">
       <div className="flex flex-col items-center">
         <QRCodeCanvas
           ref={canvasRef}

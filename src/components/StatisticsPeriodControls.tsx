@@ -7,7 +7,7 @@ import {
 } from "@/lib/statistics-period";
 
 const INPUT_CLASS =
-  "mt-1 block rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 tabular-nums";
+  "mt-1 block w-full min-w-0 max-w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 tabular-nums sm:max-w-[11rem]";
 
 const presetCls =
   "rounded-md border border-slate-200 bg-white px-2.5 py-1 text-sm text-slate-600 transition hover:border-slate-300 hover:text-slate-800";
@@ -28,7 +28,11 @@ export function StatisticsPeriodControls({
 
   return (
     <div className="space-y-4">
-      <form method="get" action={base} className="flex flex-wrap items-end gap-3">
+      <form
+        method="get"
+        action={base}
+        className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end"
+      >
         {skupina ? <input type="hidden" name="skupina" value={skupina} /> : null}
         <label className="text-sm text-slate-600">
           Od

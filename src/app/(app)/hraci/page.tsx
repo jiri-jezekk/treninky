@@ -35,7 +35,7 @@ export default async function HraciPage({
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto w-full min-w-0 max-w-3xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Hráči</h1>
         <p className="mt-1 text-sm text-slate-600">

@@ -35,7 +35,7 @@ export function GroupFilterNav({
     }`;
 
   return (
-    <nav className="flex flex-wrap items-center gap-2">
+    <nav className="flex max-w-full flex-wrap items-center gap-2">
       <span className="text-xs text-slate-500">Zobrazit:</span>
       <Link href={href(null)} className={cls(current === null)}>
         Všichni

@@ -52,7 +52,7 @@ export default async function SharedPaymentDetailPage({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto w-full min-w-0 max-w-3xl space-y-6">
       <div>
         <Link
           href="/skupinove-platby"
@@ -136,7 +136,7 @@ export default async function SharedPaymentDetailPage({
         </div>
       </Panel>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <form action={setSharedPaymentArchived.bind(null, id, !sp.archived)}>
           <button
             type="submit"

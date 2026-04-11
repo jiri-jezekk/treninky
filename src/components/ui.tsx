@@ -8,7 +8,7 @@ export function Panel({
 }) {
   return (
     <div
-      className={`rounded-lg border border-slate-200/90 bg-white p-4 sm:p-5 ${className}`}
+      className={`min-w-0 max-w-full rounded-lg border border-slate-200/90 bg-white p-4 sm:p-5 ${className}`}
     >
       {children}
     </div>

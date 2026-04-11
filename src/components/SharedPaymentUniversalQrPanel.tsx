@@ -60,8 +60,8 @@ export function SharedPaymentUniversalQrPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
-      <div className="flex items-start gap-1">
+    <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+      <div className="flex items-start justify-center gap-1 sm:justify-start">
         <div className="flex flex-col items-center">
           {spayd ? (
             <>

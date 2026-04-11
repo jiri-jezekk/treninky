@@ -103,7 +103,7 @@ export default async function TreninkyPage({
   const mesicStr = mesicQuery(year, month);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Tréninky</h1>
         <p className="mt-1 text-sm text-slate-600">
@@ -111,23 +111,24 @@ export default async function TreninkyPage({
         </p>
       </div>
 
-      <Panel className="!overflow-x-auto !p-0">
+      <Panel className="touch-pan-x !overflow-x-auto !p-0">
         <form
           id={BULK_DELETE_FORM_ID}
           action={bulkDeleteTrainings}
           className="sr-only"
           aria-hidden
         ></form>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-          <h2 className="text-sm font-medium text-slate-800">Seznam</h2>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/80 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-4">
+          <h2 className="shrink-0 text-sm font-medium text-slate-800">Seznam</h2>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/treninky?mesic=${mesicQuery(prev.getFullYear(), prev.getMonth() + 1)}`}
               className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
             >
               ← Předchozí měsíc
             </Link>
-            <span className="text-sm font-medium capitalize text-slate-800">
+            <span className="min-w-0 text-sm font-medium capitalize text-slate-800">
               {monthLabelCs(year, month)}
             </span>
             <Link
@@ -136,6 +137,7 @@ export default async function TreninkyPage({
             >
               Další měsíc →
             </Link>
+            </div>
             {trainings.length > 0 && (
               <>
                 <TrainingListBulkSelect
@@ -159,16 +161,16 @@ export default async function TreninkyPage({
               <th className="w-10 px-2 py-2 text-center font-medium" title="Hromadný výběr">
                 <span className="sr-only">Vybrat</span>
               </th>
-              <th className="px-4 py-2 font-medium">Termín</th>
-              <th className="px-4 py-2 font-medium">Stav</th>
-              <th className="px-4 py-2 font-medium">Docházka</th>
-              <th className="px-4 py-2 text-right font-medium">Akce</th>
+              <th className="px-2 py-2 text-xs font-medium sm:px-4 sm:text-sm">Termín</th>
+              <th className="px-2 py-2 text-xs font-medium sm:px-4 sm:text-sm">Stav</th>
+              <th className="px-2 py-2 text-xs font-medium sm:px-4 sm:text-sm">Docházka</th>
+              <th className="px-2 py-2 text-right text-xs font-medium sm:px-4 sm:text-sm">Akce</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {trainings.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500 sm:px-4">
                   V tomto měsíci zatím žádné tréninky.
                 </td>
               </tr>
@@ -192,20 +194,20 @@ export default async function TreninkyPage({
                       aria-label={`Vybrat trénink ${formatDateTimeDdMmYyyy24h(t.startsAt)}`}
                     />
                   </td>
-                  <td className="px-4 py-2 text-slate-900">
+                  <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-900 sm:px-4 sm:text-sm">
                     {formatDateTimeDdMmYyyy24h(t.startsAt)}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2 sm:px-4">
                     <span
                       className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[status]}`}
                     >
                       {TRAINING_STATUS_LABELS[status]}
                     </span>
                   </td>
-                  <td className="px-4 py-2 tabular-nums text-slate-700">
+                  <td className="px-2 py-2 tabular-nums text-slate-700 sm:px-4">
                     {t._count.attendances}/{activePlayerCount}
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-2 py-2 text-right sm:px-4">
                     <div className="flex items-center justify-end gap-2">
                       <Link
                         href={`/treninky/${t.id}`}

@@ -3,8 +3,23 @@
  * @see https://qr-platba.cz/pro-vyvojare/specifikace-formatu/
  */
 
+/**
+ * Typografické pomlčky a podobné znaky → ASCII „-“ (některé banky QR jinak odmítnou).
+ */
+function normalizeDashesForBank(value: string): string {
+  return value
+    .replace(/\u2014/g, "-") // —
+    .replace(/\u2013/g, "-") // –
+    .replace(/\u2012/g, "-") // ‒
+    .replace(/\u2011/g, "-") // ‑
+    .replace(/\u2212/g, "-") // −
+    .replace(/\uFE58/g, "-") // ﹘
+    .replace(/\uFE63/g, "-") // ﹣
+    .replace(/\uFF0D/g, "-"); // － fullwidth hyphen-minus
+}
+
 function sanitizeSegment(value: string): string {
-  return value.replace(/\*/g, " ").trim();
+  return normalizeDashesForBank(value).replace(/\*/g, " ").trim();
 }
 
 export type SpaydInput = {

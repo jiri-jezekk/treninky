@@ -59,9 +59,9 @@ export default async function TrainingDetailPage({
       : null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+    <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0 flex-1">
           <Link
             href="/treninky"
             className="text-sm text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
@@ -78,10 +78,13 @@ export default async function TrainingDetailPage({
             <p className="mt-2 text-xs text-slate-500">{customNote}</p>
           )}
         </div>
-        <form action={setTrainingCancelled.bind(null, id, !training.cancelled)}>
+        <form
+          action={setTrainingCancelled.bind(null, id, !training.cancelled)}
+          className="w-full shrink-0 sm:w-auto"
+        >
           <button
             type="submit"
-            className={`rounded-md border px-3 py-2 text-sm ${
+            className={`w-full rounded-md border px-3 py-2 text-sm sm:w-auto ${
               training.cancelled
                 ? "border-slate-300 text-slate-800 hover:bg-slate-50"
                 : "border-slate-200 text-slate-700 hover:bg-slate-50"
