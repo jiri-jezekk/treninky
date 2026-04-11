@@ -1,5 +1,9 @@
-import { auth } from "@/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "@/auth.config";
 import { NextResponse } from "next/server";
+
+/** Pouze lehká auth.config — bez Prisma, aby Edge bundle zůstal pod limitem Vercelu (~1 MB). */
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   if (!req.auth) {
