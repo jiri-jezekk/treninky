@@ -1,8 +1,17 @@
+import { GroupFilterNav } from "@/components/GroupFilterNav";
+import { Panel } from "@/components/ui";
+import { parsePlayerGroupFilter } from "@/lib/player-groups";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 
-export default async function StatistikyPage() {
+export default async function StatistikyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ skupina?: string }>;
+}) {
   const userId = await requireUserId();
+  const sp = await searchParams;
+  const skupina = parsePlayerGroupFilter(sp.skupina);
 
   const trainings = await prisma.training.findMany({
     where: { userId, cancelled: false },
@@ -12,7 +21,13 @@ export default async function StatistikyPage() {
   const totalTrainings = trainingIds.length;
 
   const players = await prisma.player.findMany({
-    where: { userId, active: true },
+    where: {
+      userId,
+      active: true,
+      ...(skupina && {
+        groupMembers: { some: { group: skupina } },
+      }),
+    },
     orderBy: { name: "asc" },
   });
 
@@ -34,44 +49,48 @@ export default async function StatistikyPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Statistiky docházky</h1>
-        <p className="mt-1 text-slate-600">
+        <h1 className="text-xl font-semibold text-slate-800">Statistiky docházky</h1>
+        <p className="mt-1 text-sm text-slate-600">
           Podíl přítomností u nezrušených tréninků (všechna období).
         </p>
         <p className="mt-2 text-sm text-slate-500">
           Počet započítaných tréninků celkem:{" "}
-          <strong>{totalTrainings}</strong>
+          <span className="text-slate-700">{totalTrainings}</span>
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <Panel>
+        <GroupFilterNav basePath="/statistiky" current={skupina} />
+      </Panel>
+
+      <Panel className="overflow-x-auto !p-0">
         <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+          <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
             <tr>
-              <th className="px-4 py-2 font-medium">Hráč</th>
-              <th className="px-4 py-2 font-medium">Přítomen</th>
-              <th className="px-4 py-2 font-medium">Účast</th>
+              <th className="px-4 py-2.5 font-medium">Hráč</th>
+              <th className="px-4 py-2.5 font-medium">Přítomen</th>
+              <th className="px-4 py-2.5 font-medium">Účast</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
                 <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
-                  Žádní aktivní hráči nebo žádné tréninky.
+                  Žádní hráči pro tento filtr nebo žádné tréninky.
                 </td>
               </tr>
             )}
             {rows.map((r) => (
               <tr key={r.id}>
-                <td className="px-4 py-2 font-medium text-slate-900">{r.name}</td>
-                <td className="px-4 py-2 text-slate-700">
+                <td className="px-4 py-2.5 font-medium text-slate-800">{r.name}</td>
+                <td className="px-4 py-2.5 text-slate-600">
                   {r.present} / {totalTrainings}
                 </td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200">
                       <div
-                        className="h-full rounded-full bg-emerald-500"
+                        className="h-full rounded-full bg-slate-500"
                         style={{ width: `${r.pct}%` }}
                       />
                     </div>
@@ -82,7 +101,7 @@ export default async function StatistikyPage() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Panel>
     </div>
   );
 }

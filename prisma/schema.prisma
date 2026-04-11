@@ -3,28 +3,34 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 enum AttendanceStatus {
   PRESENT
   ABSENT
-  EXCUSED
+}
+
+/** Skupiny pro filtrování — hráč může mít více záznamů. */
+enum PlayerGroup {
+  MEN
+  WOMEN
+  MIX
+  JUNIORS
 }
 
 model User {
-  id                        String   @id @default(cuid())
-  email                     String   @unique
-  passwordHash              String
-  name                      String?
-  defaultTrainingPriceCents Int?
-  bankIban                  String?
-  bankMessagePrefix         String?
-  createdAt                 DateTime @default(now())
-  players                   Player[]
-  trainings                 Training[]
-  sharedPayments            SharedPayment[]
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  bankIban     String?
+  createdAt    DateTime @default(now())
+  players      Player[]
+  trainings    Training[]
+  sharedPayments SharedPayment[]
+  monthlyPaymentMarks MonthlyPaymentMark[]
 }
 
 model Player {
@@ -33,24 +39,50 @@ model Player {
   user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
   active       Boolean                    @default(true)
+  /** Pravidelné úterý/čtvrtek s automatickou cenou se v měsíční platbě neúčtují (předplacená sezóna). */
+  prepaidSeason Boolean                   @default(false)
   createdAt    DateTime                   @default(now())
   attendances  Attendance[]
-  billings     TrainingPlayerBilling[]
   sharedParts  SharedPaymentParticipant[]
+  groupMembers PlayerGroupMembership[]
+  monthlyPaymentMarks MonthlyPaymentMark[]
 
   @@index([userId])
 }
 
+/** Označení „platba za měsíc dorazila“ — jeden záznam na hráče a kalendářní měsíc. */
+model MonthlyPaymentMark {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, playerId, year, month])
+  @@index([userId, year, month])
+}
+
+model PlayerGroupMembership {
+  playerId String
+  player   Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  group    PlayerGroup
+
+  @@id([playerId, group])
+}
+
 model Training {
-  id                String                  @id @default(cuid())
+  id                String       @id @default(cuid())
   userId            String
-  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   startsAt          DateTime
-  cancelled         Boolean                 @default(false)
+  cancelled         Boolean      @default(false)
   notes             String?
+  /** Null = automatická cena (út/čt/junioři). Není null = jednotná cena za tento výjimečný trénink (Kč z formuláře). */
   defaultPriceCents Int?
   attendances       Attendance[]
-  billings          TrainingPlayerBilling[]
 
   @@index([userId, startsAt])
 }
@@ -62,18 +94,6 @@ model Attendance {
   playerId   String
   player     Player           @relation(fields: [playerId], references: [id], onDelete: Cascade)
   status     AttendanceStatus @default(ABSENT)
-
-  @@unique([trainingId, playerId])
-}
-
-model TrainingPlayerBilling {
-  id         String   @id @default(cuid())
-  trainingId String
-  training   Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
-  playerId   String
-  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  priceCents Int?
-  prepaid    Boolean  @default(false)
 
   @@unique([trainingId, playerId])
 }

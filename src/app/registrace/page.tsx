@@ -1,16 +1,20 @@
 import Link from "next/link";
 import { auth } from "@/auth";
+import { isRegistrationOpen } from "@/lib/site-config";
 import { redirect } from "next/navigation";
 import { RegisterForm } from "./RegisterForm";
 
 export default async function RegisterPage() {
   const session = await auth();
   if (session) redirect("/prehled");
+  if (!isRegistrationOpen()) {
+    redirect("/prihlaseni?reg=closed");
+  }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Nový účet</h1>
+    <div className="flex min-h-screen flex-col items-center justify-center px-4">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+        <h1 className="text-xl font-semibold text-slate-800">Nový účet</h1>
         <p className="mt-1 text-sm text-slate-600">
           Zvolte e-mail a heslo (min. 8 znaků). Data jsou vázaná na tento účet.
         </p>
@@ -19,7 +23,10 @@ export default async function RegisterPage() {
         </div>
         <p className="mt-6 text-center text-sm text-slate-600">
           Už máte účet?{" "}
-          <Link href="/prihlaseni" className="font-medium text-emerald-700 hover:underline">
+          <Link
+            href="/prihlaseni"
+            className="text-slate-800 underline decoration-slate-300 underline-offset-2 hover:text-slate-950"
+          >
             Přihlásit se
           </Link>
         </p>

@@ -17,9 +17,7 @@ export function SharedPaymentQrPanel({
 }) {
   if (!iban) {
     return (
-      <span className="text-xs text-amber-700">
-        Doplňte IBAN v nastavení.
-      </span>
+      <span className="text-xs text-slate-500">Doplňte IBAN v nastavení.</span>
     );
   }
   if (amountCents <= 0) return null;

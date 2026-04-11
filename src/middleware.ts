@@ -16,6 +16,8 @@ export const config = {
     "/hraci/:path*",
     "/treninky",
     "/treninky/:path*",
+    "/platba",
+    "/platba/:path*",
     "/statistiky/:path*",
     "/nastaveni/:path*",
     "/skupinove-platby",

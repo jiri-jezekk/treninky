@@ -39,7 +39,9 @@ export function LoginForm() {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       {error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+        <p className="rounded-md border border-red-100 bg-red-50/80 px-3 py-2 text-sm text-red-900">
+          {error}
+        </p>
       )}
       <label className="block text-sm font-medium text-slate-700">
         E-mail
@@ -48,7 +50,7 @@ export function LoginForm() {
           type="email"
           required
           autoComplete="email"
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
         />
       </label>
       <label className="block text-sm font-medium text-slate-700">
@@ -58,13 +60,13 @@ export function LoginForm() {
           type="password"
           required
           autoComplete="current-password"
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
         />
       </label>
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+        className="rounded-md border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 disabled:opacity-60"
       >
         {pending ? "Přihlašuji…" : "Přihlásit se"}
       </button>

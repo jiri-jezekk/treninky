@@ -4,6 +4,7 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import { signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { isRegistrationOpen } from "@/lib/site-config";
 
 const schema = z.object({
   email: z.string().email(),
@@ -16,6 +17,9 @@ export async function registerAction(
   _prev: AuthActionState,
   formData: FormData,
 ): Promise<AuthActionState> {
+  if (!isRegistrationOpen()) {
+    return { error: "Registrace nových účtů je vypnutá." };
+  }
   const parsed = schema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),

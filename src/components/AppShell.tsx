@@ -8,7 +8,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <AppSidebar currentPath={pathname} />
-      <main className="flex-1 overflow-auto p-6">{children}</main>
+      <main className="flex-1 overflow-auto p-5 sm:p-8">{children}</main>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { updateSettings } from "@/actions/settings";
@@ -7,73 +8,40 @@ export default async function NastaveniPage() {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: {
-      defaultTrainingPriceCents: true,
       bankIban: true,
-      bankMessagePrefix: true,
     },
   });
-
-  const defaultPrice =
-    user.defaultTrainingPriceCents != null
-      ? String(user.defaultTrainingPriceCents / 100)
-      : "";
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Nastavení účtu</h1>
-        <p className="mt-1 text-slate-600">
-          Výchozí ceny a údaje pro QR platby (český účet – formát SPAYD).
+        <h1 className="text-xl font-semibold text-slate-800">Nastavení účtu</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          IBAN pro generování QR plateb (měsíční souhrn i skupinové platby). Zpráva u
+          měsíční platby je vždy ve tvaru: Tréninky - jméno, měsíc.
         </p>
       </div>
 
-      <form
-        action={updateSettings}
-        className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-      >
-        <label className="block text-sm font-medium text-slate-700">
-          Výchozí cena tréninku (Kč)
-          <input
-            name="defaultPrice"
-            defaultValue={defaultPrice}
-            placeholder="např. 100"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-          />
-          <span className="mt-1 block text-xs text-slate-500">
-            Použije se, když u tréninku není nastavena vlastní cena.
-          </span>
-        </label>
+      <Panel>
+        <form action={updateSettings} className="space-y-4">
+          <label className="block text-sm text-slate-600">
+            IBAN příjemce
+            <input
+              name="bankIban"
+              defaultValue={user.bankIban ?? ""}
+              placeholder="CZ65 0800 0000 1920 0014 5399"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-slate-900"
+            />
+          </label>
 
-        <label className="block text-sm font-medium text-slate-700">
-          IBAN příjemce (QR platby)
-          <input
-            name="bankIban"
-            defaultValue={user.bankIban ?? ""}
-            placeholder="CZ65 0800 0000 1920 0014 5399"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-slate-900"
-          />
-        </label>
-
-        <label className="block text-sm font-medium text-slate-700">
-          Předpona zprávy u tréninků
-          <input
-            name="bankMessagePrefix"
-            defaultValue={user.bankMessagePrefix ?? ""}
-            placeholder="Trénink"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"
-          />
-          <span className="mt-1 block text-xs text-slate-500">
-            Do zprávy pro příjemce se doplní datum a jméno hráče.
-          </span>
-        </label>
-
-        <button
-          type="submit"
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-        >
-          Uložit
-        </button>
-      </form>
+          <button
+            type="submit"
+            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 hover:bg-slate-50"
+          >
+            Uložit
+          </button>
+        </form>
+      </Panel>
     </div>
   );
 }
