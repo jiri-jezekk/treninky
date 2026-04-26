@@ -27,10 +27,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [mobileOpen]);
 
   return (
-    <div className="flex min-h-[100dvh]">
+    <div className="flex min-h-dvh">
       <AppSidebar currentPath={pathname} />
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200/90 bg-white px-3 py-2.5 shadow-sm md:hidden">
           <button
             type="button"
@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="truncate text-sm font-medium text-slate-800">Treninky</span>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-auto p-4 sm:p-6 md:p-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 md:p-8">{children}</main>
       </div>
 
       {mobileOpen ? (

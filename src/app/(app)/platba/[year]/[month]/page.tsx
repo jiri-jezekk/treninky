@@ -138,11 +138,12 @@ export default async function PlatbaMesicPage({
       )}
 
       {unpaid.length > 0 && (
-        <Panel className="touch-pan-x !overflow-x-auto !p-0">
+        <Panel className="!p-0">
           <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
             K úhradě
           </p>
-          <table className="min-w-full text-left text-sm">
+          <div className="table-scroll-wrapper">
+          <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
               <tr>
                 <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
@@ -190,6 +191,7 @@ export default async function PlatbaMesicPage({
               ))}
             </tbody>
           </table>
+          </div>
         </Panel>
       )}
 
@@ -202,11 +204,12 @@ export default async function PlatbaMesicPage({
       )}
 
       {paid.length > 0 && (
-        <Panel className="touch-pan-x !overflow-x-auto !p-0">
+        <Panel className="!p-0">
           <p className="border-b border-slate-100 bg-emerald-50/60 px-4 py-2 text-xs font-medium text-emerald-900">
             Zaplaceno (tento měsíc)
           </p>
-          <table className="min-w-full text-left text-sm">
+          <div className="table-scroll-wrapper">
+          <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
               <tr>
                 <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium sm:px-4 sm:py-3 sm:text-sm">
@@ -245,6 +248,7 @@ export default async function PlatbaMesicPage({
               ))}
             </tbody>
           </table>
+          </div>
         </Panel>
       )}
 

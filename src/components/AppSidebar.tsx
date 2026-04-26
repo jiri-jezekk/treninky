@@ -48,7 +48,7 @@ function NavLinks({
 /** Postranní panel — jen desktop (md+). */
 export function AppSidebar({ currentPath }: { currentPath: string }) {
   return (
-    <aside className="hidden w-52 shrink-0 flex-col border-r border-slate-200/90 bg-white p-4 md:flex">
+    <aside className="sticky top-0 hidden h-dvh w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200/90 bg-white p-4 md:flex">
       <div className="mb-5 text-sm font-medium text-slate-600">Menu</div>
       <NavLinks currentPath={currentPath} />
       <div className="mt-4 border-t border-slate-200 pt-4">

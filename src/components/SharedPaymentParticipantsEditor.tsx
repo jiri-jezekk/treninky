@@ -138,7 +138,7 @@ export function SharedPaymentParticipantsEditor({
                     />
                   </label>
                 </div>
-                <div className="flex min-w-0 w-full flex-wrap items-center gap-3 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] sm:w-auto sm:justify-end">
+                <div className="flex min-w-0 w-full flex-wrap items-center gap-3 pb-0.5 sm:w-auto sm:justify-end">
                   <SharedPaymentQrPanel
                     iban={iban}
                     title={title}
@@ -164,8 +164,8 @@ export function SharedPaymentParticipantsEditor({
           <p className="border-b border-slate-100 bg-emerald-50/60 px-4 py-2 text-xs font-medium text-emerald-900">
             Zaplaceno
           </p>
-          <div className="touch-pan-x overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+          <div className="table-scroll-wrapper">
+            <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Účastník</th>

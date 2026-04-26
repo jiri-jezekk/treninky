@@ -48,11 +48,11 @@ export function MonthlyPlayerQr({
 
   return (
     <div className="flex items-center gap-1">
-      <div className="rounded border border-slate-200 bg-white p-2">
+      <div className="rounded border border-slate-200 bg-white p-1.5 sm:p-2">
         <QRCodeCanvas
           ref={canvasRef}
           value={spayd}
-          size={140}
+          size={100}
           level="M"
           marginSize={2}
         />

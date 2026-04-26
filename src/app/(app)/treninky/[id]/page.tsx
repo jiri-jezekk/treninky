@@ -148,8 +148,8 @@ export default async function TrainingDetailPage({
             )}
           </div>
         )}
-        <div className="overflow-x-auto px-4 pb-4 sm:px-5">
-          <table className="min-w-full text-left text-sm">
+        <div className="table-scroll-wrapper px-4 pb-4 sm:px-5">
+          <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
                 <th className="py-2 pr-4 font-medium">Hráč</th>

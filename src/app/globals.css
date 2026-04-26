@@ -18,8 +18,14 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* Zabrání horizontálnímu „posunu“ celé stránky na úzkých displejích (obsah scrolluje uvnitř). */
 html {
   overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
 }
 
+@layer base {
+  .table-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

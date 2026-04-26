@@ -111,7 +111,7 @@ export default async function TreninkyPage({
         </p>
       </div>
 
-      <Panel className="touch-pan-x !overflow-x-auto !p-0">
+      <Panel className="!p-0">
         <form
           id={BULK_DELETE_FORM_ID}
           action={bulkDeleteTrainings}
@@ -155,7 +155,8 @@ export default async function TreninkyPage({
             )}
           </div>
         </div>
-        <table className="min-w-full text-left text-sm">
+        <div className="table-scroll-wrapper">
+        <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50/80 text-slate-600">
             <tr>
               <th className="w-10 px-2 py-2 text-center font-medium" title="Hromadný výběr">
@@ -244,6 +245,7 @@ export default async function TreninkyPage({
             })}
           </tbody>
         </table>
+        </div>
         <p className="border-t border-slate-100 px-4 py-3 text-xs leading-relaxed text-slate-500">
           <span className="font-medium text-slate-600">Stavy:</span> Zrušen — označeno jako
           zrušené. Plánován — datum a čas ještě neproběhly. Dokončen — po termínu a je
