@@ -8,9 +8,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => {
+  // Po přechodu na jinou stránku menu zavřít. Úprava stavu při renderu je
+  // doporučený postup Reactu — setState v efektu vyvolává řetězení renderů.
+  const [prevPath, setPrevPath] = useState(pathname);
+  if (prevPath !== pathname) {
+    setPrevPath(pathname);
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -31,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AppSidebar currentPath={pathname} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200/90 bg-white px-3 py-2.5 shadow-sm md:hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-[rgba(2,6,23,.85)] px-3 py-2.5 backdrop-blur md:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -54,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <>
           <button
             type="button"
-            className="fixed inset-0 z-40 bg-slate-900/40 md:hidden"
+            className="fixed inset-0 z-40 bg-[rgba(2,6,23,.75)] backdrop-blur-sm md:hidden"
             aria-label="Zavřít menu"
             onClick={() => setMobileOpen(false)}
           />

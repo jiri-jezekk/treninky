@@ -2,7 +2,7 @@ import Link from "next/link";
 import { GroupFilterNav } from "@/components/GroupFilterNav";
 import { Panel } from "@/components/ui";
 import { formatCzkFromCents } from "@/lib/money";
-import { parsePlayerGroupFilter } from "@/lib/player-groups";
+import { listGroups, parseGroupFilter } from "@/lib/groups";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { createSharedPayment } from "@/actions/shared-payments";
@@ -14,7 +14,8 @@ export default async function SkupinovePlatbyPage({
 }) {
   const userId = await requireUserId();
   const sp = await searchParams;
-  const skupina = parsePlayerGroupFilter(sp.skupina);
+  const groups = await listGroups(userId);
+  const skupina = parseGroupFilter(sp.skupina, groups);
 
   const [players, payments] = await Promise.all([
     prisma.player.findMany({
@@ -22,7 +23,7 @@ export default async function SkupinovePlatbyPage({
         userId,
         active: true,
         ...(skupina && {
-          groupMembers: { some: { group: skupina } },
+          groupMembers: { some: { groupId: skupina } },
         }),
       },
       orderBy: { name: "asc" },
@@ -101,7 +102,7 @@ export default async function SkupinovePlatbyPage({
           Filtr skupin (muži / ženy / …) omezuje jen výběr hráčů pro tuto platbu.
         </p>
         <div className="mt-4">
-          <GroupFilterNav basePath="/skupinove-platby" current={skupina} />
+          <GroupFilterNav groups={groups} basePath="/skupinove-platby" current={skupina} />
         </div>
         <form action={createSharedPayment} className="mt-4 space-y-4">
           <label className="block text-sm text-slate-600">

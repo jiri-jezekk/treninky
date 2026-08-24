@@ -1,5 +1,4 @@
 import Link from "next/link";
-import type { PlayerGroup } from "@prisma/client";
 import {
   buildStatistikyHref,
   lastNMonthsPeriod,
@@ -19,7 +18,8 @@ export function StatisticsPeriodControls({
 }: {
   odIso: string;
   doIso: string;
-  skupina: PlayerGroup | null;
+  /** Id vybrané kategorie, nebo null pro všechny. */
+  skupina: string | null;
 }) {
   const base = "/statistiky";
   const prev = previousMonthPeriod();

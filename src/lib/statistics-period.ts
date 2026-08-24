@@ -1,5 +1,3 @@
-import type { PlayerGroup } from "@prisma/client";
-
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** YYYY-MM-DD → lokální datum 00:00. */
@@ -118,7 +116,7 @@ export function lastNMonthsPeriod(months: number): StatisticsPeriod {
 
 export function buildStatistikyHref(
   basePath: string,
-  p: { od?: string; do?: string; skupina?: PlayerGroup | null },
+  p: { od?: string; do?: string; skupina?: string | null },
 ): string {
   const params = new URLSearchParams();
   if (p.skupina) params.set("skupina", p.skupina);

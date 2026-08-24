@@ -12,11 +12,23 @@ const links = [
 ];
 
 const linkClass = (active: boolean) =>
-  `rounded-md border px-3 py-2 text-sm ${
+  `rounded-md border px-3 py-2 text-sm transition ${
     active
-      ? "border-slate-300 bg-slate-50 text-slate-900"
-      : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+      ? "border-club-line bg-club-soft font-medium text-slate-900"
+      : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800"
   }`;
+
+/** Hlavička s klubovou identitou — stejná typografie jako na webu klubu. */
+function ClubMark() {
+  return (
+    <div className="mb-5">
+      <div className="font-heading text-sm font-extrabold uppercase tracking-[0.15em] text-club">
+        DC Liberec
+      </div>
+      <div className="mt-0.5 text-xs text-slate-500">Správa klubu</div>
+    </div>
+  );
+}
 
 function NavLinks({
   currentPath,
@@ -48,8 +60,8 @@ function NavLinks({
 /** Postranní panel — jen desktop (md+). */
 export function AppSidebar({ currentPath }: { currentPath: string }) {
   return (
-    <aside className="sticky top-0 hidden h-dvh w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200/90 bg-white p-4 md:flex">
-      <div className="mb-5 text-sm font-medium text-slate-600">Menu</div>
+    <aside className="sticky top-0 hidden h-dvh w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-[rgba(2,6,23,.6)] p-4 backdrop-blur md:flex">
+      <ClubMark />
       <NavLinks currentPath={currentPath} />
       <div className="mt-4 border-t border-slate-200 pt-4">
         <LogoutButton />
@@ -67,9 +79,11 @@ export function MobileMenuPanel({
   onClose: () => void;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-[max(1rem,env(safe-area-inset-top,0px))]">
+    <div className="flex h-full min-h-0 flex-col bg-[rgba(2,6,23,.97)] p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-[max(1rem,env(safe-area-inset-top,0px))]">
       <div className="mb-4 flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 pb-3">
-        <span className="text-sm font-medium text-slate-700">Menu</span>
+        <span className="font-heading text-sm font-extrabold uppercase tracking-[0.15em] text-club">
+          DC Liberec
+        </span>
         <button
           type="button"
           onClick={onClose}

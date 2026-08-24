@@ -1,18 +1,23 @@
-import type { PlayerGroup, Training } from "@prisma/client";
+import type { Training } from "@prisma/client";
 
-/** Úterý: 110 Kč, čtvrtek: 100 Kč, junioři vždy 60 Kč. Výjimka: ruční trénink s vyplněnou cenou. */
+/** Úterý: 110 Kč, čtvrtek: 100 Kč. Výjimka: ruční trénink s vyplněnou cenou. */
 export const PRICE_TUESDAY_CENTS = 110 * 100;
 export const PRICE_THURSDAY_CENTS = 100 * 100;
-export const PRICE_JUNIOR_CENTS = 60 * 100;
-
-export function playerIsJunior(groupMembers: { group: PlayerGroup }[]): boolean {
-  return groupMembers.some((m) => m.group === "JUNIORS");
-}
 
 /**
- * Cena jednoho tréninku pro hráče (haléře).
- * `customPriceCents` na tréninku = výjimečná akce — platí pro nejunior; junior stále 60 Kč.
+ * Zvýhodněná sazba hráče podle jeho kategorií — dřív napevno „junioři 60 Kč“,
+ * teď údaj u kategorie, takže si ho trenér mění sám.
+ * Je-li hráč ve víc zvýhodněných kategoriích, platí ta nejlevnější.
  */
+export function discountPriceCentsFor(
+  groups: { discountPriceCents: number | null }[],
+): number | null {
+  const prices = groups
+    .map((g) => g.discountPriceCents)
+    .filter((p): p is number => p != null);
+  return prices.length > 0 ? Math.min(...prices) : null;
+}
+
 /** Úterý nebo čtvrtek bez vlastní ceny = „pravidelný“ trénink. */
 export function isRegularTuesdayThursdayAuto(
   training: Pick<Training, "startsAt" | "defaultPriceCents">,
@@ -22,11 +27,16 @@ export function isRegularTuesdayThursdayAuto(
   return dow === 2 || dow === 4;
 }
 
+/**
+ * Cena jednoho tréninku pro hráče (haléře).
+ * Zvýhodněná sazba přebíjí všechno včetně ruční ceny u výjimečného tréninku —
+ * stejně, jako to dřív platilo pro juniory.
+ */
 export function priceCentsForTrainingSession(
   training: Pick<Training, "startsAt" | "defaultPriceCents">,
-  isJunior: boolean,
+  discountPriceCents: number | null,
 ): number {
-  if (isJunior) return PRICE_JUNIOR_CENTS;
+  if (discountPriceCents != null) return discountPriceCents;
   if (training.defaultPriceCents != null) return training.defaultPriceCents;
   const dow = training.startsAt.getDay();
   if (dow === 2) return PRICE_TUESDAY_CENTS;

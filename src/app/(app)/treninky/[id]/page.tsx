@@ -4,8 +4,7 @@ import { AttendanceStatus } from "@prisma/client";
 import { AttendanceCheckbox } from "@/components/AttendanceCheckbox";
 import { GroupFilterNav } from "@/components/GroupFilterNav";
 import { Panel } from "@/components/ui";
-import { PLAYER_GROUP_LABELS } from "@/lib/player-groups";
-import { parsePlayerGroupFilter } from "@/lib/player-groups";
+import { listGroups, parseGroupFilter } from "@/lib/groups";
 import { formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
@@ -24,7 +23,8 @@ export default async function TrainingDetailPage({
   const { id } = await params;
   const userId = await requireUserId();
   const sp = await searchParams;
-  const skupina = parsePlayerGroupFilter(sp.skupina);
+  const groups = await listGroups(userId);
+  const skupina = parseGroupFilter(sp.skupina, groups);
 
   const training = await prisma.training.findFirst({
     where: { id, userId },
@@ -38,13 +38,13 @@ export default async function TrainingDetailPage({
       userId,
       active: true,
       ...(skupina && {
-        groupMembers: { some: { group: skupina } },
+        groupMembers: { some: { groupId: skupina } },
       }),
     },
     orderBy: { name: "asc" },
     include: {
       attendances: { where: { trainingId: id } },
-      groupMembers: true,
+      groupMembers: { include: { group: true } },
     },
   }),
     prisma.player.count({ where: { userId, active: true } }),
@@ -96,7 +96,7 @@ export default async function TrainingDetailPage({
       </div>
 
       <Panel>
-        <GroupFilterNav basePath={`/treninky/${id}`} current={skupina} />
+        <GroupFilterNav groups={groups} basePath={`/treninky/${id}`} current={skupina} />
         <p className="mt-2 text-xs text-slate-500">
           Zaškrtni „Přítomen“, pokud hráč byl na tréninku. Platba se počítá v měsíčním
           přehledu <Link href="/platba" className="underline">Platba za tréninky</Link>.
@@ -160,14 +160,17 @@ export default async function TrainingDetailPage({
               {players.map((p) => {
                 const att = p.attendances[0];
                 const present = att?.status === AttendanceStatus.PRESENT;
-                const junior = p.groupMembers.some((g) => g.group === "JUNIORS");
+                // Zvýhodněné kategorie hráče — dřív natvrdo „Junioři“.
+                const zvyhodnene = p.groupMembers
+                  .map((m) => m.group)
+                  .filter((g) => g.discountPriceCents != null);
                 return (
                   <tr key={p.id}>
                     <td className="py-2 pr-4">
                       <span className="font-medium text-slate-800">{p.name}</span>
-                      {junior && (
+                      {zvyhodnene.length > 0 && (
                         <span className="ml-2 text-xs text-slate-500">
-                          ({PLAYER_GROUP_LABELS["JUNIORS"]})
+                          ({zvyhodnene.map((g) => g.name).join(", ")})
                         </span>
                       )}
                     </td>

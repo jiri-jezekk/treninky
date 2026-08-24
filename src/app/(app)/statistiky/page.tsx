@@ -2,7 +2,7 @@ import { GroupFilterNav } from "@/components/GroupFilterNav";
 import { StatisticsPeriodControls } from "@/components/StatisticsPeriodControls";
 import { Panel } from "@/components/ui";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
-import { parsePlayerGroupFilter } from "@/lib/player-groups";
+import { listGroups, parseGroupFilter } from "@/lib/groups";
 import { parseStatisticsPeriod } from "@/lib/statistics-period";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
@@ -14,7 +14,8 @@ export default async function StatistikyPage({
 }) {
   const userId = await requireUserId();
   const sp = await searchParams;
-  const skupina = parsePlayerGroupFilter(sp.skupina);
+  const groups = await listGroups(userId);
+  const skupina = parseGroupFilter(sp.skupina, groups);
   const period = parseStatisticsPeriod({ od: sp.od, do: sp.do });
 
   const trainings = await prisma.training.findMany({
@@ -33,7 +34,7 @@ export default async function StatistikyPage({
       userId,
       active: true,
       ...(skupina && {
-        groupMembers: { some: { group: skupina } },
+        groupMembers: { some: { groupId: skupina } },
       }),
     },
     orderBy: { name: "asc" },
@@ -78,6 +79,7 @@ export default async function StatistikyPage({
         <StatisticsPeriodControls odIso={period.odIso} doIso={period.doIso} skupina={skupina} />
         <div className="border-t border-slate-100 pt-4">
           <GroupFilterNav
+            groups={groups}
             basePath="/statistiky"
             current={skupina}
             extraQuery={{ od: period.odIso, do: period.doIso }}

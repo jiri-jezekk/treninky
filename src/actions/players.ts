@@ -1,56 +1,76 @@
 "use server";
 
-import { PlayerGroup } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import { sanitizeGroupIds } from "@/lib/groups";
+import { newPayToken } from "@/lib/pay-token";
 
 const nameSchema = z.object({
   name: z.string().min(1, "Jméno je povinné").max(120),
 });
 
-const GROUP_SET = new Set<PlayerGroup>(["MEN", "WOMEN", "MIX", "JUNIORS"]);
+function groupIdsFromForm(formData: FormData, field: string): string[] {
+  return formData.getAll(field).map(String);
+}
 
-function parseGroupsFromForm(formData: FormData): PlayerGroup[] {
-  return formData
-    .getAll("skupiny")
-    .map(String)
-    .filter((g): g is PlayerGroup => GROUP_SET.has(g as PlayerGroup));
+/** Nejnižší volné číslo hráče v klubu — ať se po smazání čísla recyklují. */
+async function nextPlayerNumber(userId: string): Promise<number> {
+  const taken = await prisma.player.findMany({
+    where: { userId },
+    select: { number: true },
+    orderBy: { number: "asc" },
+  });
+  let expected = 1;
+  for (const { number } of taken) {
+    if (number > expected) break;
+    if (number === expected) expected++;
+  }
+  return expected;
+}
+
+function revalidatePlayerRelated() {
+  revalidatePath("/hraci");
+  revalidatePath("/treninky");
+  revalidatePath("/statistiky");
+  revalidatePath("/platby");
 }
 
 export async function createPlayer(formData: FormData) {
   const userId = await requireUserId();
   const parsed = nameSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) throw new Error(parsed.error.flatten().formErrors.join(", "));
-  const groups = parseGroupsFromForm(formData);
+
+  const groupIds = await sanitizeGroupIds(userId, groupIdsFromForm(formData, "skupiny"));
   const prepaidSeason = formData.get("prepaidSeason") === "on";
+
   await prisma.player.create({
     data: {
       userId,
       name: parsed.data.name.trim(),
+      number: await nextPlayerNumber(userId),
+      payToken: newPayToken(),
       prepaidSeason,
-      ...(groups.length > 0 && {
-        groupMembers: { create: groups.map((group) => ({ group })) },
+      ...(groupIds.length > 0 && {
+        groupMembers: { create: groupIds.map((groupId) => ({ groupId })) },
       }),
     },
   });
-  revalidatePath("/hraci");
-  revalidatePath("/skupinove-platby");
-  revalidatePath("/platba");
+  revalidatePlayerRelated();
 }
 
 async function applyPlayerGroupsAndPrepaid(
   userId: string,
   playerId: string,
-  groups: PlayerGroup[],
+  groupIds: string[],
   prepaidSeason: boolean,
 ) {
   await prisma.$transaction(async (tx) => {
     await tx.playerGroupMembership.deleteMany({ where: { playerId } });
-    if (groups.length > 0) {
+    if (groupIds.length > 0) {
       await tx.playerGroupMembership.createMany({
-        data: groups.map((group) => ({ playerId, group })),
+        data: groupIds.map((groupId) => ({ playerId, groupId })),
       });
     }
     await tx.player.updateMany({
@@ -60,74 +80,39 @@ async function applyPlayerGroupsAndPrepaid(
   });
 }
 
-function revalidatePlayerRelated() {
-  revalidatePath("/hraci");
-  revalidatePath("/treninky");
-  revalidatePath("/statistiky");
-  revalidatePath("/skupinove-platby");
-  revalidatePath("/platba");
-}
-
-/** Jedna řádka — pole `skupiny_${id}` a `prepaid_${id}` (stejný form jako u hromadného uložení). */
-export async function savePlayerRow(playerId: string, formData: FormData) {
+/** Uloží jméno, kategorie, aktivitu a předplacení jednoho hráče (panel detailu). */
+export async function savePlayer(playerId: string, formData: FormData) {
   const userId = await requireUserId();
-  const ok = await prisma.player.findFirst({
+  const owned = await prisma.player.findFirst({
     where: { id: playerId, userId },
     select: { id: true },
   });
-  if (!ok) return;
-  const groups = formData
-    .getAll(`skupiny_${playerId}`)
-    .map(String)
-    .filter((g): g is PlayerGroup => GROUP_SET.has(g as PlayerGroup));
-  const prepaidSeason = formData.get(`prepaid_${playerId}`) === "on";
-  await applyPlayerGroupsAndPrepaid(userId, playerId, groups, prepaidSeason);
-  revalidatePlayerRelated();
-}
+  if (!owned) return;
 
-/**
- * Hromadně: `allPlayerIds` (čárky), u každého `skupiny_${id}` a `prepaid_${id}`.
- */
-export async function bulkSavePlayers(formData: FormData) {
-  const userId = await requireUserId();
-  const raw = formData.get("allPlayerIds");
-  if (typeof raw !== "string" || !raw.trim()) return;
-  const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  for (const playerId of ids) {
-    const groups = formData
-      .getAll(`skupiny_${playerId}`)
-      .map(String)
-      .filter((g): g is PlayerGroup => GROUP_SET.has(g as PlayerGroup));
-    const prepaidSeason = formData.get(`prepaid_${playerId}`) === "on";
-    const ok = await prisma.player.findFirst({
+  const parsed = nameSchema.safeParse({ name: formData.get("name") });
+  if (parsed.success) {
+    await prisma.player.updateMany({
       where: { id: playerId, userId },
-      select: { id: true },
+      data: { name: parsed.data.name.trim() },
     });
-    if (!ok) continue;
-    await applyPlayerGroupsAndPrepaid(userId, playerId, groups, prepaidSeason);
   }
+
+  const groupIds = await sanitizeGroupIds(userId, groupIdsFromForm(formData, "skupiny"));
+  const prepaidSeason = formData.get("prepaidSeason") === "on";
+  await applyPlayerGroupsAndPrepaid(userId, playerId, groupIds, prepaidSeason);
+
+  await prisma.player.updateMany({
+    where: { id: playerId, userId },
+    data: { active: formData.get("active") === "on" },
+  });
+
   revalidatePlayerRelated();
 }
 
 export async function setPlayerActive(playerId: string, active: boolean) {
   const userId = await requireUserId();
-  await prisma.player.updateMany({
-    where: { id: playerId, userId },
-    data: { active },
-  });
-  revalidatePath("/hraci");
-  revalidatePath("/treninky");
-}
-
-export async function deletePlayer(playerId: string) {
-  const userId = await requireUserId();
-  await prisma.player.deleteMany({
-    where: { id: playerId, userId },
-  });
-  revalidatePath("/hraci");
-  revalidatePath("/treninky");
-  revalidatePath("/statistiky");
-  revalidatePath("/skupinove-platby");
+  await prisma.player.updateMany({ where: { id: playerId, userId }, data: { active } });
+  revalidatePlayerRelated();
 }
 
 export async function togglePlayerActive(playerId: string) {
@@ -138,4 +123,60 @@ export async function togglePlayerActive(playerId: string) {
   });
   if (!p) return;
   await setPlayerActive(playerId, !p.active);
+}
+
+export async function deletePlayer(playerId: string) {
+  const userId = await requireUserId();
+  await prisma.player.deleteMany({ where: { id: playerId, userId } });
+  revalidatePlayerRelated();
+}
+
+/** Hromadná akce nad vybranými hráči ze seznamu. */
+export async function bulkPlayerAction(formData: FormData) {
+  const userId = await requireUserId();
+  const action = String(formData.get("action") ?? "");
+  const ids = formData.getAll("playerIds").map(String).filter(Boolean);
+  if (ids.length === 0) return;
+
+  const owned = await prisma.player.findMany({
+    where: { id: { in: ids }, userId },
+    select: { id: true },
+  });
+  const ownedIds = owned.map((p) => p.id);
+  if (ownedIds.length === 0) return;
+
+  if (action === "activate" || action === "deactivate") {
+    await prisma.player.updateMany({
+      where: { id: { in: ownedIds }, userId },
+      data: { active: action === "activate" },
+    });
+  } else if (action === "prepaid" || action === "unprepaid") {
+    await prisma.player.updateMany({
+      where: { id: { in: ownedIds }, userId },
+      data: { prepaidSeason: action === "prepaid" },
+    });
+  } else if (action === "delete") {
+    await prisma.player.deleteMany({ where: { id: { in: ownedIds }, userId } });
+  }
+  revalidatePlayerRelated();
+}
+
+/** Zruší heslo k platebnímu odkazu — hráč si při dalším otevření nastaví nové. */
+export async function resetPlayerPassword(playerId: string) {
+  const userId = await requireUserId();
+  await prisma.player.updateMany({
+    where: { id: playerId, userId },
+    data: { passwordHash: null, passwordSetAt: null },
+  });
+  revalidatePath("/hraci");
+}
+
+/** Vygeneruje nový platební odkaz. Starý tím okamžitě přestane fungovat. */
+export async function regeneratePayToken(playerId: string) {
+  const userId = await requireUserId();
+  await prisma.player.updateMany({
+    where: { id: playerId, userId },
+    data: { payToken: newPayToken(), passwordHash: null, passwordSetAt: null },
+  });
+  revalidatePath("/hraci");
 }

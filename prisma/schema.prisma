@@ -12,12 +12,16 @@ enum AttendanceStatus {
   ABSENT
 }
 
-/** Skupiny pro filtrování — hráč může mít více záznamů. */
-enum PlayerGroup {
-  MEN
-  WOMEN
-  MIX
-  JUNIORS
+/**
+ * Účetní druh příjmu. Spolek má u každého jiný daňový režim, proto to
+ * evidujeme u zdroje — jinak se to při uzávěrce dohledává ručně z výpisu.
+ */
+enum IncomeKind {
+  MEMBERSHIP
+  TRAINING
+  EVENT
+  GOODS
+  OTHER
 }
 
 model User {
@@ -26,11 +30,38 @@ model User {
   passwordHash String
   name         String?
   bankIban     String?
+  /** Údaje spolku pro sestavy a doklady. */
+  clubName     String?
+  clubIco      String?
+  /** Jak se účetně chovají měsíční platby za tréninky. */
+  monthlyIncomeKind IncomeKind @default(TRAINING)
   createdAt    DateTime @default(now())
   players      Player[]
+  groups       Group[]
   trainings    Training[]
   sharedPayments SharedPayment[]
   monthlyPaymentMarks MonthlyPaymentMark[]
+  paymentBatches PaymentBatch[]
+}
+
+/**
+ * Kategorie hráčů. Dřív to byl pevný enum PlayerGroup, teď běžná data —
+ * trenér si je přidává, přejmenovává a maže sám.
+ */
+model Group {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#0ea5e9")
+  sortOrder Int      @default(0)
+  /** Není-li null, hráči v této kategorii platí tuto cenu za trénink místo běžné sazby. */
+  discountPriceCents Int?
+  createdAt DateTime @default(now())
+  members   PlayerGroupMembership[]
+
+  @@unique([userId, name])
+  @@index([userId])
 }
 
 model Player {
@@ -38,16 +69,59 @@ model Player {
   userId       String
   user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
+  /** Pořadové číslo hráče v klubu — základ variabilního symbolu. */
+  number       Int
   active       Boolean                    @default(true)
   /** Pravidelné úterý/čtvrtek s automatickou cenou se v měsíční platbě neúčtují (předplacená sezóna). */
   prepaidSeason Boolean                   @default(false)
+  /** Tajný token do veřejné adresy /p/<token>, kde hráč vidí své platby. */
+  payToken     String                     @unique
+  /** Heslo k platebnímu odkazu — hráč si ho nastaví při prvním otevření. */
+  passwordHash String?
+  passwordSetAt DateTime?
   createdAt    DateTime                   @default(now())
   attendances  Attendance[]
   sharedParts  SharedPaymentParticipant[]
   groupMembers PlayerGroupMembership[]
   monthlyPaymentMarks MonthlyPaymentMark[]
+  paymentBatches PaymentBatch[]
 
+  @@unique([userId, number])
   @@index([userId])
+}
+
+/**
+ * Souhrnná platba — hráč zaplatí víc položek jednou částkou.
+ * Rozpad v položkách je to, co z ní dělá doložitelný účetní záznam.
+ */
+model PaymentBatch {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  vs         String   @unique
+  totalCents Int
+  createdAt  DateTime @default(now())
+  paidAt     DateTime?
+  items      PaymentBatchItem[]
+
+  @@index([userId, createdAt])
+}
+
+model PaymentBatchItem {
+  id              String       @id @default(cuid())
+  batchId         String
+  batch           PaymentBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  kind            IncomeKind
+  label           String
+  amountCents     Int
+  /** Odkud položka pochází — měsíc tréninků, nebo konkrétní akce. */
+  year            Int?
+  month           Int?
+  sharedPaymentId String?
+
+  @@index([batchId])
 }
 
 /** Označení „platba za měsíc dorazila“ — jeden záznam na hráče a kalendářní měsíc. */
@@ -67,10 +141,12 @@ model MonthlyPaymentMark {
 
 model PlayerGroupMembership {
   playerId String
-  player   Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  group    PlayerGroup
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  groupId  String
+  group    Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  @@id([playerId, group])
+  @@id([playerId, groupId])
+  @@index([groupId])
 }
 
 model Training {
@@ -105,10 +181,15 @@ model SharedPayment {
   title            String
   description      String?
   totalAmountCents Int
+  /** Pořadové číslo akce v klubu — druhá část variabilního symbolu. */
+  number           Int
+  /** Účetní druh příjmu této akce — určuje, kam částka patří v uzávěrce. */
+  incomeKind       IncomeKind                 @default(EVENT)
   archived         Boolean                    @default(false)
   createdAt        DateTime                   @default(now())
   participants     SharedPaymentParticipant[]
 
+  @@unique([userId, number])
   @@index([userId, archived])
 }
 

@@ -4,13 +4,13 @@ import { setMonthlyPaymentMark } from "@/actions/monthly-payment";
 import { MonthlyPlayerQr } from "@/components/MonthlyPlayerQr";
 import { Panel } from "@/components/ui";
 import {
-  PRICE_JUNIOR_CENTS,
   PRICE_THURSDAY_CENTS,
   PRICE_TUESDAY_CENTS,
   formatMonthLabelCs,
 } from "@/lib/training-pricing";
 import { getMonthlyBillingRows, type MonthlyPlayerRow } from "@/lib/monthly-billing";
 import { formatCzkFromCents } from "@/lib/money";
+import { listGroups } from "@/lib/groups";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import {
@@ -80,6 +80,8 @@ export default async function PlatbaMesicPage({
     select: { bankIban: true },
   });
 
+  const groups = await listGroups(userId);
+  const zvyhodnene = groups.filter((g) => g.discountPriceCents != null);
   const rows = await getMonthlyBillingRows(userId, year, month);
   const label = formatMonthLabelCs(year, month);
 
@@ -120,9 +122,16 @@ export default async function PlatbaMesicPage({
         <p className="text-sm font-medium text-slate-800">{label}</p>
         <p className="mt-2 text-xs leading-relaxed text-slate-600">
           Automaticky: úterý {formatCzkFromCents(PRICE_TUESDAY_CENTS)}, čtvrtek{" "}
-          {formatCzkFromCents(PRICE_THURSDAY_CENTS)}, hráč s kategorií Junioři vždy{" "}
-          {formatCzkFromCents(PRICE_JUNIOR_CENTS)} za trénink. Výjimka je ručně zadaná
-          cena u jednorázového tréninku (junior stále {formatCzkFromCents(PRICE_JUNIOR_CENTS)}).
+          {formatCzkFromCents(PRICE_THURSDAY_CENTS)} za trénink.
+          {zvyhodnene.length > 0 && (
+            <>
+              {" "}Zvýhodněná sazba:{" "}
+              {zvyhodnene
+                .map((g) => `${g.name} ${formatCzkFromCents(g.discountPriceCents!)}`)
+                .join(", ")}
+              . Ta platí i u tréninku s ručně zadanou cenou.
+            </>
+          )}{" "}
           Hráči s předplacenou sezónou se v tomto přehledu vůbec nezobrazují (měsíční QR
           jen pro ostatní).
         </p>
