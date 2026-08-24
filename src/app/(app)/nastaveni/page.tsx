@@ -2,6 +2,7 @@ import { Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { updateSettings } from "@/actions/settings";
+import { ChangePasswordForm } from "./ChangePasswordForm";
 
 export default async function NastaveniPage() {
   const userId = await requireUserId();
@@ -41,6 +42,17 @@ export default async function NastaveniPage() {
             Uložit
           </button>
         </form>
+      </Panel>
+
+      <div>
+        <h2 className="text-lg font-semibold text-slate-800">Změna hesla</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Pro potvrzení zadejte stávající heslo. Nové heslo musí mít alespoň 8 znaků.
+        </p>
+      </div>
+
+      <Panel>
+        <ChangePasswordForm />
       </Panel>
     </div>
   );
