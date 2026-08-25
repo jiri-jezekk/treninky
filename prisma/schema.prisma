@@ -42,6 +42,8 @@ model User {
   sharedPayments SharedPayment[]
   monthlyPaymentMarks MonthlyPaymentMark[]
   paymentBatches PaymentBatch[]
+  seasons      Season[]
+  prepayments  Prepayment[]
 }
 
 /**
@@ -72,8 +74,6 @@ model Player {
   /** Pořadové číslo hráče v klubu — základ variabilního symbolu. */
   number       Int
   active       Boolean                    @default(true)
-  /** Pravidelné úterý/čtvrtek s automatickou cenou se v měsíční platbě neúčtují (předplacená sezóna). */
-  prepaidSeason Boolean                   @default(false)
   /** Tajný token do veřejné adresy /p/<token>, kde hráč vidí své platby. */
   payToken     String                     @unique
   /** Heslo k platebnímu odkazu — hráč si ho nastaví při prvním otevření. */
@@ -85,9 +85,68 @@ model Player {
   groupMembers PlayerGroupMembership[]
   monthlyPaymentMarks MonthlyPaymentMark[]
   paymentBatches PaymentBatch[]
+  prepayments  Prepayment[]
 
   @@unique([userId, number])
   @@index([userId])
+}
+
+/**
+ * Sezóna — číselník období, na která se předplácí. Existuje proto, aby se
+ * datum od–do zadávalo jednou a ne u každého hráče znovu.
+ */
+model Season {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  /** Pořadové číslo sezóny v klubu — poslední část variabilního symbolu předplatného. */
+  number    Int
+  /** Hranice včetně — trénink v tyhle dny už/ještě do sezóny patří. */
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  /** Nabízená cena předplatného; u hráče se dá přepsat. */
+  defaultPriceCents Int?
+  /** Účetní druh příjmu předplatného — kam částka patří v uzávěrce. */
+  incomeKind IncomeKind @default(TRAINING)
+  createdAt DateTime @default(now())
+  prepayments Prepayment[]
+
+  @@unique([userId, name])
+  @@unique([userId, number])
+  @@index([userId, startsOn])
+}
+
+/**
+ * Předplatné jednoho hráče na jedno období.
+ *
+ * Období je uložené u předplatného, ne u sezóny, schválně: hráč, který
+ * nastoupí v půlce roku, má vlastní datum od, a pozdější sezóna nikdy
+ * nepřepíše, co bylo předplacené dřív. Tréninky v období se hráči
+ * neúčtují do měsíční platby — místo nich platí tuhle jednu částku.
+ */
+model Prepayment {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  /** Null = období zadané ručně mimo číselník sezón. */
+  seasonId  String?
+  season    Season?  @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  /** 0 = jen vyjmutí z účtování, žádná platba se hráči nezobrazí. */
+  amountCents Int    @default(0)
+  vs        String   @unique
+  incomeKind IncomeKind @default(TRAINING)
+  note      String?
+  paidAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@unique([playerId, seasonId])
+  @@index([userId, startsOn])
+  @@index([playerId])
 }
 
 /**
@@ -116,10 +175,11 @@ model PaymentBatchItem {
   kind            IncomeKind
   label           String
   amountCents     Int
-  /** Odkud položka pochází — měsíc tréninků, nebo konkrétní akce. */
+  /** Odkud položka pochází — měsíc tréninků, akce, nebo předplacené období. */
   year            Int?
   month           Int?
   sharedPaymentId String?
+  prepaymentId    String?
 
   @@index([batchId])
 }

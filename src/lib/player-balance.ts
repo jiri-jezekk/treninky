@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { splitChargesByMonth } from "@/lib/billing-math";
+import { formatRangeCs, type PrepaidRange } from "@/lib/prepaid";
 import {
   discountPriceCentsFor,
   formatMonthLabelCs,
-  priceCentsForTrainingSession,
 } from "@/lib/training-pricing";
 import {
   variableSymbolEvent,
@@ -23,7 +24,7 @@ export const INCOME_KIND_LABELS: Record<IncomeKind, string> = {
 export type BalanceItem = {
   /** Stabilní klíč pro React i pro výběr položek do souhrnné platby. */
   key: string;
-  kind: "monthly" | "event";
+  kind: "monthly" | "event" | "prepaid";
   label: string;
   meta: string;
   amountCents: number;
@@ -35,6 +36,7 @@ export type BalanceItem = {
   year?: number;
   month?: number;
   sharedPaymentId?: string;
+  prepaymentId?: string;
 };
 
 export type PlayerBalance = {
@@ -51,16 +53,15 @@ type PlayerForBalance = {
   name: string;
   number: number;
   active: boolean;
-  prepaidSeason: boolean;
   groupMembers: { group: { discountPriceCents: number | null } }[];
 };
 
 /**
- * Co hráč dluží — měsíční tréninky i jednorázové akce dohromady.
+ * Co hráč dluží — měsíční tréninky, předplatné i jednorázové akce dohromady.
  *
- * Předplacená sezóna vyřazuje z měsíčního účtování úplně, stejně jako
- * dosud. Neaktivní hráč se neúčtuje také. Akcí se to netýká — ty se platí
- * bez ohledu na to.
+ * Trénink spadající do předplaceného období se do měsíční platby nepočítá;
+ * místo něj je v seznamu samotné předplatné jako jedna položka. Neaktivní
+ * hráč se měsíčně neúčtuje. Akcí se to netýká — ty se platí bez ohledu na to.
  */
 export async function getPlayerBalance(
   userId: string,
@@ -75,7 +76,6 @@ export async function getPlayerBalance(
       name: true,
       number: true,
       active: true,
-      prepaidSeason: true,
       groupMembers: { select: { group: { select: { discountPriceCents: true } } } },
     },
   });
@@ -113,9 +113,38 @@ async function buildItems(
   const items: BalanceItem[] = [];
   const discount = discountPriceCentsFor(player.groupMembers.map((m) => m.group));
 
+  // --- předplacená období ---
+  const prepayments = await prisma.prepayment.findMany({
+    where: { userId, playerId: player.id },
+    include: { season: { select: { name: true } } },
+    orderBy: { startsOn: "asc" },
+  });
+
+  const ranges: PrepaidRange[] = prepayments.map((p) => ({
+    startsOn: p.startsOn,
+    endsOn: p.endsOn,
+  }));
+
+  for (const p of prepayments) {
+    // Nulové předplatné je jen vyjmutí z účtování, ne platba k úhradě.
+    if (p.amountCents <= 0) continue;
+    items.push({
+      key: `p-${p.id}`,
+      kind: "prepaid",
+      label: p.season?.name ?? "Předplatné",
+      meta: formatRangeCs({ startsOn: p.startsOn, endsOn: p.endsOn }),
+      amountCents: p.amountCents,
+      variableSymbol: p.vs,
+      incomeKind: p.incomeKind as IncomeKind,
+      paid: p.paidAt != null,
+      // Řadí se podle začátku období, aby stálo mezi měsíci na svém místě.
+      sortKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
+      prepaymentId: p.id,
+    });
+  }
+
   // --- měsíční tréninky ---
-  const billMonthly = player.active && !player.prepaidSeason;
-  if (billMonthly) {
+  if (player.active) {
     const [attendances, marks] = await Promise.all([
       prisma.attendance.findMany({
         where: {
@@ -132,24 +161,13 @@ async function buildItems(
     ]);
 
     const paidMonths = new Set(marks.map((m) => `${m.year}-${m.month}`));
-    const perMonth = new Map<string, { year: number; month: number; cents: number; count: number }>();
+    const split = splitChargesByMonth(
+      attendances.map((a) => a.training),
+      ranges,
+      discount,
+    );
 
-    for (const a of attendances) {
-      const d = a.training.startsAt;
-      const year = d.getFullYear();
-      const month = d.getMonth() + 1;
-      const key = `${year}-${month}`;
-      const cents = priceCentsForTrainingSession(a.training, discount);
-      const row = perMonth.get(key);
-      if (row) {
-        row.cents += cents;
-        row.count += 1;
-      } else {
-        perMonth.set(key, { year, month, cents, count: 1 });
-      }
-    }
-
-    for (const { year, month, cents, count } of perMonth.values()) {
+    for (const { year, month, cents, count } of split.months) {
       if (cents <= 0) continue;
       items.push({
         key: `m-${year}-${month}`,

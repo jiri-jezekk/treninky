@@ -8,6 +8,7 @@ import {
   variableSymbolBatch,
   variableSymbolEvent,
   variableSymbolMonthly,
+  variableSymbolPrepayment,
 } from "../src/lib/variable-symbol.ts";
 
 let failures = 0;
@@ -24,6 +25,7 @@ console.log("Ukázkové symboly:");
 console.log("  hráč 1, srpen 2026  ->", variableSymbolMonthly(1, 2026, 8));
 console.log("  hráč 19, akce 3     ->", variableSymbolEvent(19, 3));
 console.log("  hráč 7, souhrn 1    ->", variableSymbolBatch(7, 1));
+console.log("  hráč 5, předplatné 1 ->", variableSymbolPrepayment(5, 1));
 
 console.log("\nKontroly:");
 
@@ -37,16 +39,23 @@ for (let player = 1; player <= 9999; player += 7) {
   }
   for (let ev = 1; ev <= 20; ev++) all.add(variableSymbolEvent(player, ev));
   for (let b = 1; b <= 5; b++) all.add(variableSymbolBatch(player, b));
+  for (let s = 1; s <= 3; s++) all.add(variableSymbolPrepayment(player, s));
 }
 check("žádný symbol nepřesáhl 10 číslic", tooLong === 0, `(${tooLong} delších)`);
 
-const expected = Math.ceil(9999 / 7) * (12 + 20 + 5);
+const expected = Math.ceil(9999 / 7) * (12 + 20 + 5 + 3);
 check("všechny symboly jedinečné", all.size === expected, `(${all.size} z ${expected})`);
 
 // Různé druhy se nesmí potkat ani při stejném hráči a stejných číslech.
 check(
   "druhy se nekříží",
   variableSymbolEvent(12, 8) !== variableSymbolBatch(12, 8),
+);
+// Předplatné je o číslici kratší než akce — nesmí splynout s jejím prefixem.
+check(
+  "předplatné se nepotká s akcí ani souhrnnou",
+  variableSymbolPrepayment(12, 8) !== variableSymbolEvent(12, 8) &&
+    variableSymbolPrepayment(12, 8) !== variableSymbolBatch(12, 8),
 );
 
 // Zpětné čtení
@@ -69,6 +78,13 @@ check(
   "souhrnná se přečte zpět",
   b?.kind === "batch" && b.playerNumber === 300 && b.sequence === 12,
   JSON.stringify(b),
+);
+
+const pp = parseVariableSymbol(variableSymbolPrepayment(88, 2));
+check(
+  "předplatné se přečte zpět",
+  pp?.kind === "prepaid" && pp.playerNumber === 88 && pp.sequence === 2,
+  JSON.stringify(pp),
 );
 
 check("cizí symbol vrátí null", parseVariableSymbol("9876543210") === null);

@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { AttendanceToggle } from "@/components/AttendanceToggle";
 import { GroupFilterNav } from "@/components/GroupFilterNav";
 import { listGroups, parseGroupFilter } from "@/lib/groups";
+import { getPrepaidRangesByPlayer } from "@/lib/monthly-billing";
+import { isPrepaidOn } from "@/lib/prepaid";
 import { formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
 import { formatCzkFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
@@ -37,7 +39,7 @@ export default async function TrainingDetailPage({
   const groups = await listGroups(userId);
   const skupina = parseGroupFilter(sp.skupina, groups);
 
-  const [players, totalActive] = await Promise.all([
+  const [players, totalActive, prepaidByPlayer] = await Promise.all([
     prisma.player.findMany({
       where: {
         userId,
@@ -51,20 +53,26 @@ export default async function TrainingDetailPage({
       },
     }),
     prisma.player.count({ where: { userId, active: true } }),
+    getPrepaidRangesByPlayer(userId),
   ]);
 
   const rows = players.map((p) => {
     const present = p.attendances[0]?.status === "PRESENT";
     const discount = discountPriceCentsFor(p.groupMembers.map((m) => m.group));
-    // Předplacená sezóna se v měsíční platbě neúčtuje vůbec.
-    const chargeCents = p.prepaidSeason
+    // Rozhoduje datum tohohle tréninku, ne přepínač u hráče: kdo má
+    // předplacenou jinou sezónu, platí tenhle trénink normálně.
+    const prepaid = isPrepaidOn(
+      prepaidByPlayer.get(String(p.id)) ?? [],
+      training.startsAt,
+    );
+    const chargeCents = prepaid
       ? 0
       : priceCentsForTrainingSession(training, discount);
     return {
       id: p.id,
       name: p.name,
       present,
-      prepaid: p.prepaidSeason,
+      prepaid,
       chargeCents,
       discount,
       groupNames: p.groupMembers.map((m) => m.group.name),
@@ -151,8 +159,11 @@ export default async function TrainingDetailPage({
           <Link href="/platby?zalozka=mesicni" className="underline">
             Platbách
           </Link>
-          . Kdo má u sebe zaškrtnuté <b className="text-slate-700">Předplaceno</b>,
-          tomu se nepřičítá nic.
+          . Kdo má tenhle den v{" "}
+          <Link href="/platby/predplatne" className="underline">
+            předplaceném období
+          </Link>
+          , tomu se nepřičítá nic.
         </p>
       </div>
 

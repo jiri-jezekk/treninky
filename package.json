@@ -10,6 +10,8 @@
     "check:fields": "node --experimental-strip-types scripts/check-required-fields.ts",
     "check:vs": "node --experimental-strip-types scripts/test-variable-symbol.ts",
     "check:pricing": "node --experimental-strip-types scripts/test-pricing.ts",
+    "check:prepaid": "node --experimental-strip-types scripts/test-prepaid.ts",
+    "check:billing": "node --experimental-strip-types scripts/test-billing.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",

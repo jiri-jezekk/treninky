@@ -43,7 +43,6 @@ export async function createPlayer(formData: FormData) {
   if (!parsed.success) throw new Error(parsed.error.flatten().formErrors.join(", "));
 
   const groupIds = await sanitizeGroupIds(userId, groupIdsFromForm(formData, "skupiny"));
-  const prepaidSeason = formData.get("prepaidSeason") === "on";
 
   await prisma.player.create({
     data: {
@@ -51,7 +50,6 @@ export async function createPlayer(formData: FormData) {
       name: parsed.data.name.trim(),
       number: await nextPlayerNumber(userId),
       payToken: newPayToken(),
-      prepaidSeason,
       ...(groupIds.length > 0 && {
         groupMembers: { create: groupIds.map((groupId) => ({ groupId })) },
       }),
@@ -60,12 +58,7 @@ export async function createPlayer(formData: FormData) {
   revalidatePlayerRelated();
 }
 
-async function applyPlayerGroupsAndPrepaid(
-  userId: string,
-  playerId: string,
-  groupIds: string[],
-  prepaidSeason: boolean,
-) {
+async function applyPlayerGroups(playerId: string, groupIds: string[]) {
   await prisma.$transaction(async (tx) => {
     await tx.playerGroupMembership.deleteMany({ where: { playerId } });
     if (groupIds.length > 0) {
@@ -73,14 +66,14 @@ async function applyPlayerGroupsAndPrepaid(
         data: groupIds.map((groupId) => ({ playerId, groupId })),
       });
     }
-    await tx.player.updateMany({
-      where: { id: playerId, userId },
-      data: { prepaidSeason },
-    });
   });
 }
 
-/** Uloží jméno, kategorie, aktivitu a předplacení jednoho hráče (panel detailu). */
+/**
+ * Uloží jméno, kategorie a aktivitu jednoho hráče (panel detailu).
+ * Předplatné se sem nevešlo — má vlastní období a spravuje se
+ * v Platby → Předplatné.
+ */
 export async function savePlayer(playerId: string, formData: FormData) {
   const userId = await requireUserId();
   const owned = await prisma.player.findFirst({
@@ -98,8 +91,7 @@ export async function savePlayer(playerId: string, formData: FormData) {
   }
 
   const groupIds = await sanitizeGroupIds(userId, groupIdsFromForm(formData, "skupiny"));
-  const prepaidSeason = formData.get("prepaidSeason") === "on";
-  await applyPlayerGroupsAndPrepaid(userId, playerId, groupIds, prepaidSeason);
+  await applyPlayerGroups(playerId, groupIds);
 
   await prisma.player.updateMany({
     where: { id: playerId, userId },
@@ -149,11 +141,6 @@ export async function bulkPlayerAction(formData: FormData) {
     await prisma.player.updateMany({
       where: { id: { in: ownedIds }, userId },
       data: { active: action === "activate" },
-    });
-  } else if (action === "prepaid" || action === "unprepaid") {
-    await prisma.player.updateMany({
-      where: { id: { in: ownedIds }, userId },
-      data: { prepaidSeason: action === "prepaid" },
     });
   } else if (action === "delete") {
     await prisma.player.deleteMany({ where: { id: { in: ownedIds }, userId } });

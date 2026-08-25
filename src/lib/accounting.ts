@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { IncomeKind } from "@/lib/player-balance";
+import { formatRangeCs, isPrepaidOn, type PrepaidRange } from "@/lib/prepaid";
 import {
   discountPriceCentsFor,
   priceCentsForTrainingSession,
@@ -70,7 +71,7 @@ export async function getAccountingSummary(
   const from = new Date(year, 0, 1, 0, 0, 0, 0);
   const to = new Date(year, 11, 31, 23, 59, 59, 999);
 
-  const [user, marks, parts, players, attendances, rawBatches] = await Promise.all([
+  const [user, marks, parts, players, attendances, rawBatches, prepayments] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { monthlyIncomeKind: true },
@@ -108,6 +109,15 @@ export async function getAccountingSummary(
         player: { select: { name: true } },
       },
     }),
+    // Všechna předplatná, ne jen letošní: starší období ovlivňují, které
+    // tréninky se mají počítat do dopočtu měsíčních částek.
+    prisma.prepayment.findMany({
+      where: { userId },
+      include: {
+        player: { select: { name: true, number: true } },
+        season: { select: { name: true } },
+      },
+    }),
   ]);
 
   const monthlyKind = user.monthlyIncomeKind as IncomeKind;
@@ -119,10 +129,23 @@ export async function getAccountingSummary(
     ]),
   );
 
+  const prepaidByPlayer = new Map<string, PrepaidRange[]>();
+  for (const p of prepayments) {
+    const key = String(p.playerId);
+    const range: PrepaidRange = { startsOn: p.startsOn, endsOn: p.endsOn };
+    const list = prepaidByPlayer.get(key);
+    if (list) list.push(range);
+    else prepaidByPlayer.set(key, [range]);
+  }
+
   // Kolik dělal který hráč v kterém měsíci — potřeba k dopočtu částky
   // u označené měsíční platby, protože ta se v databázi neukládá.
+  // Tréninky krytého období se vynechávají, jinak by se příjem započetl
+  // dvakrát: jednou v předplatném a podruhé v měsíci.
   const owedByPlayerMonth = new Map<string, number>();
   for (const a of attendances) {
+    const ranges = prepaidByPlayer.get(String(a.playerId)) ?? [];
+    if (isPrepaidOn(ranges, a.training.startsAt)) continue;
     const d = a.training.startsAt;
     const key = `${a.playerId}|${d.getFullYear()}|${d.getMonth() + 1}`;
     const cents = priceCentsForTrainingSession(
@@ -133,6 +156,20 @@ export async function getAccountingSummary(
   }
 
   const entries: AccountingEntry[] = [];
+
+  for (const p of prepayments) {
+    if (!p.paidAt || p.amountCents <= 0) continue;
+    if (p.paidAt < from || p.paidAt > to) continue;
+    entries.push({
+      paidAt: p.paidAt,
+      playerName: p.player.name,
+      playerNumber: p.player.number,
+      label: `${p.season?.name ?? "Předplatné"} (${formatRangeCs({ startsOn: p.startsOn, endsOn: p.endsOn })})`,
+      kind: p.incomeKind as IncomeKind,
+      amountCents: p.amountCents,
+      variableSymbol: p.vs,
+    });
+  }
 
   for (const m of marks) {
     const amount = owedByPlayerMonth.get(`${m.playerId}|${m.year}|${m.month}`) ?? 0;

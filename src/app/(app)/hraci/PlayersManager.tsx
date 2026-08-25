@@ -17,10 +17,11 @@ export type PlayerRow = {
   name: string;
   number: number;
   active: boolean;
-  prepaidSeason: boolean;
   payToken: string;
   hasPassword: boolean;
   groupIds: string[];
+  /** Předplacená období hráče; `current` platí k dnešku. */
+  prepaid: { label: string; current: boolean }[];
 };
 
 type StatusFilter = "all" | "active" | "inactive";
@@ -71,7 +72,7 @@ export function PlayersManager({
   }, [players, query, status, catFilter]);
 
   const activeCount = players.filter((p) => p.active).length;
-  const prepaidCount = players.filter((p) => p.prepaidSeason).length;
+  const prepaidCount = players.filter((p) => p.prepaid.some((r) => r.current)).length;
   const allVisibleSelected =
     visible.length > 0 && visible.every((p) => selected.has(p.id));
 
@@ -132,7 +133,7 @@ export function PlayersManager({
         <Stat title="Na soupisce" value={String(players.length)} />
         <Stat title="Aktivních" value={String(activeCount)} note={`z ${players.length}`} accent />
         <Stat title="Kategorií" value={String(groups.length)} />
-        <Stat title="Předplaceno" value={String(prepaidCount)} />
+        <Stat title="Předplaceno teď" value={String(prepaidCount)} />
       </dl>
 
       {/* filtry */}
@@ -286,11 +287,7 @@ export function PlayersManager({
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {p.prepaidSeason ? (
-                        <Badge tone="warn">Předplaceno</Badge>
-                      ) : (
-                        <Badge tone="off">Měsíčně</Badge>
-                      )}
+                      <PrepaidCell prepaid={p.prepaid} />
                     </td>
                     <td className="px-4 py-3">
                       <button type="button" className={mini} onClick={() => copyLink(p)}>
@@ -334,7 +331,9 @@ export function PlayersManager({
                 </span>
                 <span className="mt-2 flex flex-wrap gap-1.5">
                   <Tags ids={p.groupIds} groupById={groupById} />
-                  {p.prepaidSeason && <Badge tone="warn">Předplaceno</Badge>}
+                  {p.prepaid.some((r) => r.current) && (
+                    <Badge tone="warn">Předplaceno</Badge>
+                  )}
                 </span>
               </span>
             </button>
@@ -371,7 +370,6 @@ export function PlayersManager({
             </span>
             <BulkButton value="activate">Aktivovat</BulkButton>
             <BulkButton value="deactivate">Deaktivovat</BulkButton>
-            <BulkButton value="prepaid">Předplaceno</BulkButton>
             <BulkButton value="delete" danger>
               Smazat
             </BulkButton>
@@ -467,12 +465,38 @@ export function PlayersManager({
                     title="Aktivní hráč"
                     note="Neaktivní se nenabízí u nových tréninků ani ve vyúčtování."
                   />
-                  <Switch
-                    name="prepaidSeason"
-                    defaultChecked={editing.prepaidSeason}
-                    title="Předplacená sezóna"
-                    note="Nezobrazuje se v měsíční platbě — má zaplaceno dopředu."
-                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <span className={label}>Předplacená období</span>
+                  {editing.prepaid.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Hráč nemá žádné předplatné — platí měsíčně podle docházky.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-1.5">
+                      {editing.prepaid.map((r) => (
+                        <li key={r.label} className="flex items-start gap-2 text-xs">
+                          <span
+                            aria-hidden
+                            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                              r.current ? "bg-emerald-600" : "bg-slate-300"
+                            }`}
+                          />
+                          <span className={r.current ? "text-slate-700" : "text-slate-500"}>
+                            {r.label}
+                            {r.current && " · platí teď"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <a
+                    href="/platby/predplatne"
+                    className="mt-3 inline-block text-xs text-club underline underline-offset-4"
+                  >
+                    Spravovat předplatné →
+                  </a>
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -590,11 +614,10 @@ export function PlayersManager({
                   ))}
                 </div>
               </div>
-              <Switch
-                name="prepaidSeason"
-                title="Předplacená sezóna"
-                note="Nezobrazuje se v měsíční platbě."
-              />
+              <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                Předplacenou sezónu přidáš hráči až potom, v Platby →
+                Předplatné — má vlastní období od–do.
+              </p>
             </div>
             <footer className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
@@ -711,6 +734,36 @@ function Badge({
       className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${cls}`}
     >
       {children}
+    </span>
+  );
+}
+
+/**
+ * Předplaceno v seznamu. Ukazuje stav k dnešku — hráč s loňským
+ * předplatným tu má zase „Měsíčně“, protože letos platí za docházku.
+ */
+function PrepaidCell({
+  prepaid,
+}: {
+  prepaid: { label: string; current: boolean }[];
+}) {
+  const now = prepaid.find((r) => r.current);
+  if (!now) {
+    return (
+      <span className="flex flex-col gap-1">
+        <Badge tone="off">Měsíčně</Badge>
+        {prepaid.length > 0 && (
+          <span className="text-[11px] text-slate-500">
+            dřív předplaceno ({prepaid.length}×)
+          </span>
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-col gap-1">
+      <Badge tone="warn">Předplaceno</Badge>
+      <span className="text-[11px] text-slate-500">{now.label}</span>
     </span>
   );
 }

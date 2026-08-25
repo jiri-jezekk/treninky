@@ -53,6 +53,7 @@ export async function markPlayerAllPaid(playerId: string) {
 
   const months = balance.unpaid.filter((i) => i.kind === "monthly");
   const events = balance.unpaid.filter((i) => i.kind === "event");
+  const prepaid = balance.unpaid.filter((i) => i.kind === "prepaid");
 
   await prisma.$transaction(async (tx) => {
     for (const m of months) {
@@ -74,6 +75,15 @@ export async function markPlayerAllPaid(playerId: string) {
       if (!e.sharedPaymentId) continue;
       await tx.sharedPaymentParticipant.updateMany({
         where: { sharedPaymentId: e.sharedPaymentId, playerId },
+        data: { paidAt: new Date() },
+      });
+    }
+    // Předplatné patří do „vše zaplaceno“ stejně jako měsíce a akce —
+    // jinak by zůstalo viset nezaplacené, ačkoli přehled hlásí vyrovnáno.
+    for (const p of prepaid) {
+      if (!p.prepaymentId) continue;
+      await tx.prepayment.updateMany({
+        where: { id: p.prepaymentId, userId },
         data: { paidAt: new Date() },
       });
     }

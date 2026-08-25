@@ -7,6 +7,7 @@
  *   měsíční tréninky   1 + číslo hráče (4) + rok (2) + měsíc (2)   → 9 číslic
  *   jednorázová akce   2 + číslo hráče (4) + číslo akce (3)        → 8 číslic
  *   souhrnná platba    3 + číslo hráče (4) + pořadí (3)            → 8 číslic
+ *   předplatné sezóny  4 + číslo hráče (4) + pořadí (2)            → 7 číslic
  *
  * První číslice říká druh, takže se symboly nikdy nepotkají.
  */
@@ -14,6 +15,7 @@
 export const VS_KIND_MONTHLY = "1";
 export const VS_KIND_EVENT = "2";
 export const VS_KIND_BATCH = "3";
+export const VS_KIND_PREPAID = "4";
 
 const MAX_PLAYER_NUMBER = 9999;
 const MAX_SEQUENCE = 999;
@@ -56,10 +58,24 @@ export function variableSymbolBatch(
   return VS_KIND_BATCH + pad(playerNumber, 4) + pad(sequence, 3);
 }
 
+/**
+ * Předplatné se neváže na měsíc ani na akci, proto jen pořadí u hráče.
+ * Dvě místa stačí — víc než 99 předplatných hráč za život neudělá.
+ */
+export function variableSymbolPrepayment(
+  playerNumber: number,
+  sequence: number,
+): string {
+  assertRange(playerNumber, MAX_PLAYER_NUMBER, "Číslo hráče");
+  assertRange(sequence, 99, "Pořadí předplatného");
+  return VS_KIND_PREPAID + pad(playerNumber, 4) + pad(sequence, 2);
+}
+
 export type ParsedVariableSymbol =
   | { kind: "monthly"; playerNumber: number; year2: number; month: number }
   | { kind: "event"; playerNumber: number; eventNumber: number }
-  | { kind: "batch"; playerNumber: number; sequence: number };
+  | { kind: "batch"; playerNumber: number; sequence: number }
+  | { kind: "prepaid"; playerNumber: number; sequence: number };
 
 /**
  * Zpětné čtení symbolu z bankovního výpisu. Vrací null, když symbol
@@ -91,6 +107,13 @@ export function parseVariableSymbol(raw: string): ParsedVariableSymbol | null {
       kind: "batch",
       playerNumber: Number(vs.slice(1, 5)),
       sequence: Number(vs.slice(5, 8)),
+    };
+  }
+  if (vs.length === 7 && vs[0] === VS_KIND_PREPAID) {
+    return {
+      kind: "prepaid",
+      playerNumber: Number(vs.slice(1, 5)),
+      sequence: Number(vs.slice(5, 7)),
     };
   }
   return null;

@@ -12,7 +12,7 @@ export type DebtItem = {
   key: string;
   label: string;
   amountCents: number;
-  kind: "monthly" | "event";
+  kind: "monthly" | "event" | "prepaid";
   sortKey: number;
   year?: number;
   month?: number;
@@ -145,6 +145,9 @@ export function PaymentsView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/platby/predplatne" className={btnOutline}>
+            Předplatné
+          </Link>
           <Link href="/platby/ucetnictvi" className={btnOutline}>
             Pro účetní
           </Link>

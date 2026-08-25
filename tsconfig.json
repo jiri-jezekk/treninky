@@ -11,6 +11,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Kvůli src/lib/billing-math.ts: ten se importuje i z kontrolního
+    // skriptu mimo Next.js, kde alias @/ neexistuje a Node chce příponu.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

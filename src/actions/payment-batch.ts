@@ -17,15 +17,24 @@ function signature(items: { key: string; amountCents: number }[]): string {
     .join("|");
 }
 
+/** Musí vracet stejné klíče jako `BalanceItem.key`, jinak se otisk nesejde. */
 function signatureOfStored(
-  items: { year: number | null; month: number | null; sharedPaymentId: string | null; amountCents: number }[],
+  items: {
+    year: number | null;
+    month: number | null;
+    sharedPaymentId: string | null;
+    prepaymentId: string | null;
+    amountCents: number;
+  }[],
 ): string {
   return items
     .map((i) => {
       const key =
-        i.sharedPaymentId != null
-          ? `e-${i.sharedPaymentId}`
-          : `m-${i.year}-${i.month}`;
+        i.prepaymentId != null
+          ? `p-${i.prepaymentId}`
+          : i.sharedPaymentId != null
+            ? `e-${i.sharedPaymentId}`
+            : `m-${i.year}-${i.month}`;
       return `${key}:${i.amountCents}`;
     })
     .sort()
@@ -98,6 +107,7 @@ export async function ensurePaymentBatch(payToken: string): Promise<BatchResult>
           year: i.year ?? null,
           month: i.month ?? null,
           sharedPaymentId: i.sharedPaymentId ?? null,
+          prepaymentId: i.prepaymentId ?? null,
         })),
       },
     },
