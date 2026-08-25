@@ -5,9 +5,8 @@ const links = [
   { href: "/prehled", label: "Přehled" },
   { href: "/hraci", label: "Hráči" },
   { href: "/treninky", label: "Tréninky" },
-  { href: "/platba", label: "Měsíční platba" },
+  { href: "/platby", label: "Platby" },
   { href: "/statistiky", label: "Statistiky" },
-  { href: "/skupinove-platby", label: "Skupinové platby" },
   { href: "/nastaveni", label: "Nastavení" },
 ];
 

@@ -65,6 +65,8 @@ type PlayerForBalance = {
 export async function getPlayerBalance(
   userId: string,
   playerId: string,
+  /** Předané, když se počítá víc hráčů najednou — ušetří dotaz na uživatele. */
+  monthlyIncomeKind?: IncomeKind,
 ): Promise<PlayerBalance | null> {
   const player = await prisma.player.findFirst({
     where: { id: playerId, userId },
@@ -79,14 +81,16 @@ export async function getPlayerBalance(
   });
   if (!player) return null;
 
-  const user = await prisma.user.findUniqueOrThrow({
-    where: { id: userId },
-    select: { monthlyIncomeKind: true },
-  });
+  const kind =
+    monthlyIncomeKind ??
+    ((
+      await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { monthlyIncomeKind: true },
+      })
+    ).monthlyIncomeKind as IncomeKind);
 
-  const [items] = await Promise.all([
-    buildItems(userId, player, user.monthlyIncomeKind as IncomeKind),
-  ]);
+  const items = await buildItems(userId, player, kind);
 
   const unpaid = items.filter((i) => !i.paid).sort((a, b) => a.sortKey - b.sortKey);
   const paid = items.filter((i) => i.paid).sort((a, b) => b.sortKey - a.sortKey);
@@ -197,14 +201,21 @@ function czTrainings(n: number): string {
 
 /** Přehled dlužníků pro trenéra — všichni, kdo něco dluží, od největšího dluhu. */
 export async function getDebtors(userId: string): Promise<PlayerBalance[]> {
-  const players = await prisma.player.findMany({
-    where: { userId },
-    select: { id: true },
-    orderBy: { name: "asc" },
-  });
+  const [players, user] = await Promise.all([
+    prisma.player.findMany({
+      where: { userId },
+      select: { id: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { monthlyIncomeKind: true },
+    }),
+  ]);
 
+  const kind = user.monthlyIncomeKind as IncomeKind;
   const balances = await Promise.all(
-    players.map((p) => getPlayerBalance(userId, p.id)),
+    players.map((p) => getPlayerBalance(userId, p.id, kind)),
   );
 
   return balances
