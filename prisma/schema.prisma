@@ -4,7 +4,13 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Běh aplikace jde přes Neon pooler — krátkých spojení je hodně.
   url      = env("DATABASE_URL")
+  // Migrace musí jít napřímo. Pooler pracuje po transakcích a zámek,
+  // kterým se Prisma jistí proti dvěma migracím naráz, mu propadne —
+  // deploy pak spadne na P1002 „timed out acquiring advisory lock“.
+  // Stejná adresa bez „-pooler“.
+  directUrl = env("DIRECT_URL")
 }
 
 enum AttendanceStatus {
