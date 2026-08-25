@@ -9,7 +9,12 @@ import type { IncomeKind } from "@/lib/player-balance";
 
 const INCOME_KINDS = ["MEMBERSHIP", "TRAINING", "EVENT", "GOODS", "OTHER"] as const;
 
-function parseIncomeKind(raw: FormDataEntryValue | null): IncomeKind {
+/**
+ * Vstup je `unknown` schválně: sem chodí jednou hodnota z formuláře,
+ * podruhé výchozí druh ze sezóny (a ten může být undefined). Užší typ
+ * by na tomhle rozdílu spadl až při buildu na Vercelu.
+ */
+function parseIncomeKind(raw: unknown): IncomeKind {
   const value = String(raw ?? "");
   return (INCOME_KINDS as readonly string[]).includes(value)
     ? (value as IncomeKind)
@@ -17,7 +22,7 @@ function parseIncomeKind(raw: FormDataEntryValue | null): IncomeKind {
 }
 
 /** Kč z formuláře na haléře. Prázdné pole i nesmysl znamenají nulu. */
-function parseAmountCents(raw: FormDataEntryValue | null): number {
+function parseAmountCents(raw: unknown): number {
   const value = String(raw ?? "").replace(/\s/g, "").replace(",", ".");
   if (value === "") return 0;
   const kc = Number(value);

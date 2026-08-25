@@ -1,0 +1,24 @@
+{
+  // Místní kontrola typů proti náhradním typům Prisma klienta.
+  //
+  // V prostředí, kde tenhle kód vzniká, se `prisma generate` nedá spustit
+  // (engines se nestáhnou), takže `@prisma/client` nemá typy a všechno
+  // z databáze je `any`. Tsc pak mlčí a chyba se ukáže až při buildu.
+  // types/prisma-stub.d.ts ty typy dodá; vzniká z schema.prisma přes
+  // `npm run gen:prisma-stub`.
+  //
+  // Do buildu tenhle soubor nevstupuje — Next si bere tsconfig.json
+  // a tam běží skutečný vygenerovaný klient.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": []
+  },
+  "include": [
+    "types/prisma-stub.d.ts",
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": ["node_modules", "scripts", ".next"]
+}

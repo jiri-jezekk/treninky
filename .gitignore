@@ -46,3 +46,8 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# náhradní typy Prisma klienta pro místní kontrolu (npm run check:types)
+# ZÁMĚRNĚ se necommitují: obsahují `declare module "@prisma/client"`, který
+# by při buildu přebil skutečného vygenerovaného klienta.
+/types/prisma-stub.d.ts
