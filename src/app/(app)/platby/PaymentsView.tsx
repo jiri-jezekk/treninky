@@ -156,7 +156,7 @@ export function PaymentsView({
           >
             Výzvy všem dlužníkům
           </button>
-          <Link href="/skupinove-platby" className={btnPrimary}>
+          <Link href="/platby/akce/nova" className={btnPrimary}>
             + Nová akce
           </Link>
         </div>
@@ -375,7 +375,7 @@ export function PaymentsView({
               return (
                 <Link
                   key={e.id}
-                  href={`/skupinove-platby/${e.id}`}
+                  href={`/platby/akce/${e.id}`}
                   className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-club-line"
                 >
                   <div>

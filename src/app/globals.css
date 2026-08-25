@@ -121,6 +121,13 @@ html {
     color: #64748b;
   }
 
+  /* Rozbalený seznam kreslí operační systém — bez vlastního pozadí by
+     na tmavém motivu vyšel bílý text na bílé. */
+  select option {
+    background-color: #0f172a;
+    color: #f1f5f9;
+  }
+
   /* Nativní zaškrtávátko se na tmavém podkladu kreslí jako bílý čtverec
      a bije do očí, proto si ho kreslíme sami. */
   input[type="checkbox"] {

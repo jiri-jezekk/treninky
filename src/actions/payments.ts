@@ -80,5 +80,4 @@ export async function markPlayerAllPaid(playerId: string) {
   });
 
   revalidatePayments();
-  revalidatePath("/skupinove-platby");
 }

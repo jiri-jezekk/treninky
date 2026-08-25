@@ -137,7 +137,7 @@ export async function deleteTraining(trainingId: string) {
   });
   revalidatePath("/treninky");
   revalidatePath("/statistiky");
-  revalidatePath("/platba");
+  revalidatePath("/platby");
 }
 
 /** Zaškrtnuté řádky: `trainingIds` (více stejného jména). */
@@ -153,7 +153,7 @@ export async function bulkDeleteTrainings(formData: FormData) {
   });
   revalidatePath("/treninky");
   revalidatePath("/statistiky");
-  revalidatePath("/platba");
+  revalidatePath("/platby");
 }
 
 /** Hromadně přítomen / nepřítomen pro hráče v `playerIds` (formulář z detailu tréninku). */
@@ -197,7 +197,7 @@ export async function setAttendanceBulkForTraining(formData: FormData) {
   revalidatePath(`/treninky/${trainingId}`);
   revalidatePath("/treninky");
   revalidatePath("/statistiky");
-  revalidatePath("/platba");
+  revalidatePath("/platby");
 }
 
 export async function setAttendancePresent(
@@ -229,5 +229,5 @@ export async function setAttendancePresent(
   revalidatePath(`/treninky/${trainingId}`);
   revalidatePath("/treninky");
   revalidatePath("/statistiky");
-  revalidatePath("/platba");
+  revalidatePath("/platby");
 }

@@ -99,7 +99,7 @@ export default async function TrainingDetailPage({
         <GroupFilterNav groups={groups} basePath={`/treninky/${id}`} current={skupina} />
         <p className="mt-2 text-xs text-slate-500">
           Zaškrtni „Přítomen“, pokud hráč byl na tréninku. Platba se počítá v měsíčním
-          přehledu <Link href="/platba" className="underline">Platba za tréninky</Link>.
+          přehledu <Link href="/platby?zalozka=mesicni" className="underline">Platby</Link>.
         </p>
       </Panel>
 

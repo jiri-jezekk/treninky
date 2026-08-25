@@ -33,6 +33,24 @@ async function nextEventNumber(userId: string): Promise<number> {
   return expected;
 }
 
+type IncomeKindValue = "MEMBERSHIP" | "TRAINING" | "EVENT" | "GOODS" | "OTHER";
+
+const INCOME_KIND_VALUES: IncomeKindValue[] = [
+  "MEMBERSHIP",
+  "TRAINING",
+  "EVENT",
+  "GOODS",
+  "OTHER",
+];
+
+/** Druh příjmu z formuláře; neznámou hodnotu bere jako akci. */
+function incomeKindFromForm(formData: FormData): IncomeKindValue {
+  const raw = String(formData.get("incomeKind") ?? "");
+  return INCOME_KIND_VALUES.includes(raw as IncomeKindValue)
+    ? (raw as IncomeKindValue)
+    : "EVENT";
+}
+
 export async function createSharedPayment(formData: FormData) {
   const userId = await requireUserId();
   const ids = formData.getAll("playerIds").map(String);
@@ -68,6 +86,7 @@ export async function createSharedPayment(formData: FormData) {
       description: parsed.data.description?.trim() || null,
       totalAmountCents: splitTotal,
       number: await nextEventNumber(userId),
+      incomeKind: incomeKindFromForm(formData),
       participants: {
         create: players.map((p, i) => ({
           playerId: p.id,
@@ -77,8 +96,8 @@ export async function createSharedPayment(formData: FormData) {
     },
   });
 
-  revalidatePath("/skupinove-platby");
-  redirect(`/skupinove-platby/${sp.id}`);
+  revalidatePath("/platby");
+  redirect(`/platby/akce/${sp.id}`);
 }
 
 /** Uloží částky všech účastníků a přepočítá celkový součet platby. */
@@ -119,8 +138,8 @@ export async function updateSharedPaymentAmounts(formData: FormData) {
     }),
   ]);
 
-  revalidatePath("/skupinove-platby");
-  revalidatePath(`/skupinove-platby/${sharedPaymentId}`);
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${sharedPaymentId}`);
 }
 
 export async function redistributeSharedPaymentEvenly(sharedPaymentId: string) {
@@ -150,8 +169,8 @@ export async function redistributeSharedPaymentEvenly(sharedPaymentId: string) {
     }),
   ]);
 
-  revalidatePath("/skupinove-platby");
-  revalidatePath(`/skupinove-platby/${sharedPaymentId}`);
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${sharedPaymentId}`);
 }
 
 export async function toggleParticipantPaid(participantId: string, paid: boolean) {
@@ -179,8 +198,8 @@ export async function toggleParticipantPaid(participantId: string, paid: boolean
     data: { archived: allPaid },
   });
 
-  revalidatePath("/skupinove-platby");
-  revalidatePath(`/skupinove-platby/${part.sharedPaymentId}`);
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${part.sharedPaymentId}`);
 }
 
 export async function setSharedPaymentArchived(sharedPaymentId: string, archived: boolean) {
@@ -189,8 +208,8 @@ export async function setSharedPaymentArchived(sharedPaymentId: string, archived
     where: { id: sharedPaymentId, userId },
     data: { archived },
   });
-  revalidatePath("/skupinove-platby");
-  revalidatePath(`/skupinove-platby/${sharedPaymentId}`);
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${sharedPaymentId}`);
 }
 
 export async function deleteSharedPayment(sharedPaymentId: string) {
@@ -198,5 +217,25 @@ export async function deleteSharedPayment(sharedPaymentId: string) {
   await prisma.sharedPayment.deleteMany({
     where: { id: sharedPaymentId, userId },
   });
-  revalidatePath("/skupinove-platby");
+  revalidatePath("/platby");
+}
+
+/**
+ * Účetní druh příjmu akce. Rozhoduje, kam částka spadne v sestavě pro
+ * účetní — členské příspěvky mají jiný daňový režim než dresy.
+ */
+export async function setSharedPaymentIncomeKind(
+  sharedPaymentId: string,
+  formData: FormData,
+) {
+  const userId = await requireUserId();
+  const raw = String(formData.get("incomeKind") ?? "");
+  if (!INCOME_KIND_VALUES.includes(raw as IncomeKindValue)) return;
+
+  await prisma.sharedPayment.updateMany({
+    where: { id: sharedPaymentId, userId },
+    data: { incomeKind: raw as IncomeKindValue },
+  });
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${sharedPaymentId}`);
 }

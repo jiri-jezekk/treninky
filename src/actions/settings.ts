@@ -42,7 +42,7 @@ export async function updateSettings(formData: FormData) {
     },
   });
   revalidatePath("/nastaveni");
-  revalidatePath("/platba");
+  revalidatePath("/platby");
 }
 
 export async function changePassword(

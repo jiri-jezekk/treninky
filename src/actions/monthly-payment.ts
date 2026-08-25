@@ -53,6 +53,5 @@ export async function setMonthlyPaymentMark(formData: FormData) {
     });
   }
 
-  revalidatePath("/platba");
-  revalidatePath(`/platba/${ym.year}/${ym.month}`);
+  revalidatePath("/platby");
 }

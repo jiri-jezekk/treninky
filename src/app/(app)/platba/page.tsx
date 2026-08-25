@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-export default function PlatbaIndexPage() {
-  const d = new Date();
-  redirect(`/platba/${d.getFullYear()}/${d.getMonth() + 1}`);
+/** Měsíční platba se přestěhovala do sekce Platby. */
+export default function PlatbaRedirect() {
+  redirect("/platby?zalozka=mesicni");
 }
