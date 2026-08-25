@@ -15,6 +15,24 @@ const createSchema = z.object({
   playerIds: z.array(z.string()).min(1, "Vyberte alespoň jednoho hráče."),
 });
 
+/**
+ * Nejnižší volné číslo akce v klubu — druhá část variabilního symbolu.
+ * Čísla se po smazání akce recyklují, aby VS nerostly zbytečně.
+ */
+async function nextEventNumber(userId: string): Promise<number> {
+  const taken = await prisma.sharedPayment.findMany({
+    where: { userId },
+    select: { number: true },
+    orderBy: { number: "asc" },
+  });
+  let expected = 1;
+  for (const { number } of taken) {
+    if (number > expected) break;
+    if (number === expected) expected++;
+  }
+  return expected;
+}
+
 export async function createSharedPayment(formData: FormData) {
   const userId = await requireUserId();
   const ids = formData.getAll("playerIds").map(String);
@@ -49,6 +67,7 @@ export async function createSharedPayment(formData: FormData) {
       title: parsed.data.title.trim(),
       description: parsed.data.description?.trim() || null,
       totalAmountCents: splitTotal,
+      number: await nextEventNumber(userId),
       participants: {
         create: players.map((p, i) => ({
           playerId: p.id,

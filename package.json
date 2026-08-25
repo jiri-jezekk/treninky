@@ -7,6 +7,8 @@
     "build": "prisma generate && next build && prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",
+    "check:fields": "node --experimental-strip-types scripts/check-required-fields.ts",
+    "check:vs": "node --experimental-strip-types scripts/test-variable-symbol.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",

@@ -22,8 +22,11 @@ export default async function HraciPage() {
         groupMembers: { select: { groupId: true } },
       },
     }),
+    // Omezeno na kategorie tohoto uživatele — bez toho by se počítala
+    // členství napříč všemi účty.
     prisma.playerGroupMembership.groupBy({
       by: ["groupId"],
+      where: { group: { userId } },
       _count: { groupId: true },
     }),
   ]);
