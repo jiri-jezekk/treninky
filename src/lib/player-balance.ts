@@ -1,0 +1,213 @@
+import { prisma } from "@/lib/prisma";
+import {
+  discountPriceCentsFor,
+  formatMonthLabelCs,
+  priceCentsForTrainingSession,
+} from "@/lib/training-pricing";
+import {
+  variableSymbolEvent,
+  variableSymbolMonthly,
+} from "@/lib/variable-symbol";
+
+/** Účetní druh příjmu — zrcadlí enum IncomeKind ve schématu. */
+export type IncomeKind = "MEMBERSHIP" | "TRAINING" | "EVENT" | "GOODS" | "OTHER";
+
+export const INCOME_KIND_LABELS: Record<IncomeKind, string> = {
+  MEMBERSHIP: "Členský příspěvek",
+  TRAINING: "Tréninkové",
+  EVENT: "Akce",
+  GOODS: "Zboží",
+  OTHER: "Ostatní",
+};
+
+export type BalanceItem = {
+  /** Stabilní klíč pro React i pro výběr položek do souhrnné platby. */
+  key: string;
+  kind: "monthly" | "event";
+  label: string;
+  meta: string;
+  amountCents: number;
+  variableSymbol: string;
+  incomeKind: IncomeKind;
+  paid: boolean;
+  /** Řazení od nejstaršího dluhu; akce jdou nakonec. */
+  sortKey: number;
+  year?: number;
+  month?: number;
+  sharedPaymentId?: string;
+};
+
+export type PlayerBalance = {
+  playerId: string;
+  playerName: string;
+  playerNumber: number;
+  unpaid: BalanceItem[];
+  paid: BalanceItem[];
+  totalCents: number;
+};
+
+type PlayerForBalance = {
+  id: string;
+  name: string;
+  number: number;
+  active: boolean;
+  prepaidSeason: boolean;
+  groupMembers: { group: { discountPriceCents: number | null } }[];
+};
+
+/**
+ * Co hráč dluží — měsíční tréninky i jednorázové akce dohromady.
+ *
+ * Předplacená sezóna vyřazuje z měsíčního účtování úplně, stejně jako
+ * dosud. Neaktivní hráč se neúčtuje také. Akcí se to netýká — ty se platí
+ * bez ohledu na to.
+ */
+export async function getPlayerBalance(
+  userId: string,
+  playerId: string,
+): Promise<PlayerBalance | null> {
+  const player = await prisma.player.findFirst({
+    where: { id: playerId, userId },
+    select: {
+      id: true,
+      name: true,
+      number: true,
+      active: true,
+      prepaidSeason: true,
+      groupMembers: { select: { group: { select: { discountPriceCents: true } } } },
+    },
+  });
+  if (!player) return null;
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { monthlyIncomeKind: true },
+  });
+
+  const [items] = await Promise.all([
+    buildItems(userId, player, user.monthlyIncomeKind as IncomeKind),
+  ]);
+
+  const unpaid = items.filter((i) => !i.paid).sort((a, b) => a.sortKey - b.sortKey);
+  const paid = items.filter((i) => i.paid).sort((a, b) => b.sortKey - a.sortKey);
+
+  return {
+    playerId: player.id,
+    playerName: player.name,
+    playerNumber: player.number,
+    unpaid,
+    paid,
+    totalCents: unpaid.reduce((sum, i) => sum + i.amountCents, 0),
+  };
+}
+
+async function buildItems(
+  userId: string,
+  player: PlayerForBalance,
+  monthlyIncomeKind: IncomeKind,
+): Promise<BalanceItem[]> {
+  const items: BalanceItem[] = [];
+  const discount = discountPriceCentsFor(player.groupMembers.map((m) => m.group));
+
+  // --- měsíční tréninky ---
+  const billMonthly = player.active && !player.prepaidSeason;
+  if (billMonthly) {
+    const [attendances, marks] = await Promise.all([
+      prisma.attendance.findMany({
+        where: {
+          playerId: player.id,
+          status: "PRESENT",
+          training: { userId, cancelled: false },
+        },
+        include: { training: true },
+      }),
+      prisma.monthlyPaymentMark.findMany({
+        where: { userId, playerId: player.id },
+        select: { year: true, month: true },
+      }),
+    ]);
+
+    const paidMonths = new Set(marks.map((m) => `${m.year}-${m.month}`));
+    const perMonth = new Map<string, { year: number; month: number; cents: number; count: number }>();
+
+    for (const a of attendances) {
+      const d = a.training.startsAt;
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      const key = `${year}-${month}`;
+      const cents = priceCentsForTrainingSession(a.training, discount);
+      const row = perMonth.get(key);
+      if (row) {
+        row.cents += cents;
+        row.count += 1;
+      } else {
+        perMonth.set(key, { year, month, cents, count: 1 });
+      }
+    }
+
+    for (const { year, month, cents, count } of perMonth.values()) {
+      if (cents <= 0) continue;
+      items.push({
+        key: `m-${year}-${month}`,
+        kind: "monthly",
+        label: `Tréninky ${formatMonthLabelCs(year, month)}`,
+        meta: `${count} ${czTrainings(count)}`,
+        amountCents: cents,
+        variableSymbol: variableSymbolMonthly(player.number, year, month),
+        incomeKind: monthlyIncomeKind,
+        paid: paidMonths.has(`${year}-${month}`),
+        sortKey: year * 12 + month,
+        year,
+        month,
+      });
+    }
+  }
+
+  // --- jednorázové akce ---
+  const parts = await prisma.sharedPaymentParticipant.findMany({
+    where: { playerId: player.id, sharedPayment: { userId } },
+    include: { sharedPayment: true },
+  });
+
+  for (const p of parts) {
+    if (p.amountCents <= 0) continue;
+    const sp = p.sharedPayment;
+    items.push({
+      key: `e-${sp.id}`,
+      kind: "event",
+      label: sp.title,
+      meta: sp.description ?? "Jednorázová akce",
+      amountCents: p.amountCents,
+      variableSymbol: variableSymbolEvent(player.number, sp.number),
+      incomeKind: sp.incomeKind as IncomeKind,
+      paid: p.paidAt != null,
+      sortKey: 100000 + sp.number,
+      sharedPaymentId: sp.id,
+    });
+  }
+
+  return items;
+}
+
+function czTrainings(n: number): string {
+  if (n === 1) return "odchozený trénink";
+  if (n >= 2 && n <= 4) return "odchozené tréninky";
+  return "odchozených tréninků";
+}
+
+/** Přehled dlužníků pro trenéra — všichni, kdo něco dluží, od největšího dluhu. */
+export async function getDebtors(userId: string): Promise<PlayerBalance[]> {
+  const players = await prisma.player.findMany({
+    where: { userId },
+    select: { id: true },
+    orderBy: { name: "asc" },
+  });
+
+  const balances = await Promise.all(
+    players.map((p) => getPlayerBalance(userId, p.id)),
+  );
+
+  return balances
+    .filter((b): b is PlayerBalance => b != null && b.totalCents > 0)
+    .sort((a, b) => b.totalCents - a.totalCents);
+}

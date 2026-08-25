@@ -27,7 +27,7 @@ type StatusFilter = "all" | "active" | "inactive";
 
 const btn =
   "inline-flex items-center justify-center gap-2 rounded-full border-2 px-4 py-2 font-heading text-sm font-semibold transition";
-const btnPrimary = `${btn} border-club bg-club text-white hover:bg-club-hover`;
+const btnPrimary = `${btn} border-club bg-club text-onclub hover:bg-club-hover`;
 const btnOutline = `${btn} border-slate-300 text-slate-800 hover:border-club hover:bg-club-soft`;
 const btnDanger = `${btn} border-red-200 text-red-800 hover:border-red-600 hover:bg-red-50`;
 const btnSm = "px-3 py-1.5 text-xs";
@@ -161,7 +161,7 @@ export function PlayersManager({
                 onClick={() => setStatus(value)}
                 className={`rounded-full border-2 px-4 py-1.5 font-heading text-xs font-semibold transition ${
                   status === value
-                    ? "border-club bg-club text-white"
+                    ? "border-club bg-club text-onclub"
                     : "border-slate-300 text-slate-600 hover:border-club hover:bg-club-soft"
                 }`}
               >

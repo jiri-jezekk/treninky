@@ -220,7 +220,7 @@ export function GroupsDialog({
             />
             <button
               type="submit"
-              className="rounded-full border-2 border-club bg-club px-4 py-2 font-heading text-sm font-semibold text-white transition hover:bg-club-hover"
+              className="rounded-full border-2 border-club bg-club px-4 py-2 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover"
             >
               Přidat
             </button>
