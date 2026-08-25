@@ -145,6 +145,9 @@ export function PaymentsView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/platby/ucetnictvi" className={btnOutline}>
+            Pro účetní
+          </Link>
           <button
             type="button"
             className={btnOutline}
