@@ -214,6 +214,45 @@ export default async function UcetnictviPage({
         </div>
       </section>
 
+      {summary.batches.length > 0 && (
+        <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <h2 className={`border-b border-slate-100 px-5 py-3 ${label}`}>
+            Rozpad souhrnných plateb ({summary.batches.length})
+          </h2>
+          <p className="border-b border-slate-100 px-5 py-3 text-xs text-slate-500">
+            Hráč zaplatil víc věcí jednou částkou. Tady je vidět, co který
+            variabilní symbol ve výpisu pokrývá.
+          </p>
+          <ul className="divide-y divide-slate-100">
+            {summary.batches.map((b) => (
+              <li key={b.vs} className="px-5 py-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <span className="font-heading text-sm font-bold tabular-nums text-slate-800">
+                    VS {b.vs}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {b.playerName} · {formatDateDdMmYyyy(b.createdAt)}
+                  </span>
+                  <span className="font-heading font-bold tabular-nums text-slate-800">
+                    {formatCzkFromCents(b.totalCents)}
+                  </span>
+                </div>
+                <ul className="mt-2 flex flex-col gap-0.5 text-xs text-slate-500">
+                  {b.items.map((i, idx) => (
+                    <li key={`${b.vs}-${idx}`}>
+                      {formatCzkFromCents(i.amountCents)} · {i.label}{" "}
+                      <span className="text-slate-400">
+                        ({INCOME_KIND_LABELS[i.kind]})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <p className="mt-6 text-xs leading-relaxed text-slate-500">
         Částky u měsíčních tréninků se dopočítávají z docházky a sazeb platných teď.
         Když zpětně změníte sazbu kategorie, změní se i tento přehled — pro uzávěrku

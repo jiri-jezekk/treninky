@@ -30,12 +30,26 @@ export type AccountingMonth = {
   total: number;
 };
 
+/**
+ * Souhrnná platba: jedna částka ve výpisu, víc účelů. Rozpad je to,
+ * co z ní dělá doložitelný záznam — bez něj by ji musel někdo ručně
+ * rozdělit mezi členské příspěvky a ostatní příjmy.
+ */
+export type AccountingBatch = {
+  vs: string;
+  playerName: string;
+  createdAt: Date;
+  totalCents: number;
+  items: { label: string; kind: IncomeKind; amountCents: number }[];
+};
+
 export type AccountingSummary = {
   year: number;
   months: AccountingMonth[];
   byKind: Record<IncomeKind, number>;
   total: number;
   entries: AccountingEntry[];
+  batches: AccountingBatch[];
 };
 
 function emptyByKind(): Record<IncomeKind, number> {
@@ -56,7 +70,7 @@ export async function getAccountingSummary(
   const from = new Date(year, 0, 1, 0, 0, 0, 0);
   const to = new Date(year, 11, 31, 23, 59, 59, 999);
 
-  const [user, marks, parts, players, attendances] = await Promise.all([
+  const [user, marks, parts, players, attendances, rawBatches] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { monthlyIncomeKind: true },
@@ -85,6 +99,14 @@ export async function getAccountingSummary(
     prisma.attendance.findMany({
       where: { status: "PRESENT", training: { userId, cancelled: false } },
       include: { training: true },
+    }),
+    prisma.paymentBatch.findMany({
+      where: { userId, createdAt: { gte: from, lte: to } },
+      orderBy: { createdAt: "desc" },
+      include: {
+        items: true,
+        player: { select: { name: true } },
+      },
     }),
   ]);
 
@@ -157,5 +179,17 @@ export async function getAccountingSummary(
     total += e.amountCents;
   }
 
-  return { year, months, byKind, total, entries };
+  const batches: AccountingBatch[] = rawBatches.map((b) => ({
+    vs: b.vs,
+    playerName: b.player.name,
+    createdAt: b.createdAt,
+    totalCents: b.totalCents,
+    items: b.items.map((i) => ({
+      label: i.label,
+      kind: i.kind as IncomeKind,
+      amountCents: i.amountCents,
+    })),
+  }));
+
+  return { year, months, byKind, total, entries, batches };
 }

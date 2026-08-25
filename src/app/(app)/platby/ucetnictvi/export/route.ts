@@ -49,6 +49,30 @@ export async function GET(request: Request) {
   rows.push("");
   rows.push([csvCell(`Celkem ${year}`), "", "", "", "", "", csvAmount(summary.total)].join(";"));
 
+  if (summary.batches.length > 0) {
+    rows.push("");
+    rows.push(csvCell("Rozpad souhrnných plateb"));
+    rows.push(
+      ["Variabilní symbol", "Hráč", "Datum", "Položka", "Druh příjmu", "Částka Kč"]
+        .map(csvCell)
+        .join(";"),
+    );
+    for (const b of summary.batches) {
+      for (const i of b.items) {
+        rows.push(
+          [
+            csvCell(b.vs),
+            csvCell(b.playerName),
+            csvCell(formatDateDdMmYyyy(b.createdAt)),
+            csvCell(i.label),
+            csvCell(INCOME_KIND_LABELS[i.kind]),
+            csvAmount(i.amountCents),
+          ].join(";"),
+        );
+      }
+    }
+  }
+
   // Excel pozná UTF-8 jen podle BOM, jinak rozbije diakritiku.
   const body = "﻿" + rows.join("\r\n") + "\r\n";
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { PayAllPanel } from "./PayAllPanel";
 import { PortalGate } from "./PortalGate";
 import { PortalQr } from "./PortalQr";
 import { SessionRefresh } from "./SessionRefresh";
@@ -83,6 +84,14 @@ export default async function PortalPage({
                 Celkem k úhradě
               </p>
             </div>
+
+            <PayAllPanel
+              payToken={token}
+              iban={player.user.bankIban}
+              playerName={player.name}
+              totalCents={balance.totalCents}
+              itemCount={balance.unpaid.length}
+            />
 
             <div className="mt-4 flex flex-col gap-4">
               {balance.unpaid.map((item) => (
