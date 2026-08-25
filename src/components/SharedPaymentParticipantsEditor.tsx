@@ -51,17 +51,30 @@ export function SharedPaymentParticipantsEditor({
     Object.fromEntries(participants.map((p) => [p.id, formatKcInputFromCents(p.amountCents)])),
   );
 
-  useEffect(() => {
+  // Když dorazí jiná data ze serveru, pole se přepíšou. Srovnává se přímo
+  // při vykreslení, ne v efektu: efekt by nejdřív ukázal stará čísla
+  // a hned je přebliknul novými.
+  const [lastServerSig, setLastServerSig] = useState(serverSig);
+  if (lastServerSig !== serverSig) {
+    setLastServerSig(serverSig);
     setAmounts(
-      Object.fromEntries(participants.map((p) => [p.id, formatKcInputFromCents(p.amountCents)])),
+      Object.fromEntries(
+        participants.map((p) => [p.id, formatKcInputFromCents(p.amountCents)]),
+      ),
     );
-  }, [serverSig]);
+  }
 
+  // Odložené uložení musí sáhnout po tom, co je v polích teď — ne po tom,
+  // co tam bylo, když se debounce plánoval. Odtud ty reference.
+  // Zapisují se v efektu, ne při vykreslování: React si vykreslení může
+  // zahodit nebo zopakovat a zápis mimo efekt pak uloží hodnotu,
+  // která se na obrazovku nikdy nedostala.
   const amountsRef = useRef(amounts);
-  amountsRef.current = amounts;
-
   const participantsRef = useRef(participants);
-  participantsRef.current = participants;
+  useEffect(() => {
+    amountsRef.current = amounts;
+    participantsRef.current = participants;
+  });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

@@ -2,7 +2,17 @@ import NextAuth from "next-auth";
 import { authConfig } from "@/auth.config";
 import { NextResponse } from "next/server";
 
-/** Pouze lehká auth.config — bez Prisma, aby Edge bundle zůstal pod limitem Vercelu (~1 MB). */
+/**
+ * Dřív src/middleware.ts — Next 16 tu konvenci přejmenoval na `proxy`.
+ *
+ * Pouze lehká auth.config, bez Prisma. Proxy sice běží nově na Node.js,
+ * takže limit velikosti Edge bundle už netlačí, ale rozdělení má smysl
+ * dál: sem nemá co lézt databáze.
+ *
+ * Matcher chrání stránky, NE serverové akce — ty se volají jako POST na
+ * adresu, kde jsou použité. Autorizaci si proto hlídá každá akce sama
+ * přes requireUserId().
+ */
 const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {

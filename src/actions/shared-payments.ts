@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
-import { parseCzkToCents, parseCzkToCentsCeilWholeKoruny } from "@/lib/money";
+import { parseCzkToCentsCeilWholeKoruny } from "@/lib/money";
 import { splitTotalCentsCeilWholeKc } from "@/lib/split";
 
 const createSchema = z.object({
