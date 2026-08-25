@@ -1,17 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AttendanceStatus } from "@prisma/client";
-import { AttendanceCheckbox } from "@/components/AttendanceCheckbox";
+import { AttendanceToggle } from "@/components/AttendanceToggle";
 import { GroupFilterNav } from "@/components/GroupFilterNav";
-import { Panel } from "@/components/ui";
 import { listGroups, parseGroupFilter } from "@/lib/groups";
 import { formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
+import { formatCzkFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import {
+  discountPriceCentsFor,
+  priceCentsForTrainingSession,
+} from "@/lib/training-pricing";
 import {
   setAttendanceBulkForTraining,
   setTrainingCancelled,
 } from "@/actions/trainings";
+import { initials } from "@/lib/czech";
+
+const label =
+  "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
 
 export default async function TrainingDetailPage({
   params,
@@ -23,176 +30,220 @@ export default async function TrainingDetailPage({
   const { id } = await params;
   const userId = await requireUserId();
   const sp = await searchParams;
+
+  const training = await prisma.training.findFirst({ where: { id, userId } });
+  if (!training) notFound();
+
   const groups = await listGroups(userId);
   const skupina = parseGroupFilter(sp.skupina, groups);
 
-  const training = await prisma.training.findFirst({
-    where: { id, userId },
-  });
-
-  if (!training) notFound();
-
-  const [players, totalActivePlayers, presentCount] = await Promise.all([
+  const [players, totalActive] = await Promise.all([
     prisma.player.findMany({
-    where: {
-      userId,
-      active: true,
-      ...(skupina && {
-        groupMembers: { some: { groupId: skupina } },
-      }),
-    },
-    orderBy: { name: "asc" },
-    include: {
-      attendances: { where: { trainingId: id } },
-      groupMembers: { include: { group: true } },
-    },
-  }),
-    prisma.player.count({ where: { userId, active: true } }),
-    prisma.attendance.count({
-      where: { trainingId: id, status: AttendanceStatus.PRESENT },
+      where: {
+        userId,
+        active: true,
+        ...(skupina && { groupMembers: { some: { groupId: skupina } } }),
+      },
+      orderBy: { name: "asc" },
+      include: {
+        attendances: { where: { trainingId: id } },
+        groupMembers: { include: { group: true } },
+      },
     }),
+    prisma.player.count({ where: { userId, active: true } }),
   ]);
 
-  const customNote =
-    training.defaultPriceCents != null
-      ? `Vlastní cena tohoto tréninku: ${(training.defaultPriceCents / 100).toFixed(0)} Kč (junioři 60 Kč).`
-      : null;
+  const rows = players.map((p) => {
+    const present = p.attendances[0]?.status === "PRESENT";
+    const discount = discountPriceCentsFor(p.groupMembers.map((m) => m.group));
+    // Předplacená sezóna se v měsíční platbě neúčtuje vůbec.
+    const chargeCents = p.prepaidSeason
+      ? 0
+      : priceCentsForTrainingSession(training, discount);
+    return {
+      id: p.id,
+      name: p.name,
+      present,
+      prepaid: p.prepaidSeason,
+      chargeCents,
+      discount,
+      groupNames: p.groupMembers.map((m) => m.group.name),
+    };
+  });
+
+  const presentRows = rows.filter((r) => r.present);
+  const earned = presentRows.reduce((s, r) => s + r.chargeCents, 0);
+  const prepaidPresent = presentRows.filter((r) => r.prepaid).length;
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="min-w-0 flex-1">
-          <Link
-            href="/treninky"
-            className="text-sm text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
-          >
-            ← Tréninky
-          </Link>
-          <h1 className="mt-2 text-xl font-semibold text-slate-800">
+    <div className="mx-auto w-full min-w-0 max-w-4xl">
+      <Link
+        href="/treninky"
+        className="text-sm text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800"
+      >
+        ← Zpět na Tréninky
+      </Link>
+
+      <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-heading text-2xl font-extrabold uppercase tracking-wide text-slate-800 sm:text-3xl">
             {formatDateTimeDdMmYyyy24h(training.startsAt)}
           </h1>
+          <div className="mt-3 h-1 w-14 rounded bg-club" />
           {training.notes && (
-            <p className="mt-2 text-sm text-slate-600">{training.notes}</p>
+            <p className="mt-3 text-sm text-slate-600">{training.notes}</p>
           )}
-          {customNote && (
-            <p className="mt-2 text-xs text-slate-500">{customNote}</p>
-          )}
+          <p className="mt-2 text-xs text-slate-500">
+            {training.defaultPriceCents != null
+              ? `Výjimečný trénink s vlastní cenou ${formatCzkFromCents(training.defaultPriceCents)}. Zvýhodněné kategorie platí dál svou sazbu.`
+              : "Cena podle dne v týdnu: úterý 110 Kč, čtvrtek 100 Kč. Zvýhodněné kategorie platí svou sazbu."}
+          </p>
         </div>
-        <form
-          action={setTrainingCancelled.bind(null, id, !training.cancelled)}
-          className="w-full shrink-0 sm:w-auto"
-        >
+        <form action={setTrainingCancelled.bind(null, id, !training.cancelled)}>
           <button
             type="submit"
-            className={`w-full rounded-md border px-3 py-2 text-sm sm:w-auto ${
-              training.cancelled
-                ? "border-slate-300 text-slate-800 hover:bg-slate-50"
-                : "border-slate-200 text-slate-700 hover:bg-slate-50"
-            }`}
+            className="inline-flex items-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft"
           >
             {training.cancelled ? "Označit jako konaný" : "Označit jako zrušený"}
           </button>
         </form>
       </div>
 
-      <Panel>
-        <GroupFilterNav groups={groups} basePath={`/treninky/${id}`} current={skupina} />
-        <p className="mt-2 text-xs text-slate-500">
-          Zaškrtni „Přítomen“, pokud hráč byl na tréninku. Platba se počítá v měsíčním
-          přehledu <Link href="/platby?zalozka=mesicni" className="underline">Platby</Link>.
+      {training.cancelled && (
+        <p className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Trénink je zrušený — docházka se do plateb ani statistik nepočítá.
         </p>
-      </Panel>
+      )}
 
-      <Panel className="!p-0 sm:!p-0">
-        <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-sm font-medium text-slate-800">Docházka</h2>
-            <p className="text-sm text-slate-600">
-              Přítomno:{" "}
-              <span className="font-semibold tabular-nums text-slate-800">
-                {presentCount}
-              </span>
-              <span className="text-slate-400"> / </span>
-              <span className="tabular-nums text-slate-700">{totalActivePlayers}</span>
-            </p>
-          </div>
+      <dl className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
+          <dt className={label}>Přítomno</dt>
+          <dd className="mt-1 font-heading text-2xl font-extrabold tabular-nums text-slate-800">
+            {presentRows.length}
+            <span className="ml-1.5 text-sm font-semibold text-slate-500">
+              z {totalActive}
+            </span>
+          </dd>
         </div>
-        {players.length > 0 && (
-          <div className="space-y-1.5 border-b border-slate-100 px-4 py-2 sm:px-5">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
+          <dt className={label}>Naúčtováno</dt>
+          <dd className="mt-1 font-heading text-2xl font-extrabold tabular-nums text-emerald-800">
+            {training.cancelled ? "—" : formatCzkFromCents(earned)}
+          </dd>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
+          <dt className={label}>Z toho předplacených</dt>
+          <dd className="mt-1 font-heading text-2xl font-extrabold tabular-nums text-slate-800">
+            {prepaidPresent}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4">
+        <GroupFilterNav
+          groups={groups}
+          basePath={`/treninky/${id}`}
+          current={skupina}
+        />
+        <p className="mt-3 text-xs text-slate-500">
+          Klepnutím na řádek zapíšeš účast. Částka se hráči automaticky přičte
+          k jeho měsíci — uvidíš ji v{" "}
+          <Link href="/platby?zalozka=mesicni" className="underline">
+            Platbách
+          </Link>
+          . Kdo má u sebe zaškrtnuté <b className="text-slate-700">Předplaceno</b>,
+          tomu se nepřičítá nic.
+        </p>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+          <h2 className={label}>Docházka</h2>
+          {rows.length > 0 && (
             <form action={setAttendanceBulkForTraining} className="flex flex-wrap gap-2">
               <input type="hidden" name="trainingId" value={id} />
-              {players.map((p) => (
-                <input key={p.id} type="hidden" name="playerIds" value={p.id} />
+              {rows.map((r) => (
+                <input key={r.id} type="hidden" name="playerIds" value={r.id} />
               ))}
               <button
                 type="submit"
                 name="bulkPresent"
                 value="true"
-                className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-900 hover:bg-emerald-100"
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-800"
               >
-                Označit vše přítomen
+                Všichni přítomni
               </button>
               <button
                 type="submit"
                 name="bulkPresent"
                 value="false"
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900"
               >
-                Odznačit vše (nepřítomen)
+                Nikdo
               </button>
             </form>
-            {skupina && (
-              <p className="text-xs text-slate-500">
-                Hromadná úprava platí jen pro zobrazené hráče (filtr skupiny).
-              </p>
-            )}
-          </div>
-        )}
-        <div className="table-scroll-wrapper px-4 pb-4 sm:px-5">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
-              <tr>
-                <th className="py-2 pr-4 font-medium">Hráč</th>
-                <th className="py-2 pr-4 font-medium">Účast</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {players.map((p) => {
-                const att = p.attendances[0];
-                const present = att?.status === AttendanceStatus.PRESENT;
-                // Zvýhodněné kategorie hráče — dřív natvrdo „Junioři“.
-                const zvyhodnene = p.groupMembers
-                  .map((m) => m.group)
-                  .filter((g) => g.discountPriceCents != null);
-                return (
-                  <tr key={p.id}>
-                    <td className="py-2 pr-4">
-                      <span className="font-medium text-slate-800">{p.name}</span>
-                      {zvyhodnene.length > 0 && (
-                        <span className="ml-2 text-xs text-slate-500">
-                          ({zvyhodnene.map((g) => g.name).join(", ")})
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <AttendanceCheckbox
-                        trainingId={id}
-                        playerId={p.id}
-                        present={present}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          )}
         </div>
-        {players.length === 0 && (
-          <p className="px-4 pb-4 text-sm text-slate-500 sm:px-5">
-            Žádní hráči v tomto filtru — změň filtr nebo přidej hráče v sekci Hráči.
+
+        {skupina && (
+          <p className="border-b border-slate-100 px-4 py-2 text-xs italic text-slate-500 sm:px-5">
+            Hromadná úprava platí jen pro zobrazené hráče.
           </p>
         )}
-      </Panel>
+
+        <ul className="divide-y divide-slate-100">
+          {rows.map((r) => (
+            <li key={r.id}>
+              <AttendanceToggle trainingId={id} playerId={r.id} present={r.present}>
+                <span className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border font-heading text-[11px] font-extrabold ${
+                      r.present
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-club-line bg-club-soft text-club"
+                    }`}
+                  >
+                    {initials(r.name)}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-slate-800">
+                      {r.name}
+                    </span>
+                    {r.groupNames.length > 0 && (
+                      <span className="block truncate text-xs text-slate-500">
+                        {r.groupNames.join(" · ")}
+                      </span>
+                    )}
+                  </span>
+                </span>
+
+                <span className="shrink-0 text-right">
+                  {r.prepaid ? (
+                    <span className="rounded-full bg-amber-50 px-2.5 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                      Předplaceno
+                    </span>
+                  ) : (
+                    <span
+                      className={`font-heading text-sm font-bold tabular-nums ${
+                        r.present ? "text-emerald-800" : "text-slate-500"
+                      }`}
+                    >
+                      {r.present ? "+" : ""}
+                      {formatCzkFromCents(r.chargeCents)}
+                    </span>
+                  )}
+                </span>
+              </AttendanceToggle>
+            </li>
+          ))}
+        </ul>
+
+        {rows.length === 0 && (
+          <p className="px-5 py-12 text-center text-sm italic text-slate-500">
+            Pro tento filtr nejsou žádní hráči.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

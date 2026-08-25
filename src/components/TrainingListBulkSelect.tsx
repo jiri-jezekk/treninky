@@ -18,14 +18,14 @@ export function TrainingListBulkSelect({ formId, checkboxName }: Props) {
       <button
         type="button"
         onClick={() => setAll(true)}
-        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+        className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900"
       >
         Vybrat vše
       </button>
       <button
         type="button"
         onClick={() => setAll(false)}
-        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+        className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900"
       >
         Zrušit výběr
       </button>
