@@ -118,6 +118,12 @@ export default async function TreninkyPage({
         </div>
         <div className="flex items-center gap-3">
           <Link
+            href="/treninky/cviceni"
+            className="inline-flex items-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft"
+          >
+            Cvičení
+          </Link>
+          <Link
             href={`/treninky?mesic=${mesicQuery(prev.getFullYear(), prev.getMonth() + 1)}`}
             className="grid h-9 w-9 place-items-center rounded-full border-2 border-slate-300 text-slate-600 transition hover:border-club hover:bg-club-soft"
             aria-label="Předchozí měsíc"

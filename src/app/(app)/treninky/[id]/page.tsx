@@ -18,6 +18,13 @@ import {
   setTrainingCancelled,
 } from "@/actions/trainings";
 import { initials } from "@/lib/czech";
+import { PlanEditor, type PlanBlockRow } from "./PlanEditor";
+import {
+  parseTeams,
+  summarizePlan,
+  withTimes,
+  type DrillKind,
+} from "@/lib/training-plan";
 
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
@@ -39,7 +46,8 @@ export default async function TrainingDetailPage({
   const groups = await listGroups(userId);
   const skupina = parseGroupFilter(sp.skupina, groups);
 
-  const [players, totalActive, prepaidByPlayer] = await Promise.all([
+  const [players, totalActive, prepaidByPlayer, blocks, drills, sources] =
+    await Promise.all([
     prisma.player.findMany({
       where: {
         userId,
@@ -52,9 +60,29 @@ export default async function TrainingDetailPage({
         groupMembers: { include: { group: true } },
       },
     }),
-    prisma.player.count({ where: { userId, active: true } }),
-    getPrepaidRangesByPlayer(userId),
-  ]);
+      prisma.player.count({ where: { userId, active: true } }),
+      getPrepaidRangesByPlayer(userId),
+      prisma.trainingBlock.findMany({
+        where: { trainingId: id },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.drill.findMany({
+        where: { userId, archived: false },
+        orderBy: [{ kind: "asc" }, { name: "asc" }],
+        select: { id: true, name: true, kind: true, defaultMinutes: true },
+      }),
+      // Odkud se dá převzít plán — poslední tréninky, které nějaký mají.
+      prisma.training.findMany({
+        where: { userId, id: { not: id }, blocks: { some: {} } },
+        orderBy: { startsAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          startsAt: true,
+          _count: { select: { blocks: true } },
+        },
+      }),
+    ]);
 
   const rows = players.map((p) => {
     const present = p.attendances[0]?.status === "PRESENT";
@@ -82,6 +110,31 @@ export default async function TrainingDetailPage({
   const presentRows = rows.filter((r) => r.present);
   const earned = presentRows.reduce((s, r) => s + r.chargeCents, 0);
   const prepaidPresent = presentRows.filter((r) => r.prepaid).length;
+
+  // --- plán tréninku ---
+  const knownPlayerIds = new Set(rows.map((r) => String(r.id)));
+  const timed = withTimes(
+    blocks.map((b) => ({
+      id: String(b.id),
+      minutes: b.minutes,
+      title: b.title,
+      notes: b.notes,
+      kind: b.kind as DrillKind,
+      teams: parseTeams(b.teams, knownPlayerIds),
+    })),
+    training.startsAt,
+  );
+  const planBlocks: PlanBlockRow[] = timed.map((b) => ({
+    id: b.id,
+    title: b.title,
+    notes: b.notes,
+    minutes: b.minutes,
+    kind: b.kind,
+    startLabel: b.startLabel,
+    endLabel: b.endLabel,
+    teams: b.teams,
+  }));
+  const planSummary = summarizePlan(planBlocks, training.startsAt, training.endsAt);
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-4xl">
@@ -152,6 +205,29 @@ export default async function TrainingDetailPage({
           </dd>
         </div>
       </dl>
+
+      <PlanEditor
+        trainingId={id}
+        blocks={planBlocks}
+        drills={drills.map((d) => ({
+          id: d.id,
+          name: d.name,
+          kind: d.kind as DrillKind,
+          defaultMinutes: d.defaultMinutes,
+        }))}
+        players={rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          present: r.present,
+        }))}
+        sources={sources.map((t) => ({
+          id: t.id,
+          label: formatDateTimeDdMmYyyy24h(t.startsAt),
+          blockCount: t._count.blocks,
+        }))}
+        plannedMinutes={planSummary.plannedMinutes}
+        differenceMinutes={planSummary.differenceMinutes}
+      />
 
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4">
         <GroupFilterNav

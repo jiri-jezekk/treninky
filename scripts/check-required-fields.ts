@@ -26,9 +26,14 @@ function parseModels(schema: string): Model[] {
     const name = m[1]!;
     const required: string[] = [];
 
-    for (const rawLine of m[2]!.split("\n")) {
+    // Blokové komentáře pryč ještě před rozborem — jejich prostřední
+    // řádky začínají hvězdičkou a jinak by se četly jako pole.
+    const body = m[2]!.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    for (const rawLine of body.split("\n")) {
       const line = rawLine.split("//")[0]!.trim();
       if (!line || line.startsWith("@@") || line.startsWith("/")) continue;
+      if (line.startsWith("*")) continue;
 
       const parts = line.split(/\s+/);
       const field = parts[0]!;

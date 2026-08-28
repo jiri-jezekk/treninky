@@ -51,6 +51,7 @@ model User {
   seasons      Season[]
   prepayments  Prepayment[]
   trainingSlots TrainingSlot[]
+  drills       Drill[]
 }
 
 /**
@@ -256,8 +257,69 @@ model Training {
   /** Null = automatická cena podle dne. Není null = cena za tento trénink (z rozvrhu nebo ručně). */
   defaultPriceCents Int?
   attendances       Attendance[]
+  blocks            TrainingBlock[]
 
   @@index([userId, startsAt])
+}
+
+/** Druh cvičení — kvůli řazení a filtrování v knihovně. */
+enum DrillKind {
+  WARMUP
+  DRILL
+  GAME
+  COOLDOWN
+}
+
+/**
+ * Knihovna cvičení. Trenér si ji plní postupně a pak z ní skládá
+ * plány jednotlivých tréninků, místo aby psal přípravu znovu do telefonu.
+ */
+model Drill {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  /** Nabídne se jako délka při vložení do plánu. */
+  defaultMinutes Int?
+  kind           DrillKind @default(DRILL)
+  /** Co je na cvičení potřeba — míče, kužely… */
+  equipment      String?
+  /** Archivované se nenabízí, ale zůstává v už hotových plánech. */
+  archived       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  blocks         TrainingBlock[]
+
+  @@unique([userId, name])
+  @@index([userId, archived])
+}
+
+/**
+ * Jeden bod plánu tréninku. Buď odkazuje na cvičení z knihovny, nebo
+ * stojí sám (jednorázová věc, kterou nemá smysl ukládat).
+ */
+model TrainingBlock {
+  id         String    @id @default(cuid())
+  trainingId String
+  training   Training  @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  /** Null = bod mimo knihovnu, nebo cvičení mezitím smazané. */
+  drillId    String?
+  drill      Drill?    @relation(fields: [drillId], references: [id], onDelete: SetNull)
+  /** Vlastní název bodu. Kopíruje se z cvičení, dá se přepsat. */
+  title      String
+  notes      String?
+  minutes    Int
+  kind       DrillKind @default(DRILL)
+  sortOrder  Int
+  /**
+   * Rozdělení do týmů u herních bodů: [{ "name": "…", "playerIds": [...] }].
+   * Schválně jako JSON, ne tabulka — je to momentka jednoho večera,
+   * nic se přes ni nevykazuje a hráč smazaný ze soupisky se prostě
+   * při čtení přeskočí.
+   */
+  teams      Json?
+
+  @@index([trainingId, sortOrder])
 }
 
 model Attendance {
