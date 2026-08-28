@@ -12,8 +12,8 @@ import { initials } from "@/lib/czech";
 
 export type PortalDuel = {
   id: string;
-  discipline: string;
-  unit: string | null;
+  name: string;
+  description: string | null;
   status: string;
   iAmChallenger: boolean;
   opponentName: string;
@@ -30,6 +30,22 @@ type BoardRow = {
   rating: number;
   rank: number;
   isMe: boolean;
+};
+
+type HistoryRow = {
+  id: string;
+  playerName: string;
+  source: string;
+  delta: number;
+  label: string;
+  createdAt: string;
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  DUEL: "Duel",
+  MATCH: "Zápas",
+  CHALLENGE: "Výzva",
+  COACH: "Trenér",
 };
 
 type ChallengeRow = {
@@ -52,7 +68,7 @@ const btnOutline =
   "inline-flex items-center justify-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft";
 const btnSm = "px-3 py-1.5 text-xs";
 
-function fmt(value: number | null, unit: string | null): string {
+function fmt(value: number | null, unit?: string | null): string {
   if (value == null) return "—";
   const n = Number.isInteger(value) ? String(value) : value.toFixed(2);
   return unit ? `${n} ${unit}` : n;
@@ -67,9 +83,9 @@ export function PortalRating({
   seasonName,
   board,
   duels,
-  disciplines,
   opponents,
   challenges,
+  history,
 }: {
   payToken: string;
   myName: string;
@@ -79,9 +95,9 @@ export function PortalRating({
   seasonName: string | null;
   board: BoardRow[];
   duels: PortalDuel[];
-  disciplines: { id: string; name: string; unit: string | null }[];
   opponents: { id: string; name: string }[];
   challenges: ChallengeRow[];
+  history: HistoryRow[];
 }) {
   const [challenging, setChallenging] = useState(false);
   const [reporting, setReporting] = useState<string | null>(null);
@@ -110,7 +126,7 @@ export function PortalRating({
       <section className={`${card} mt-4`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className={label}>Moje duely</h2>
-          {opponents.length > 0 && disciplines.length > 0 && !challenging && (
+          {opponents.length > 0 && !challenging && (
             <button
               type="button"
               className={`${btnOutline} ${btnSm}`}
@@ -139,14 +155,25 @@ export function PortalRating({
               </select>
             </label>
             <label className="mt-3 block">
-              <span className={label}>V čem</span>
-              <select name="disciplineId" required className={field}>
-                {disciplines.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+              <span className={label}>Název duelu</span>
+              <input
+                name="name"
+                required
+                placeholder="Hod na přesnost"
+                className={field}
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className={label}>Z čeho se skládá</span>
+              <input
+                name="description"
+                placeholder="10 hodů na kužely ze šesti metrů"
+                className={field}
+              />
+            </label>
+            <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+              <input type="checkbox" name="higherWins" defaultChecked />
+              Vyhrává vyšší číslo
             </label>
             <label className="mt-3 block">
               <span className={label}>Vzkaz</span>
@@ -180,9 +207,12 @@ export function PortalRating({
               <p className="font-medium text-slate-800">
                 {d.opponentName}
                 <span className="ml-2 text-xs font-normal text-slate-500">
-                  {d.discipline}
+                  {d.name}
                 </span>
               </p>
+              {d.description && (
+                <p className="mt-1 text-xs text-slate-500">{d.description}</p>
+              )}
               {d.note && <p className="mt-1 text-xs text-slate-500">{d.note}</p>}
 
               {/* vyzvaný se rozhoduje */}
@@ -263,7 +293,7 @@ export function PortalRating({
               {d.status === "REPORTED" && (
                 <>
                   <p className="mt-2 text-sm tabular-nums text-slate-700">
-                    {fmt(d.myValue, d.unit)} : {fmt(d.theirValue, d.unit)}
+                    {fmt(d.myValue)} : {fmt(d.theirValue)}
                   </p>
                   {d.iReported ? (
                     <p className="mt-2 text-xs italic text-slate-500">
@@ -294,7 +324,7 @@ export function PortalRating({
             {done.slice(0, 6).map((d) => (
               <li key={d.id} className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate">
-                  {d.discipline} — {d.opponentName}
+                  {d.name} — {d.opponentName}
                 </span>
                 <span
                   className={`shrink-0 tabular-nums ${
@@ -384,6 +414,44 @@ export function PortalRating({
           ))}
         </ul>
       </section>
+
+      {history.length > 0 && (
+        <section className={`${card} mt-4`}>
+          <h2 className={label}>Co se dělo</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Poslední změny ratingu celého týmu.
+          </p>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {history.map((h) => (
+              <li key={h.id} className="flex items-center gap-2 py-2">
+                <span className="w-16 shrink-0 text-xs tabular-nums text-slate-500">
+                  {h.createdAt}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-slate-800">
+                    {h.playerName}
+                  </span>
+                  <span className="block truncate text-xs text-slate-500">
+                    {SOURCE_LABEL[h.source] ?? h.source} · {h.label}
+                  </span>
+                </span>
+                <span
+                  className={`shrink-0 font-heading text-sm font-bold tabular-nums ${
+                    h.delta > 0
+                      ? "text-emerald-800"
+                      : h.delta < 0
+                        ? "text-red-800"
+                        : "text-slate-500"
+                  }`}
+                >
+                  {h.delta > 0 ? "+" : ""}
+                  {h.delta}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
         Za každou účast — trénink i posilovnu — je +1. Zbytek si vybojuješ v duelech

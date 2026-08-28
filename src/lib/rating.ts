@@ -201,9 +201,10 @@ export async function applyRatingChange(
     seasonId: string;
     playerId: string;
     delta: number;
-    source: "DUEL" | "CHALLENGE" | "COACH";
+    source: "DUEL" | "MATCH" | "CHALLENGE" | "COACH";
     label: string;
     duelId?: string;
+    matchId?: string;
     challengeId?: string;
   },
 ): Promise<void> {
@@ -232,7 +233,56 @@ export async function applyRatingChange(
       ratingAfter: updated.points,
       label: params.label,
       duelId: params.duelId ?? null,
+      matchId: params.matchId ?? null,
       challengeId: params.challengeId ?? null,
     },
   });
+}
+
+export type HistoryRow = {
+  id: string;
+  playerName: string;
+  source: string;
+  delta: number;
+  ratingAfter: number;
+  label: string;
+  createdAt: Date;
+};
+
+export const RATING_SOURCE_LABELS: Record<string, string> = {
+  DUEL: "Duel",
+  MATCH: "Zápas",
+  CHALLENGE: "Výzva",
+  COACH: "Trenér",
+};
+
+/**
+ * Historie změn ratingu v sezóně — vidí ji trenér i hráči.
+ *
+ * Právě to dělá ze žebříčku něco, co se dá zkontrolovat: u každého
+ * čísla je vidět, odkud se vzalo.
+ */
+export async function getRatingHistory(
+  userId: string,
+  season: SeasonInfo | null,
+  limit = 60,
+): Promise<HistoryRow[]> {
+  if (!season) return [];
+
+  const entries = await prisma.ratingEntry.findMany({
+    where: { userId, seasonId: season.id },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { player: { select: { name: true } } },
+  });
+
+  return entries.map((e) => ({
+    id: String(e.id),
+    playerName: e.player.name,
+    source: String(e.source),
+    delta: e.delta,
+    ratingAfter: e.ratingAfter,
+    label: e.label,
+    createdAt: e.createdAt,
+  }));
 }

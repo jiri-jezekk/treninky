@@ -58,9 +58,9 @@ model User {
   prepayments  Prepayment[]
   trainingSlots TrainingSlot[]
   drills       Drill[]
-  disciplines  Discipline[]
   duels        Duel[]
   challenges   Challenge[]
+  matches      Match[]
   ratingEntries RatingEntry[]
   ratingSeasons RatingSeason[]
 }
@@ -114,31 +114,10 @@ model Player {
   duelsChallenged Duel[]                 @relation("DuelChallenger")
   duelsFaced      Duel[]                 @relation("DuelOpponent")
   challengeEntries ChallengeEntry[]
+  matchTeams   MatchTeamMember[]
 
   @@unique([userId, number])
   @@index([userId])
-}
-
-/** Disciplína, ve které se dá soupeřit — hod na přesnost, chytání… */
-model Discipline {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  /** Jednotka výsledku: „zásahů“, „s“, „m“… */
-  unit        String?
-  /** false u disciplín na čas, kde vyhrává nižší hodnota. */
-  higherWins  Boolean  @default(true)
-  /** Váha v procentech; 100 = běžný duel. Náročnější disciplína může vážit víc. */
-  weightPercent Int    @default(100)
-  archived    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  duels       Duel[]
-  challenges  Challenge[]
-
-  @@unique([userId, name])
-  @@index([userId, archived])
 }
 
 enum DuelStatus {
@@ -160,8 +139,13 @@ model Duel {
   user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   seasonId       String
   season         RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  disciplineId   String
-  discipline     Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+  /** Duel si hráči pojmenují sami — žádný číselník disciplín. */
+  name           String
+  description    String?
+  /** false, když vyhrává nižší hodnota (čas). */
+  higherWins     Boolean    @default(true)
+  /** Duel je nejlehčí ze tří vah. */
+  weightPercent  Int        @default(100)
   challengerId   String
   challenger     Player     @relation("DuelChallenger", fields: [challengerId], references: [id], onDelete: Cascade)
   opponentId     String
@@ -192,12 +176,10 @@ model Challenge {
   season       RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   name         String
   description  String?
-  disciplineId String?
-  discipline   Discipline? @relation(fields: [disciplineId], references: [id], onDelete: SetNull)
   unit         String?
   higherWins   Boolean     @default(true)
-  /** Váha v procentech. Výchozích 150 dělá z výzvy víc než běžný duel. */
-  weightPercent Int        @default(150)
+  /** Měsíční výzva je z trojice nejtěžší. */
+  weightPercent Int        @default(200)
   startsOn     DateTime    @db.Date
   endsOn       DateTime    @db.Date
   /** Vyplněné = pořadí vyhodnoceno a rating rozdán. Podruhé to nejde. */
@@ -238,6 +220,7 @@ model RatingSeason {
   createdAt DateTime @default(now())
   ratings   PlayerRating[]
   duels     Duel[]
+  matches   Match[]
   challenges Challenge[]
   entries   RatingEntry[]
 
@@ -260,8 +243,64 @@ model PlayerRating {
 
 enum RatingSource {
   DUEL
+  MATCH
   CHALLENGE
   COACH
+}
+
+/**
+ * Zápas týmů — dva týmy na tréninku, nebo turnájek o čtyřech.
+ *
+ * Váhou stojí mezi duelem a měsíční výzvou: hraje se víc lidí naráz,
+ * takže výsledek znamená víc než souboj dvou, ale míň než výzva
+ * na celý měsíc.
+ */
+model Match {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seasonId      String
+  season        RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  /** Zápas je střední váha ze tří. */
+  weightPercent Int          @default(150)
+  playedOn      DateTime     @db.Date
+  /** Odkud vznikl, když se hrál na tréninku. */
+  trainingId    String?
+  training      Training?    @relation(fields: [trainingId], references: [id], onDelete: SetNull)
+  /** Vyplněné = rating rozdaný. Podruhé to nejde. */
+  closedAt      DateTime?
+  createdAt     DateTime     @default(now())
+  teams         MatchTeam[]
+
+  @@index([userId, playedOn])
+  @@index([seasonId])
+}
+
+model MatchTeam {
+  id        String  @id @default(cuid())
+  matchId   String
+  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int
+  /** Vyšší je vždycky lepší — u zápasů se body počítají nahoru. */
+  score     Float   @default(0)
+  /** Kolik dostal každý člen při uzavření. */
+  delta     Int?
+  members   MatchTeamMember[]
+
+  @@index([matchId])
+}
+
+model MatchTeamMember {
+  teamId   String
+  team     MatchTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, playerId])
+  @@index([playerId])
 }
 
 /** Historie změn ratingu — aby šlo dohledat, odkud se kdo kam dostal. */
@@ -279,6 +318,7 @@ model RatingEntry {
   ratingAfter Int
   label       String
   duelId      String?
+  matchId     String?
   challengeId String?
   createdAt   DateTime     @default(now())
 
@@ -447,6 +487,7 @@ model Training {
   defaultPriceCents Int?
   attendances       Attendance[]
   blocks            TrainingBlock[]
+  matches           Match[]
 
   @@index([userId, startsAt])
 }

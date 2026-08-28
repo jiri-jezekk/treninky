@@ -54,19 +54,15 @@ export async function createDuel(formData: FormData) {
   const actor = await resolveActor(payToken);
   if (!actor) return;
 
-  const disciplineId = String(formData.get("disciplineId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
   const opponentId = String(formData.get("opponentId") ?? "");
   const challengerId =
     actor.kind === "player" ? actor.playerId : String(formData.get("challengerId") ?? "");
 
-  if (!disciplineId || !opponentId || !challengerId) return;
+  if (!name || !opponentId || !challengerId) return;
   if (opponentId === challengerId) return;
 
-  const [discipline, challenger, opponent] = await Promise.all([
-    prisma.discipline.findFirst({
-      where: { id: disciplineId, userId: actor.userId, archived: false },
-      select: { id: true },
-    }),
+  const [challenger, opponent] = await Promise.all([
     prisma.player.findFirst({
       where: { id: challengerId, userId: actor.userId, active: true },
       select: { id: true },
@@ -76,18 +72,18 @@ export async function createDuel(formData: FormData) {
       select: { id: true },
     }),
   ]);
-  if (!discipline || !challenger || !opponent) return;
+  if (!challenger || !opponent) return;
 
   const season = await getActiveSeason(actor.userId);
   if (!season) return;
 
-  // Otevřená výzva na totéž se stejným soupeřem už být nemá — jinak
+  // Otevřený duel téhož jména se stejným soupeřem už být nemá — jinak
   // by se seznam zaplnil duplikáty, které nikdo nedohraje.
   const open = await prisma.duel.findFirst({
     where: {
       userId: actor.userId,
       seasonId: season.id,
-      disciplineId,
+      name,
       status: { in: ["PENDING", "ACCEPTED", "REPORTED"] },
       OR: [
         { challengerId, opponentId },
@@ -102,7 +98,9 @@ export async function createDuel(formData: FormData) {
     data: {
       userId: actor.userId,
       seasonId: season.id,
-      disciplineId,
+      name,
+      description: String(formData.get("description") ?? "").trim() || null,
+      higherWins: formData.get("higherWins") !== "off",
       challengerId,
       opponentId,
       note: String(formData.get("note") ?? "").trim() || null,
@@ -184,12 +182,7 @@ export async function confirmDuel(duelId: string, payToken?: string) {
 
   const duel = await prisma.duel.findFirst({
     where: { id: duelId, userId: actor.userId, status: "REPORTED" },
-    include: {
-      discipline: {
-        select: { higherWins: true, name: true, weightPercent: true },
-      },
-      season: true,
-    },
+    include: { season: true },
   });
   if (!duel) return;
   if (duel.challengerValue == null || duel.opponentValue == null) return;
@@ -211,12 +204,12 @@ export async function confirmDuel(duelId: string, payToken?: string) {
   const score = scoreFromValues(
     duel.challengerValue,
     duel.opponentValue,
-    duel.discipline.higherWins,
+    duel.higherWins,
   );
-  // Váha disciplíny i to, jak těsný výsledek byl: 20:0 hne ratingem
+  // Váha duelu i to, jak těsný výsledek byl: 20:0 hne ratingem
   // dvakrát tolik co těsná výhra.
   const { deltaA, deltaB } = duelDeltas(ratingChallenger, ratingOpponent, score, {
-    weightPercent: duel.discipline.weightPercent,
+    weightPercent: duel.weightPercent,
     valueA: duel.challengerValue,
     valueB: duel.opponentValue,
   });
@@ -235,7 +228,7 @@ export async function confirmDuel(duelId: string, payToken?: string) {
     });
     if (claimed.count === 0) return;
 
-    const label = `Duel — ${duel.discipline.name}`;
+    const label = `Duel — ${duel.name}`;
     await applyRatingChange(tx, {
       userId: actor.userId,
       seasonId: duel.seasonId,

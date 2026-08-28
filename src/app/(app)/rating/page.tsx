@@ -1,53 +1,68 @@
-import { RatingView, type ChallengeRow, type DisciplineRow, type DuelRow } from "./RatingView";
-import { getActiveSeason, getLeaderboard } from "@/lib/rating";
+import {
+  RatingView,
+  type ChallengeRow,
+  type DuelRow,
+  type MatchRow,
+} from "./RatingView";
+import { getActiveSeason, getLeaderboard, getRatingHistory } from "@/lib/rating";
 import { toDateInputValue } from "@/lib/prepaid";
+import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 
 export default async function RatingPage() {
   const userId = await requireUserId();
   const season = await getActiveSeason(userId);
+  const inSeason = season ? { seasonId: season.id } : {};
 
-  const [board, disciplines, duels, challenges, players] = await Promise.all([
-    getLeaderboard(userId, season),
-    prisma.discipline.findMany({
-      where: { userId },
-      orderBy: [{ archived: "asc" }, { name: "asc" }],
-    }),
-    prisma.duel.findMany({
-      where: { userId, ...(season && { seasonId: season.id }) },
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-      take: 60,
-      include: {
-        discipline: {
-          select: { name: true, unit: true, higherWins: true, weightPercent: true },
+  const [board, duels, matches, challenges, players, history, trainings] =
+    await Promise.all([
+      getLeaderboard(userId, season),
+      prisma.duel.findMany({
+        where: { userId, ...inSeason },
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+        take: 60,
+        include: {
+          challenger: { select: { name: true } },
+          opponent: { select: { name: true } },
         },
-        challenger: { select: { name: true } },
-        opponent: { select: { name: true } },
-      },
-    }),
-    prisma.challenge.findMany({
-      where: { userId, ...(season && { seasonId: season.id }) },
-      orderBy: [{ closedAt: "asc" }, { endsOn: "desc" }],
-      include: {
-        entries: {
-          orderBy: { value: "desc" },
-          include: { player: { select: { name: true } } },
+      }),
+      prisma.match.findMany({
+        where: { userId, ...inSeason },
+        orderBy: [{ closedAt: "asc" }, { playedOn: "desc" }],
+        take: 40,
+        include: {
+          teams: {
+            orderBy: { sortOrder: "asc" },
+            include: { members: { include: { player: { select: { name: true } } } } },
+          },
         },
-      },
-    }),
-    prisma.player.findMany({
-      where: { userId, active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-  ]);
+      }),
+      prisma.challenge.findMany({
+        where: { userId, ...inSeason },
+        orderBy: [{ closedAt: "asc" }, { endsOn: "desc" }],
+        include: { entries: { include: { player: { select: { name: true } } } } },
+      }),
+      prisma.player.findMany({
+        where: { userId, active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      getRatingHistory(userId, season),
+      prisma.training.findMany({
+        where: { userId, cancelled: false },
+        orderBy: { startsAt: "desc" },
+        take: 12,
+        select: { id: true, startsAt: true },
+      }),
+    ]);
 
   const duelRows: DuelRow[] = duels.map((d) => ({
     id: d.id,
-    discipline: d.discipline.name,
-    unit: d.discipline.unit,
-    weightPercent: d.discipline.weightPercent,
+    name: d.name,
+    description: d.description,
+    higherWins: d.higherWins,
+    weightPercent: d.weightPercent,
     challengerName: d.challenger.name,
     opponentName: d.opponent.name,
     status: d.status,
@@ -56,7 +71,22 @@ export default async function RatingPage() {
     challengerDelta: d.challengerDelta,
     opponentDelta: d.opponentDelta,
     note: d.note,
-    createdAt: d.createdAt.toISOString(),
+  }));
+
+  const matchRows: MatchRow[] = matches.map((m) => ({
+    id: m.id,
+    name: m.name,
+    description: m.description,
+    weightPercent: m.weightPercent,
+    playedOn: toDateInputValue(m.playedOn),
+    closed: m.closedAt != null,
+    teams: m.teams.map((t) => ({
+      id: t.id,
+      name: t.name,
+      score: t.score,
+      delta: t.delta,
+      playerNames: t.members.map((mm) => mm.player.name),
+    })),
   }));
 
   const challengeRows: ChallengeRow[] = challenges.map((c) => {
@@ -84,16 +114,6 @@ export default async function RatingPage() {
     };
   });
 
-  const disciplineRows: DisciplineRow[] = disciplines.map((d) => ({
-    id: d.id,
-    name: d.name,
-    description: d.description,
-    unit: d.unit,
-    higherWins: d.higherWins,
-    weightPercent: d.weightPercent,
-    archived: d.archived,
-  }));
-
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl">
       <div className="mb-6">
@@ -110,21 +130,36 @@ export default async function RatingPage() {
           </p>
         )}
         <p className="mt-2 max-w-prose text-sm text-slate-600">
-          Každý začíná na 1000. Rozhoduje rozdíl ratingů, ne absolutní číslo —
-          kdo porazí výrazně silnějšího, získá hodně; kdo s ním prohraje,
-          ztratí skoro nic. Za každou účast — trénink i posilovnu — přibývá{" "}
-          <span className="text-slate-800">1 bod</span>. Rating platí na sezónu;
-          v té další začínají všichni znovu na 1000.
+          Každý začíná na 1000. Rozhoduje rozdíl ratingů — kdo porazí výrazně
+          silnějšího, získá hodně; kdo s ním prohraje, ztratí skoro nic. Váhy
+          jdou po sobě: <b className="text-slate-700">duel 100 %</b>,{" "}
+          <b className="text-slate-700">zápas 150 %</b>,{" "}
+          <b className="text-slate-700">měsíční výzva 200 %</b>. Za každou účast —
+          trénink i posilovnu — přibývá 1 bod.
         </p>
       </div>
 
       <RatingView
         board={board}
         duels={duelRows}
+        matches={matchRows}
         challenges={challengeRows}
-        disciplines={disciplineRows}
         players={players.map((p) => ({ id: p.id, name: p.name }))}
+        trainings={trainings.map((t) => ({
+          id: t.id,
+          label: formatDateDdMmYyyy(t.startsAt),
+        }))}
+        history={history.map((h) => ({
+          id: h.id,
+          playerName: h.playerName,
+          source: h.source,
+          delta: h.delta,
+          ratingAfter: h.ratingAfter,
+          label: h.label,
+          createdAt: formatDateDdMmYyyy(h.createdAt),
+        }))}
         hasSeason={season != null}
+        today={toDateInputValue(new Date())}
       />
     </div>
   );

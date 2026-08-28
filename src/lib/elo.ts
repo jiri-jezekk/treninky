@@ -24,7 +24,8 @@ export const K_DUEL = 32;
  * místo abstraktního koeficientu. 100 % = běžný duel.
  */
 export const WEIGHT_DUEL_DEFAULT = 100;
-export const WEIGHT_CHALLENGE_DEFAULT = 150;
+export const WEIGHT_MATCH_DEFAULT = 150;
+export const WEIGHT_CHALLENGE_DEFAULT = 200;
 
 /** Výsledek z pohledu jednoho hráče. */
 export type Score = 0 | 0.5 | 1;
@@ -181,4 +182,71 @@ export function ratingBand(rating: number): string {
   if (rating >= 1050) return "Zkušený";
   if (rating >= 950) return "Základ";
   return "Začátečník";
+}
+
+export type TeamResult = {
+  teamId: string;
+  /** Průměrný rating členů — tým vystupuje jako jeden „hráč“. */
+  rating: number;
+  score: number;
+};
+
+export type TeamDelta = {
+  teamId: string;
+  rank: number;
+  /** Změna, kterou dostane každý člen týmu. */
+  delta: number;
+};
+
+/**
+ * Rating po zápase týmů.
+ *
+ * Tým se počítá jako jeden hráč s průměrným ratingem svých členů a
+ * změna pak platí pro každého z nich. Slabší hráč v silném týmu tak
+ * získá míň, než kdyby vyhrál sám — a naopak.
+ *
+ * Dva týmy se počítají jako duel, takže se uplatní i rozdíl skóre
+ * (20:0 hne ratingem víc než 11:9). U tří a víc týmů rozhoduje pořadí,
+ * stejně jako u měsíční výzvy.
+ */
+export function teamDeltas(
+  teams: TeamResult[],
+  weightPercent: number = WEIGHT_MATCH_DEFAULT,
+): TeamDelta[] {
+  if (teams.length < 2) {
+    return teams.map((t) => ({ teamId: t.teamId, rank: 1, delta: 0 }));
+  }
+
+  if (teams.length === 2) {
+    const [a, b] = teams as [TeamResult, TeamResult];
+    const score: Score = a.score === b.score ? 0.5 : a.score > b.score ? 1 : 0;
+    const { deltaA, deltaB } = duelDeltas(a.rating, b.rating, score, {
+      weightPercent,
+      valueA: a.score,
+      valueB: b.score,
+    });
+    const aWins = a.score > b.score;
+    const bWins = b.score > a.score;
+    return [
+      { teamId: a.teamId, rank: aWins ? 1 : bWins ? 2 : 1, delta: deltaA },
+      { teamId: b.teamId, rank: bWins ? 1 : aWins ? 2 : 1, delta: deltaB },
+    ];
+  }
+
+  const asChallenge = challengeDeltas(
+    teams.map((t) => ({ playerId: t.teamId, rating: t.rating, value: t.score })),
+    true,
+    { weightPercent },
+  );
+  return asChallenge.map((d) => ({
+    teamId: d.playerId,
+    rank: d.rank,
+    delta: d.delta,
+  }));
+}
+
+/** Průměrný rating týmu. Prázdný tým se počítá jako začátečnický. */
+export function averageRating(ratings: number[]): number {
+  if (ratings.length === 0) return STARTING_RATING;
+  return Math.round(ratings.reduce((s, r) => s + r, 0) / ratings.length);
 }

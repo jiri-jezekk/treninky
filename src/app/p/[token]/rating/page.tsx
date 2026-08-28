@@ -5,8 +5,9 @@ import { PortalGate } from "../PortalGate";
 import { SessionRefresh } from "../SessionRefresh";
 import { PortalRating, type PortalDuel } from "./PortalRating";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { getActiveSeason, getLeaderboard } from "@/lib/rating";
+import { getActiveSeason, getLeaderboard, getRatingHistory } from "@/lib/rating";
 import { toDateInputValue } from "@/lib/prepaid";
+import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
@@ -54,7 +55,7 @@ export default async function PortalRatingPage({
 
   const season = await getActiveSeason(userId);
 
-  const [board, duels, disciplines, players, challenges] = await Promise.all([
+  const [board, duels, players, challenges, history] = await Promise.all([
     getLeaderboard(userId, season),
     prisma.duel.findMany({
       where: {
@@ -65,15 +66,9 @@ export default async function PortalRatingPage({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       take: 30,
       include: {
-        discipline: { select: { name: true, unit: true } },
         challenger: { select: { id: true, name: true } },
         opponent: { select: { id: true, name: true } },
       },
-    }),
-    prisma.discipline.findMany({
-      where: { userId, archived: false },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, unit: true },
     }),
     prisma.player.findMany({
       where: { userId, active: true, id: { not: me } },
@@ -90,14 +85,15 @@ export default async function PortalRatingPage({
         },
       },
     }),
+    getRatingHistory(userId, season, 40),
   ]);
 
   const myDuels: PortalDuel[] = duels.map((d) => {
     const iAmChallenger = String(d.challengerId) === me;
     return {
       id: d.id,
-      discipline: d.discipline.name,
-      unit: d.discipline.unit,
+      name: d.name,
+      description: d.description,
       status: d.status,
       iAmChallenger,
       opponentName: iAmChallenger ? d.opponent.name : d.challenger.name,
@@ -138,11 +134,6 @@ export default async function PortalRatingPage({
             isMe: r.playerId === me,
           }))}
           duels={myDuels}
-          disciplines={disciplines.map((d) => ({
-            id: d.id,
-            name: d.name,
-            unit: d.unit,
-          }))}
           opponents={players.map((p) => ({ id: p.id, name: p.name }))}
           challenges={challenges.map((c) => ({
             id: c.id,
@@ -151,6 +142,14 @@ export default async function PortalRatingPage({
             unit: c.unit,
             endsOn: toDateInputValue(c.endsOn),
             myValue: c.entries[0]?.value ?? null,
+          }))}
+          history={history.map((h) => ({
+            id: h.id,
+            playerName: h.playerName,
+            source: h.source,
+            delta: h.delta,
+            label: h.label,
+            createdAt: formatDateDdMmYyyy(h.createdAt),
           }))}
         />
       </div>

@@ -12,10 +12,15 @@ import {
   challengeDeltas,
   duelDeltas,
   expectedScore,
+  averageRating,
   marginMultiplier,
   ratingBand,
   scoreFromValues,
   STARTING_RATING,
+  teamDeltas,
+  WEIGHT_CHALLENGE_DEFAULT,
+  WEIGHT_DUEL_DEFAULT,
+  WEIGHT_MATCH_DEFAULT,
 } from "../src/lib/elo.ts";
 
 let failures = 0;
@@ -302,6 +307,106 @@ ok(
 {
   const remiza = duelDeltas(1000, 1000, 0.5, { valueA: 10, valueB: 10 }).deltaA;
   eq("remíza zůstává nulová", remiza, 0);
+}
+
+console.log("\nTři váhy jdou po sobě:");
+ok(
+  "duel < zápas < výzva",
+  WEIGHT_DUEL_DEFAULT < WEIGHT_MATCH_DEFAULT &&
+    WEIGHT_MATCH_DEFAULT < WEIGHT_CHALLENGE_DEFAULT,
+  `(${WEIGHT_DUEL_DEFAULT}/${WEIGHT_MATCH_DEFAULT}/${WEIGHT_CHALLENGE_DEFAULT})`,
+);
+
+console.log("\nPrůměr týmu:");
+eq("prázdný tým je začátečnický", averageRating([]), 1000);
+eq("průměr se zaokrouhlí", averageRating([1000, 1100, 1201]), 1100);
+
+console.log("\nZápas dvou týmů:");
+{
+  const d = teamDeltas([
+    { teamId: "a", rating: 1000, score: 20 },
+    { teamId: "b", rating: 1000, score: 0 },
+  ]);
+  const a = d.find((x) => x.teamId === "a")!;
+  const b = d.find((x) => x.teamId === "b")!;
+  eq("vítěz je první", a.rank, 1);
+  eq("poražený druhý", b.rank, 2);
+  ok("vítěz získává", a.delta > 0, `(${a.delta})`);
+  eq("součet je nula", a.delta + b.delta, 0);
+}
+{
+  const tesny = teamDeltas([
+    { teamId: "a", rating: 1000, score: 11 },
+    { teamId: "b", rating: 1000, score: 9 },
+  ]).find((x) => x.teamId === "a")!.delta;
+  const drtivy = teamDeltas([
+    { teamId: "a", rating: 1000, score: 20 },
+    { teamId: "b", rating: 1000, score: 0 },
+  ]).find((x) => x.teamId === "a")!.delta;
+  ok("drtivá výhra týmu vynese víc", drtivy > tesny, `(${drtivy} vs ${tesny})`);
+}
+{
+  const zapas = teamDeltas([
+    { teamId: "a", rating: 1000, score: 11 },
+    { teamId: "b", rating: 1000, score: 9 },
+  ]).find((x) => x.teamId === "a")!.delta;
+  const duel = duelDeltas(1000, 1000, 1, { valueA: 11, valueB: 9 }).deltaA;
+  ok("zápas váží víc než stejný duel", zapas > duel, `(${zapas} vs ${duel})`);
+}
+{
+  const d = teamDeltas([
+    { teamId: "a", rating: 1000, score: 10 },
+    { teamId: "b", rating: 1000, score: 10 },
+  ]);
+  eq("remíza nikoho nepohne", d.map((x) => x.delta), [0, 0]);
+  eq("a oba jsou první", d.map((x) => x.rank), [1, 1]);
+}
+{
+  // Slabý tým, co porazí silný, má získat výrazně.
+  const d = teamDeltas([
+    { teamId: "slabsi", rating: 900, score: 15 },
+    { teamId: "silnejsi", rating: 1300, score: 10 },
+  ]);
+  const slabsi = d.find((x) => x.teamId === "slabsi")!;
+  ok("překvapení se vyplatí", slabsi.delta >= 30, `(${slabsi.delta})`);
+}
+
+console.log("\nTurnájek čtyř týmů:");
+{
+  const d = teamDeltas([
+    { teamId: "a", rating: 1000, score: 9 },
+    { teamId: "b", rating: 1000, score: 6 },
+    { teamId: "c", rating: 1000, score: 3 },
+    { teamId: "d", rating: 1000, score: 0 },
+  ]);
+  eq(
+    "pořadí podle skóre",
+    d.sort((x, y) => x.rank - y.rank).map((x) => x.teamId),
+    ["a", "b", "c", "d"],
+  );
+  ok("první získává", d.find((x) => x.teamId === "a")!.delta > 0);
+  ok("poslední ztrácí", d.find((x) => x.teamId === "d")!.delta < 0);
+  ok(
+    "součet kolem nuly",
+    Math.abs(d.reduce((s, x) => s + x.delta, 0)) <= 2,
+    `(${d.reduce((s, x) => s + x.delta, 0)})`,
+  );
+}
+{
+  const d = teamDeltas([
+    { teamId: "a", rating: 1000, score: 5 },
+    { teamId: "b", rating: 1000, score: 5 },
+    { teamId: "c", rating: 1000, score: 1 },
+  ]);
+  eq(
+    "shodné skóre, shodné pořadí",
+    d.filter((x) => x.rank === 1).length,
+    2,
+  );
+}
+{
+  eq("jeden tým nemá s kým", teamDeltas([{ teamId: "a", rating: 1000, score: 5 }])[0]!.delta, 0);
+  eq("žádný tým nespadne", teamDeltas([]).length, 0);
 }
 
 console.log("\nZařazení:");

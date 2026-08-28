@@ -11,18 +11,23 @@ import {
 import {
   closeChallenge,
   createChallenge,
-  createDiscipline,
   deleteChallenge,
   deleteChallengeEntry,
-  updateDiscipline,
 } from "@/actions/challenges";
+import {
+  closeMatch,
+  createMatch,
+  deleteMatch,
+  updateMatchScores,
+} from "@/actions/matches";
 import { czPlural, initials } from "@/lib/czech";
 import type { RatingRow } from "@/lib/rating";
 
 export type DuelRow = {
   id: string;
-  discipline: string;
-  unit: string | null;
+  name: string;
+  description: string | null;
+  higherWins: boolean;
   weightPercent: number;
   challengerName: string;
   opponentName: string;
@@ -32,6 +37,31 @@ export type DuelRow = {
   challengerDelta: number | null;
   opponentDelta: number | null;
   note: string | null;
+};
+
+export type MatchRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  weightPercent: number;
+  playedOn: string;
+  closed: boolean;
+  teams: {
+    id: string;
+    name: string;
+    score: number;
+    delta: number | null;
+    playerNames: string[];
+  }[];
+};
+
+export type HistoryRow = {
+  id: string;
+  playerName: string;
+  source: string;
+  delta: number;
+  ratingAfter: number;
+  label: string;
   createdAt: string;
 };
 
@@ -54,16 +84,6 @@ export type ChallengeRow = {
   }[];
 };
 
-export type DisciplineRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  unit: string | null;
-  higherWins: boolean;
-  weightPercent: number;
-  archived: boolean;
-};
-
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
 const field =
@@ -78,7 +98,7 @@ const btnDanger =
 const mini =
   "rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
 
-const TABS = ["Žebříček", "Duely", "Výzvy", "Disciplíny"] as const;
+const TABS = ["Žebříček", "Duely", "Zápasy", "Výzvy", "Historie"] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -96,11 +116,18 @@ const STATUS_CLASS: Record<string, string> = {
   DECLINED: "bg-slate-50 text-slate-500",
 };
 
-function fmt(value: number | null, unit: string | null): string {
+function fmt(value: number | null, unit?: string | null): string {
   if (value == null) return "—";
   const n = Number.isInteger(value) ? String(value) : value.toFixed(2);
   return unit ? `${n} ${unit}` : n;
 }
+
+const SOURCE_LABEL: Record<string, string> = {
+  DUEL: "Duel",
+  MATCH: "Zápas",
+  CHALLENGE: "Výzva",
+  COACH: "Trenér",
+};
 
 function delta(n: number | null): string {
   if (n == null) return "";
@@ -110,22 +137,29 @@ function delta(n: number | null): string {
 export function RatingView({
   board,
   duels,
+  matches,
   challenges,
-  disciplines,
   players,
+  trainings,
+  history,
   hasSeason,
+  today,
 }: {
   board: RatingRow[];
   duels: DuelRow[];
+  matches: MatchRow[];
   challenges: ChallengeRow[];
-  disciplines: DisciplineRow[];
   players: { id: string; name: string }[];
+  trainings: { id: string; label: string }[];
+  history: HistoryRow[];
   /** Bez běžící sezóny se rating nemá kam zapsat. */
   hasSeason: boolean;
+  today: string;
 }) {
   const [tab, setTab] = useState<Tab>("Žebříček");
 
   const waiting = duels.filter((d) => d.status === "REPORTED").length;
+  const openMatches = matches.filter((m) => !m.closed).length;
   const openChallenges = challenges.filter((c) => !c.closed).length;
 
   return (
@@ -150,7 +184,11 @@ export function RatingView({
           value={String(waiting)}
           tone={waiting > 0 ? "warn" : undefined}
         />
-        <Stat title="Otevřených výzev" value={String(openChallenges)} />
+        <Stat
+          title="Nevyhodnoceno"
+          value={String(openMatches + openChallenges)}
+          note="zápasů a výzev"
+        />
       </dl>
 
       <nav className="mb-5 flex flex-wrap gap-2">
@@ -167,22 +205,23 @@ export function RatingView({
           >
             {t}
             {t === "Duely" && waiting > 0 && ` (${waiting})`}
+            {t === "Zápasy" && openMatches > 0 && ` (${openMatches})`}
           </button>
         ))}
       </nav>
 
       {tab === "Žebříček" && <Leaderboard board={board} players={players} />}
-      {tab === "Duely" && (
-        <Duels duels={duels} disciplines={disciplines} players={players} />
-      )}
-      {tab === "Výzvy" && (
-        <Challenges
-          challenges={challenges}
-          disciplines={disciplines}
+      {tab === "Duely" && <Duels duels={duels} players={players} />}
+      {tab === "Zápasy" && (
+        <Matches
+          matches={matches}
           players={players}
+          trainings={trainings}
+          today={today}
         />
       )}
-      {tab === "Disciplíny" && <Disciplines disciplines={disciplines} />}
+      {tab === "Výzvy" && <Challenges challenges={challenges} today={today} />}
+      {tab === "Historie" && <History history={history} />}
     </>
   );
 }
@@ -306,22 +345,24 @@ function Leaderboard({
 
 function Duels({
   duels,
-  disciplines,
   players,
 }: {
   duels: DuelRow[];
-  disciplines: DisciplineRow[];
   players: { id: string; name: string }[];
 }) {
   const [adding, setAdding] = useState(false);
   const [reporting, setReporting] = useState<string | null>(null);
-  const active = disciplines.filter((d) => !d.archived);
 
   return (
     <section className={card}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
-        <h2 className={label}>Duely</h2>
-        {active.length > 0 && !adding && (
+        <div className="min-w-0">
+          <h2 className={label}>Duely</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Souboj dvou hráčů. Nejlehčí ze tří vah.
+          </p>
+        </div>
+        {!adding && (
           <button type="button" className={btnOutline} onClick={() => setAdding(true)}>
             + Domluvit duel
           </button>
@@ -336,14 +377,13 @@ function Duels({
         >
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block">
-              <span className={label}>Disciplína</span>
-              <select name="disciplineId" required className={field}>
-                {active.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+              <span className={label}>Název duelu</span>
+              <input
+                name="name"
+                required
+                placeholder="Hod na přesnost"
+                className={field}
+              />
             </label>
             <label className="block">
               <span className={label}>Vyzývá</span>
@@ -366,6 +406,18 @@ function Duels({
               </select>
             </label>
           </div>
+          <label className="mt-3 block">
+            <span className={label}>Popis (nepovinné)</span>
+            <input
+              name="description"
+              placeholder="10 hodů na kužely ze šesti metrů"
+              className={field}
+            />
+          </label>
+          <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+            <input type="checkbox" name="higherWins" defaultChecked />
+            Vyhrává vyšší hodnota (odškrtni u disciplín na čas)
+          </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="submit" className={btnPrimary}>
               Domluvit
@@ -379,7 +431,8 @@ function Duels({
 
       {duels.length === 0 ? (
         <p className="px-5 py-12 text-center text-sm italic text-slate-500">
-          Zatím žádné duely. Hráči si je můžou domluvit sami ve svém odkazu.
+          Zatím žádné duely. Hráči si je můžou vytvořit a pojmenovat sami ve
+          svém odkazu.
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">
@@ -393,27 +446,27 @@ function Duels({
                     >
                       {STATUS_LABEL[d.status] ?? d.status}
                     </span>
-                    <span className="text-xs text-slate-500">
-                      {d.discipline}
-                      {d.weightPercent !== 100 && ` · váha ${d.weightPercent} %`}
-                    </span>
+                    <span className="font-medium text-slate-800">{d.name}</span>
+                    {!d.higherWins && (
+                      <span className="text-xs text-slate-500">vyhrává nižší</span>
+                    )}
                   </div>
-                  <p className="mt-1.5 font-medium text-slate-800">
-                    {d.challengerName}{" "}
-                    <span className="text-slate-500">vs</span> {d.opponentName}
+                  <p className="mt-1 text-sm text-slate-600">
+                    {d.challengerName} <span className="text-slate-500">vs</span>{" "}
+                    {d.opponentName}
                   </p>
+                  {d.description && (
+                    <p className="mt-1 text-xs text-slate-500">{d.description}</p>
+                  )}
                   {d.challengerValue != null && (
-                    <p className="mt-1 text-sm tabular-nums text-slate-600">
-                      {fmt(d.challengerValue, d.unit)} : {fmt(d.opponentValue, d.unit)}
+                    <p className="mt-1 text-sm tabular-nums text-slate-700">
+                      {fmt(d.challengerValue)} : {fmt(d.opponentValue)}
                       {d.status === "CONFIRMED" && (
                         <span className="ml-2 text-xs text-slate-500">
                           ({delta(d.challengerDelta)} / {delta(d.opponentDelta)})
                         </span>
                       )}
                     </p>
-                  )}
-                  {d.note && (
-                    <p className="mt-1 text-xs text-slate-500">{d.note}</p>
                   )}
                 </div>
 
@@ -486,25 +539,287 @@ function Duels({
   );
 }
 
+/* ----------------------------------------------------------- zápasy */
+
+function Matches({
+  matches,
+  players,
+  trainings,
+  today,
+}: {
+  matches: MatchRow[];
+  players: { id: string; name: string }[];
+  trainings: { id: string; label: string }[];
+  today: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [teamCount, setTeamCount] = useState(2);
+
+  return (
+    <section className={card}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <h2 className={label}>Zápasy</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Dva týmy na tréninku, nebo turnájek o čtyřech. Střední váha.
+          </p>
+        </div>
+        {!adding && (
+          <button type="button" className={btnOutline} onClick={() => setAdding(true)}>
+            + Zapsat zápas
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <form
+          action={createMatch}
+          onSubmit={() => setAdding(false)}
+          className="border-b border-slate-100 bg-slate-50 px-4 py-4 sm:px-5"
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className={label}>Název</span>
+              <input name="name" required placeholder="Zápas 6 na 6" className={field} />
+            </label>
+            <label className="block">
+              <span className={label}>Datum</span>
+              <input
+                type="date"
+                name="playedOn"
+                defaultValue={today}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className={label}>Váha (%)</span>
+              <input
+                name="weightPercent"
+                inputMode="numeric"
+                defaultValue="150"
+                className={`${field} tabular-nums`}
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className={label}>Popis (nepovinné)</span>
+              <input name="description" className={field} />
+            </label>
+            {trainings.length > 0 && (
+              <label className="block">
+                <span className={label}>Na kterém tréninku</span>
+                <select name="trainingId" defaultValue="zadny" className={field}>
+                  <option value="zadny">— neuvádět —</option>
+                  {trainings.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className={label}>Počet týmů:</span>
+            {[2, 3, 4].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setTeamCount(n)}
+                className={
+                  teamCount === n
+                    ? "rounded-full border border-club-line bg-club-soft px-3 py-1 text-xs text-slate-900"
+                    : mini
+                }
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: teamCount }, (_, i) => (
+              <div key={i} className="rounded-xl border border-slate-200 p-3">
+                <div className="grid grid-cols-[2fr_1fr] gap-2">
+                  <label className="block">
+                    <span className={label}>Název týmu</span>
+                    <input
+                      name="teamName"
+                      defaultValue={`Tým ${String.fromCharCode(65 + i)}`}
+                      className={field}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={label}>Skóre</span>
+                    <input
+                      name="teamScore"
+                      inputMode="decimal"
+                      defaultValue="0"
+                      className={`${field} tabular-nums`}
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-slate-200 p-1.5">
+                  {players.map((p) => (
+                    <label
+                      key={p.id}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      <input type="checkbox" name={`teamPlayers${i}`} value={p.id} />
+                      {p.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="submit" className={btnPrimary}>
+              Zapsat zápas
+            </button>
+            <button type="button" className={btnOutline} onClick={() => setAdding(false)}>
+              Zrušit
+            </button>
+          </div>
+          <p className="mt-2 text-xs italic text-slate-500">
+            Vyšší skóre vyhrává. Hráč smí být jen v jednom týmu — kdyby byl ve
+            dvou, počítal by se jeho rating dvakrát.
+          </p>
+        </form>
+      )}
+
+      {matches.length === 0 && !adding ? (
+        <p className="px-5 py-12 text-center text-sm italic text-slate-500">
+          Zatím žádný zápas. Zapiš ten z posledního tréninku.
+        </p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {matches.map((m) => {
+            const best = Math.max(...m.teams.map((t) => t.score));
+            return (
+              <li key={m.id} className="px-4 py-4 sm:px-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-slate-800">{m.name}</span>
+                      <span
+                        className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${
+                          m.closed
+                            ? "bg-emerald-50 text-emerald-800"
+                            : "bg-amber-50 text-amber-900"
+                        }`}
+                      >
+                        {m.closed ? "Vyhodnoceno" : "Čeká na vyhodnocení"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {m.playedOn} · váha {m.weightPercent} %
+                    </p>
+                    {m.description && (
+                      <p className="mt-1 text-sm text-slate-600">{m.description}</p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {!m.closed && (
+                      <>
+                        <form action={closeMatch.bind(null, m.id)}>
+                          <button type="submit" className={btnPrimary}>
+                            Vyhodnotit
+                          </button>
+                        </form>
+                        <form action={deleteMatch.bind(null, m.id)}>
+                          <button type="submit" className={btnDanger}>
+                            Smazat
+                          </button>
+                        </form>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <form
+                  action={updateMatchScores.bind(null, m.id)}
+                  className="mt-3 grid gap-2 sm:grid-cols-2"
+                >
+                  {m.teams.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`rounded-lg border p-2.5 ${
+                        t.score === best
+                          ? "border-club-line bg-club-soft"
+                          : "border-slate-200"
+                      }`}
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-heading text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                          {t.name}
+                        </span>
+                        {m.closed ? (
+                          <span
+                            className={`font-heading text-sm font-bold tabular-nums ${
+                              (t.delta ?? 0) > 0
+                                ? "text-emerald-800"
+                                : (t.delta ?? 0) < 0
+                                  ? "text-red-800"
+                                  : "text-slate-500"
+                            }`}
+                          >
+                            {fmt(t.score)} · {delta(t.delta) || "±0"}
+                          </span>
+                        ) : (
+                          <input
+                            name={`score-${t.id}`}
+                            defaultValue={String(t.score)}
+                            inputMode="decimal"
+                            className="w-20 rounded border border-slate-200 px-2 py-1 text-right text-sm tabular-nums text-slate-900"
+                          />
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {t.playerNames.join(", ")}
+                      </p>
+                    </div>
+                  ))}
+                  {!m.closed && (
+                    <button type="submit" className={`${mini} justify-self-start`}>
+                      Uložit skóre
+                    </button>
+                  )}
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------ výzvy */
 
 function Challenges({
   challenges,
-  disciplines,
-  players,
+  today,
 }: {
   challenges: ChallengeRow[];
-  disciplines: DisciplineRow[];
-  players: { id: string; name: string }[];
+  today: string;
 }) {
   const [adding, setAdding] = useState(false);
-  const active = disciplines.filter((d) => !d.archived);
 
   return (
     <>
       <section className={`${card} mb-5`}>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
-          <h2 className={label}>Měsíční výzvy</h2>
+          <div className="min-w-0">
+            <h2 className={label}>Měsíční výzvy</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Nejtěžší ze tří vah — běží celý měsíc.
+            </p>
+          </div>
           {!adding && (
             <button type="button" className={btnOutline} onClick={() => setAdding(true)}>
               + Vyhlásit výzvu
@@ -521,42 +836,32 @@ function Challenges({
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className={label}>Název</span>
-                <input
-                  name="name"
-                  required
-                  placeholder="Výběh Ještědu"
-                  className={field}
-                />
-              </label>
-              <label className="block">
-                <span className={label}>Disciplína z číselníku</span>
-                <select name="disciplineId" defaultValue="vlastni" className={field}>
-                  <option value="vlastni">— vlastní —</option>
-                  {active.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className={label}>Od</span>
-                <input type="date" name="startsOn" required className={field} />
-              </label>
-              <label className="block">
-                <span className={label}>Do</span>
-                <input type="date" name="endsOn" required className={field} />
+                <input name="name" required placeholder="Výběh Ještědu" className={field} />
               </label>
               <label className="block">
                 <span className={label}>Jednotka</span>
                 <input name="unit" placeholder="min, km, opakování" className={field} />
               </label>
               <label className="block">
+                <span className={label}>Od</span>
+                <input
+                  type="date"
+                  name="startsOn"
+                  required
+                  defaultValue={today}
+                  className={field}
+                />
+              </label>
+              <label className="block">
+                <span className={label}>Do</span>
+                <input type="date" name="endsOn" required className={field} />
+              </label>
+              <label className="block">
                 <span className={label}>Váha (%)</span>
                 <input
                   name="weightPercent"
                   inputMode="numeric"
-                  defaultValue="150"
+                  defaultValue="200"
                   className={`${field} tabular-nums`}
                 />
               </label>
@@ -583,7 +888,7 @@ function Challenges({
             </div>
             <p className="mt-2 text-xs italic text-slate-500">
               U výzvy na čas odškrtni „vyhrává vyšší hodnota“ — pak vede nižší
-              číslo. Váha 150 % znamená, že výzva hne ratingem víc než běžný duel.
+              číslo.
             </p>
           </form>
         )}
@@ -687,169 +992,65 @@ function Challenges({
         </ul>
       </section>
 
-      {players.length > 0 && (
-        <p className="text-xs italic text-slate-500">
-          Uzavřením se rozdá rating podle pořadí a výzva se zamkne. Zpět to
-          nejde, tak si napřed zkontroluj zapsané hodnoty.
-        </p>
-      )}
+      <p className="text-xs italic text-slate-500">
+        Uzavřením se rozdá rating podle pořadí a výzva se zamkne. Zpět to nejde,
+        tak si napřed zkontroluj zapsané hodnoty.
+      </p>
     </>
   );
 }
 
-/* ------------------------------------------------------- disciplíny */
+/* --------------------------------------------------------- historie */
 
-function Disciplines({ disciplines }: { disciplines: DisciplineRow[] }) {
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+function History({ history }: { history: HistoryRow[] }) {
+  if (history.length === 0) {
+    return (
+      <p className={`${card} px-5 py-12 text-center text-sm italic text-slate-500`}>
+        Zatím se rating nikde nezměnil.
+      </p>
+    );
+  }
 
   return (
     <section className={card}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
-        <div className="min-w-0">
-          <h2 className={label}>Disciplíny</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            V čem se dá soupeřit. Přidej si vlastní, kdykoli něco vymyslíte.
-          </p>
-        </div>
-        {!adding && (
-          <button type="button" className={btnOutline} onClick={() => setAdding(true)}>
-            + Přidat disciplínu
-          </button>
-        )}
+      <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
+        <h2 className={label}>Historie ratingu</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          U každé změny je vidět, odkud se vzala. Vidí to i hráči ve svém odkazu.
+        </p>
       </div>
-
-      {adding && (
-        <form
-          action={createDiscipline}
-          onSubmit={() => setAdding(false)}
-          className="border-b border-slate-100 bg-slate-50 px-4 py-4 sm:px-5"
-        >
-          <DisciplineFields />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="submit" className={btnPrimary}>
-              Přidat
-            </button>
-            <button type="button" className={btnOutline} onClick={() => setAdding(false)}>
-              Zrušit
-            </button>
-          </div>
-        </form>
-      )}
-
       <ul className="divide-y divide-slate-100">
-        {disciplines.map((d) =>
-          editing === d.id ? (
-            <li key={d.id} className="bg-slate-50 px-4 py-4 sm:px-5">
-              <form
-                action={updateDiscipline.bind(null, d.id)}
-                onSubmit={() => setEditing(null)}
-              >
-                <DisciplineFields discipline={d} />
-                <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
-                  <input type="checkbox" name="archived" defaultChecked={d.archived} />
-                  Archivovat (nebude se nabízet)
-                </label>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="submit" className={btnPrimary}>
-                    Uložit
-                  </button>
-                  <button
-                    type="button"
-                    className={btnOutline}
-                    onClick={() => setEditing(null)}
-                  >
-                    Zrušit
-                  </button>
-                </div>
-              </form>
-            </li>
-          ) : (
-            <li
-              key={d.id}
-              className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5"
-            >
-              <span className="min-w-0 flex-1">
-                <span
-                  className={`block font-medium ${d.archived ? "text-slate-500" : "text-slate-800"}`}
-                >
-                  {d.name}
-                  {d.archived && (
-                    <span className="ml-2 text-xs text-slate-500">· archiv</span>
-                  )}
-                </span>
-                <span className="block text-xs text-slate-500">
-                  {d.unit ?? "bez jednotky"} ·{" "}
-                  {d.higherWins ? "vyhrává vyšší" : "vyhrává nižší"} · váha{" "}
-                  {d.weightPercent} %
-                  {d.description && ` · ${d.description}`}
-                </span>
+        {history.map((h) => (
+          <li key={h.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+            <span className="w-20 shrink-0 text-xs tabular-nums text-slate-500">
+              {h.createdAt}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-slate-800">
+                {h.playerName}
               </span>
-              <button type="button" className={mini} onClick={() => setEditing(d.id)}>
-                Upravit
-              </button>
-            </li>
-          ),
-        )}
+              <span className="block truncate text-xs text-slate-500">
+                {SOURCE_LABEL[h.source] ?? h.source} · {h.label}
+              </span>
+            </span>
+            <span
+              className={`w-12 shrink-0 text-right font-heading text-sm font-bold tabular-nums ${
+                h.delta > 0
+                  ? "text-emerald-800"
+                  : h.delta < 0
+                    ? "text-red-800"
+                    : "text-slate-500"
+              }`}
+            >
+              {delta(h.delta)}
+            </span>
+            <span className="w-12 shrink-0 text-right text-xs tabular-nums text-slate-500">
+              {h.ratingAfter}
+            </span>
+          </li>
+        ))}
       </ul>
     </section>
-  );
-}
-
-function DisciplineFields({ discipline }: { discipline?: DisciplineRow }) {
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
-        <label className="block">
-          <span className={label}>Název</span>
-          <input
-            name="name"
-            required
-            defaultValue={discipline?.name}
-            placeholder="Hod na přesnost"
-            className={field}
-          />
-        </label>
-        <label className="block">
-          <span className={label}>Jednotka</span>
-          <input
-            name="unit"
-            defaultValue={discipline?.unit ?? ""}
-            placeholder="zásahů"
-            className={field}
-          />
-        </label>
-        <label className="flex cursor-pointer items-end gap-2.5 pb-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            name="higherWins"
-            defaultChecked={discipline?.higherWins ?? true}
-          />
-          Vyhrává vyšší
-        </label>
-      </div>
-      <label className="block sm:max-w-[10rem]">
-        <span className={label}>Váha (%)</span>
-        <input
-          name="weightPercent"
-          inputMode="numeric"
-          defaultValue={discipline?.weightPercent ?? 100}
-          className={`${field} tabular-nums`}
-        />
-        <span className="mt-1 block text-xs italic text-slate-500">
-          100 = běžný duel. Náročnější disciplína může vážit víc.
-        </span>
-      </label>
-      <label className="block">
-        <span className={label}>Popis</span>
-        <input
-          name="description"
-          defaultValue={discipline?.description ?? ""}
-          placeholder="Deset hodů na kužely."
-          className={field}
-        />
-      </label>
-    </div>
   );
 }
 

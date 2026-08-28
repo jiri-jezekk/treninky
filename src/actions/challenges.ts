@@ -41,38 +41,18 @@ export async function createChallenge(formData: FormData) {
   const endsOn = parseDateInput(formData.get("endsOn"));
   if (!name || !startsOn || !endsOn || endsOn < startsOn) return;
 
-  const disciplineIdRaw = String(formData.get("disciplineId") ?? "");
-  const disciplineId =
-    disciplineIdRaw === "" || disciplineIdRaw === "vlastni" ? null : disciplineIdRaw;
-
-  const discipline = disciplineId
-    ? await prisma.discipline.findFirst({
-        where: { id: disciplineId, userId },
-        select: { id: true, unit: true, higherWins: true },
-      })
-    : null;
-  if (disciplineId && !discipline) return;
-
   const season = await getActiveSeason(userId);
   if (!season) return;
-
-  const weight = Number(String(formData.get("weightPercent") ?? "").trim());
 
   await prisma.challenge.create({
     data: {
       userId,
       seasonId: season.id,
-      weightPercent:
-        Number.isFinite(weight) && weight >= 10 && weight <= 500
-          ? Math.round(weight)
-          : 150,
+      weightPercent: parseWeight(formData.get("weightPercent"), 200),
       name,
       description: String(formData.get("description") ?? "").trim() || null,
-      disciplineId: discipline?.id ?? null,
-      unit: String(formData.get("unit") ?? "").trim() || discipline?.unit || null,
-      higherWins: discipline
-        ? discipline.higherWins
-        : formData.get("higherWins") !== "off",
+      unit: String(formData.get("unit") ?? "").trim() || null,
+      higherWins: formData.get("higherWins") !== "off",
       startsOn,
       endsOn,
     },
@@ -233,63 +213,6 @@ export async function deleteChallenge(challengeId: string) {
   const userId = await requireUserId();
   await prisma.challenge.deleteMany({
     where: { id: challengeId, userId, closedAt: null },
-  });
-  revalidateChallenges();
-}
-
-/* --------------------------------------------------------- disciplíny */
-
-export async function createDiscipline(formData: FormData) {
-  const userId = await requireUserId();
-  const name = String(formData.get("name") ?? "").trim();
-  if (!name) return;
-
-  const clash = await prisma.discipline.findFirst({
-    where: { userId, name },
-    select: { id: true },
-  });
-  if (clash) return;
-
-  await prisma.discipline.create({
-    data: {
-      userId,
-      name,
-      description: String(formData.get("description") ?? "").trim() || null,
-      unit: String(formData.get("unit") ?? "").trim() || null,
-      higherWins: formData.get("higherWins") !== "off",
-      weightPercent: parseWeight(formData.get("weightPercent"), 100),
-    },
-  });
-  revalidateChallenges();
-}
-
-export async function updateDiscipline(disciplineId: string, formData: FormData) {
-  const userId = await requireUserId();
-  const owned = await prisma.discipline.findFirst({
-    where: { id: disciplineId, userId },
-    select: { id: true },
-  });
-  if (!owned) return;
-
-  const name = String(formData.get("name") ?? "").trim();
-  if (!name) return;
-
-  const clash = await prisma.discipline.findFirst({
-    where: { userId, name, id: { not: disciplineId } },
-    select: { id: true },
-  });
-  if (clash) return;
-
-  await prisma.discipline.update({
-    where: { id: disciplineId },
-    data: {
-      name,
-      description: String(formData.get("description") ?? "").trim() || null,
-      unit: String(formData.get("unit") ?? "").trim() || null,
-      higherWins: formData.get("higherWins") !== "off",
-      weightPercent: parseWeight(formData.get("weightPercent"), 100),
-      archived: formData.get("archived") === "on",
-    },
   });
   revalidateChallenges();
 }
