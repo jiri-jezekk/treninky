@@ -2,13 +2,14 @@
 // mimo Next.js, kde alias @/ neexistuje.
 import { isPrepaidOn, type PrepaidRange } from "./prepaid.ts";
 import { priceCentsForTrainingSession } from "./training-pricing.ts";
+import type { TrainingKindValue } from "./training-slots.ts";
 
 /** Odchozený trénink, jak ho potřebuje výpočet. */
 export type ChargeableSession = {
   startsAt: Date;
   defaultPriceCents: number | null;
   /** GYM = posilovna, do peněz se nepočítá. */
-  kind?: string;
+  kind?: TrainingKindValue;
 };
 
 export type MonthCharge = {

@@ -6,6 +6,13 @@
  * změnit bez zásahu do kódu.
  */
 
+/**
+ * Druh tréninku. Musí přesně odpovídat výčtu TrainingKind ve schématu —
+ * hodnota odsud jde rovnou do databáze. Jako `string` to bylo volnější,
+ * než co Prisma přijme, a build to odhalil až na Vercelu.
+ */
+export type TrainingKindValue = "TRAINING" | "GYM";
+
 /** Termín rozvrhu, jak ho potřebuje generování. */
 export type Slot = {
   id: string;
@@ -14,7 +21,7 @@ export type Slot = {
   endMinutes: number;
   priceCents: number;
   /** GYM = posilovna: počítá se do ratingu, ale neúčtuje se. */
-  kind?: string;
+  kind?: TrainingKindValue;
 };
 
 export const DAY_NAMES = [
@@ -66,7 +73,7 @@ export type PlannedTraining = {
   startsAt: Date;
   endsAt: Date;
   priceCents: number;
-  kind: string;
+  kind: TrainingKindValue;
 };
 
 /**

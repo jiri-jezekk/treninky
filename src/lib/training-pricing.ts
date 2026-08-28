@@ -1,4 +1,5 @@
 import type { Training } from "@prisma/client";
+import type { TrainingKindValue } from "./training-slots.ts";
 
 /** Úterý: 110 Kč, čtvrtek: 100 Kč. Výjimka: ruční trénink s vyplněnou cenou. */
 export const PRICE_TUESDAY_CENTS = 110 * 100;
@@ -33,7 +34,9 @@ export function isRegularTuesdayThursdayAuto(
  * stejně, jako to dřív platilo pro juniory.
  */
 export function priceCentsForTrainingSession(
-  training: Pick<Training, "startsAt" | "defaultPriceCents"> & { kind?: string },
+  training: Pick<Training, "startsAt" | "defaultPriceCents"> & {
+    kind?: TrainingKindValue;
+  },
   discountPriceCents: number | null,
 ): number {
   // Posilovna se neúčtuje vůbec — chodí se na ni po svém. Musí to být

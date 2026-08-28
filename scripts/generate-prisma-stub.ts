@@ -15,6 +15,12 @@
  * kontrola neodhalí. Odhalí ale překlepy a nesoulad typů u skalárních polí
  * a výčtů — a to je přesně ta třída chyb, která sem chodí.
  *
+ * Zapisované hodnoty se dlouho nekontrolovaly vůbec (`data` bylo
+ * `Record<string, unknown>`) a build padal na Vercelu na tom, že do sloupce
+ * s výčtem šel obyčejný `string`. Proto se u `create`/`update`/`upsert`
+ * hlídají aspoň sloupce s výčtem — ostatní klíče zůstávají volné, aby se
+ * nemuselo modelovat celé Prisma API se vztahy a operátory.
+ *
  * Spuštění: npm run gen:prisma-stub
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -48,12 +54,13 @@ const enums = [...schema.matchAll(/^enum\s+(\w+)\s*\{([\s\S]*?)^\}/gm)].map(
 const enumNames = new Set(enums.map((e) => e.name));
 
 type Field = { name: string; ts: string; optional: boolean };
-type Model = { name: string; fields: Field[] };
+type Model = { name: string; fields: Field[]; enumFields: Field[] };
 
 const models: Model[] = [];
 for (const m of schema.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
   const name = m[1]!;
   const fields: Field[] = [];
+  const enumFields: Field[] = [];
 
   for (const rawLine of m[2]!.split("\n")) {
     const line = rawLine.split("//")[0]!.trim();
@@ -82,6 +89,12 @@ for (const m of schema.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
         ts: isOptional ? `${ts} | null` : ts,
         optional: false,
       });
+      // Zapisovaná hodnota: u nepovinného sloupce se smí poslat i null.
+      enumFields.push({
+        name: fieldName,
+        ts: isOptional ? `${ts} | null` : ts,
+        optional: true,
+      });
     } else {
       // Vztah. Tváří se, jako by byl vždycky načtený — jinak by kontrola
       // hlásila „possibly undefined“ na každém `include`, což je šum,
@@ -94,7 +107,7 @@ for (const m of schema.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
       });
     }
   }
-  models.push({ name, fields });
+  models.push({ name, fields, enumFields });
 }
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
@@ -127,21 +140,41 @@ for (const model of models) {
   lines.push("    _count: Record<string, number>;");
   lines.push("  };");
   lines.push("");
+
+  // Tvar zápisu. Obsahuje jen sloupce s výčtem — ostatní klíče projdou
+  // volně (viz Args), protože vztahy a operátory se tu nemodelují.
+  lines.push(`  type ${model.name}Write = {`);
+  for (const f of model.enumFields) {
+    lines.push(`    ${f.name}?: ${f.ts};`);
+  }
+  // Index musí zůstat — bez něj by kontrola hlásila každý normální sloupec
+  // jako neznámý. Hlídají se jen výčty, zbytek projde.
+  lines.push("    [key: string]: unknown;");
+  lines.push("  };");
+  lines.push("");
 }
 
 // Argumenty se nemodelují — kontroluje se tvar výsledku, ne dotazu.
 lines.push("  type Args = Record<string, unknown>;");
 lines.push("");
-lines.push("  type Delegate<T> = {");
+lines.push("  type Delegate<T, W> = {");
 lines.push("    findMany(args?: Args): Promise<T[]>;");
 lines.push("    findFirst(args?: Args): Promise<T | null>;");
 lines.push("    findUnique(args: Args): Promise<T | null>;");
 lines.push("    findUniqueOrThrow(args: Args): Promise<T>;");
-lines.push("    create(args: Args): Promise<T>;");
-lines.push("    createMany(args: Args): Promise<{ count: number }>;");
-lines.push("    update(args: Args): Promise<T>;");
-lines.push("    updateMany(args: Args): Promise<{ count: number }>;");
-lines.push("    upsert(args: Args): Promise<T>;");
+// `data` přes generikum s omezením: neprojde `string` tam, kde schéma
+// čeká výčet. Ostatní klíče zůstávají volné.
+lines.push("    create<D extends W>(args: Args & { data: D }): Promise<T>;");
+lines.push(
+  "    createMany<D extends W>(args: Args & { data: D | D[] }): Promise<{ count: number }>;",
+);
+lines.push("    update<D extends W>(args: Args & { data: D }): Promise<T>;");
+lines.push(
+  "    updateMany<D extends W>(args: Args & { data: D }): Promise<{ count: number }>;",
+);
+lines.push(
+  "    upsert<C extends W, U extends W>(args: Args & { create: C; update: U }): Promise<T>;",
+);
 lines.push("    delete(args: Args): Promise<T>;");
 lines.push("    deleteMany(args?: Args): Promise<{ count: number }>;");
 lines.push("    count(args?: Args): Promise<number>;");
@@ -155,7 +188,9 @@ lines.push("");
 
 lines.push("  export type PrismaClientLike = {");
 for (const model of models) {
-  lines.push(`    ${lower(model.name)}: Delegate<${model.name}>;`);
+  lines.push(
+    `    ${lower(model.name)}: Delegate<${model.name}, ${model.name}Write>;`,
+  );
 }
 lines.push("    $transaction(ops: readonly Promise<unknown>[]): Promise<unknown[]>;");
 lines.push(

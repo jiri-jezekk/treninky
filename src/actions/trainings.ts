@@ -135,7 +135,22 @@ export async function generateTrainingsFromSchedule(formData: FormData) {
     throw new Error("V rozvrhu není žádný zapnutý termín, ze kterého generovat.");
   }
 
-  const planned = planTrainings(slots as Slot[], start, end);
+  // Mapuje se výslovně, ne přetypováním — kdyby se rozvrh ve schématu
+  // změnil, ať to spadne tady a ne až v generování.
+  const planned = planTrainings(
+    slots.map(
+      (s): Slot => ({
+        id: s.id,
+        dayOfWeek: s.dayOfWeek,
+        startMinutes: s.startMinutes,
+        endMinutes: s.endMinutes,
+        priceCents: s.priceCents,
+        kind: s.kind,
+      }),
+    ),
+    start,
+    end,
+  );
   if (planned.length === 0) {
     throw new Error("V zadaném období nevychází podle rozvrhu žádný trénink.");
   }
