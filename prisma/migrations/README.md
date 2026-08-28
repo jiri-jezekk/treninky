@@ -63,6 +63,40 @@ Každá migrace, která krom struktury sahá i na data, má na konci
 kontrolu, která ji shodí, když výsledek nesedí. Lepší spadnout
 v migraci než tiše rozjet aplikaci nad polovičními daty.
 
+## Starší podoba ratingu v produkci
+
+Produkční databáze měla rating v jiné podobě, než jakou popisují migrace:
+rating byl jedno číslo u hráče (`Player.ratingPoints`), duely a výzvy se
+vázaly na číselník `Discipline` a sezóny neexistovaly. V `_prisma_migrations`
+o tom nebyl záznam — tedy se to tam dostalo mimo migrace.
+
+Projevilo se to až při nasazení jako `column "seasonId" does not exist`:
+tabulka `Duel` v databázi byla, ale jiná, takže ji `CREATE TABLE IF NOT
+EXISTS` přeskočil a další příkaz spadl na sloupci, který v ní není.
+
+Migrace `20260828170000` proto začíná úklidem. Nic nemaže — staré tabulky
+odsune do schématu `stary_rating`, kde je aplikace nevidí (Prisma se dívá
+jen do `public`) a data zůstanou k nahlédnutí:
+
+```sql
+SELECT * FROM stary_rating."Discipline";
+SELECT * FROM stary_rating."PlayerRatingPoints";  -- rating hráčů před resetem
+```
+
+Odsun jde přes `SET SCHEMA`, které bere s sebou i indexy a klíče — jinak
+by se nové tabulky nemohly jmenovat stejně. Spustí se jen když je stará
+podoba poznat (`Duel.disciplineId` nebo tabulka `Discipline`), takže
+opakované nasazení už nové tabulky nikam neodsune.
+
+Až bude jasné, že v archivu nic nechybí, smaže se celý najednou:
+
+```sql
+DROP SCHEMA stary_rating CASCADE;
+```
+
+Stav produkce před opravou je zapsaný v `scripts/fixtures/stary-rating.sql`
+a migrace je proti němu odladěná.
+
 ## Co nedělat
 
 - **`prisma db push` na produkci.** Změní strukturu, ale do

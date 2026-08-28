@@ -12,6 +12,76 @@
 -- Vkládaná data mají stejnou pojistku, aby sezóna a ratingy nevznikly
 -- podruhé a aby se nepřepsalo, co už je odehrané.
 
+-- ÚKLID PO STARŠÍ PODOBĚ RATINGU
+--
+-- V produkci je verze, která se do databáze dostala mimo migrace (jinak
+-- by o ní `_prisma_migrations` věděla — typicky `prisma db push`).
+-- Vypadá takhle: rating byl jedno číslo u hráče (`Player.ratingPoints`),
+-- duely a výzvy se vázaly na číselník `Discipline` a sezóny neexistovaly.
+-- Tomu odpovídá i chyba, na kterou nasazení padalo:
+-- „column seasonId does not exist“ — tabulka `Duel` tam je, ale jiná.
+--
+-- Nic se nemaže. Staré tabulky se odsunou do schématu „stary_rating“,
+-- kde je aplikace nevidí a data zůstanou k nahlédnutí. Odsun přes
+-- SET SCHEMA bere s sebou i indexy a klíče, takže se jejich jména
+-- uvolní pro nové tabulky.
+--
+-- Pouští se jen když je stará podoba opravdu poznat. Po úspěšném
+-- nasazení už podmínka neplatí a blok se přeskočí — nové tabulky
+-- se odsunout nemůžou.
+DO $$
+DECLARE stara_podoba BOOLEAN;
+BEGIN
+    stara_podoba :=
+        EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'Duel'
+                  AND column_name = 'disciplineId')
+        OR EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema = 'public' AND table_name = 'Discipline');
+
+    IF NOT stara_podoba THEN
+        RETURN;
+    END IF;
+
+    CREATE SCHEMA IF NOT EXISTS "stary_rating";
+
+    -- Rating hráčů se opisuje stranou dřív, než sloupec zmizí.
+    -- Trenér chtěl novou sezónu odstartovat od nuly, takže se čísla
+    -- nepřenášejí — ale ať se dá dohledat, jak to stálo předtím.
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'Player'
+                 AND column_name = 'ratingPoints') THEN
+        CREATE TABLE IF NOT EXISTS "stary_rating"."PlayerRatingPoints" AS
+            SELECT "id", "name", "ratingPoints" FROM public."Player";
+        ALTER TABLE public."Player" DROP COLUMN "ratingPoints";
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name = 'RatingEntry') THEN
+        ALTER TABLE public."RatingEntry" SET SCHEMA "stary_rating";
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name = 'ChallengeEntry') THEN
+        ALTER TABLE public."ChallengeEntry" SET SCHEMA "stary_rating";
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name = 'Challenge') THEN
+        ALTER TABLE public."Challenge" SET SCHEMA "stary_rating";
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name = 'Duel') THEN
+        ALTER TABLE public."Duel" SET SCHEMA "stary_rating";
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name = 'Discipline') THEN
+        ALTER TABLE public."Discipline" SET SCHEMA "stary_rating";
+    END IF;
+END $$;
+
 DO $$ BEGIN
     CREATE TYPE "DuelStatus" AS ENUM ('PENDING', 'ACCEPTED', 'REPORTED', 'CONFIRMED', 'DECLINED');
 EXCEPTION WHEN duplicate_object THEN NULL;
