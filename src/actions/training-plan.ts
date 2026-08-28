@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import {
@@ -273,9 +274,11 @@ export async function clearTeams(blockId: string) {
   });
   if (!block) return;
 
+  // Prisma u nullable Json sloupce nebere obyčejné null — to by znamenalo
+  // „nic neměň“. Prázdný sloupec se nastavuje přes Prisma.DbNull.
   await prisma.trainingBlock.update({
     where: { id: blockId },
-    data: { teams: null },
+    data: { teams: Prisma.DbNull },
   });
   revalidateTraining(block.trainingId);
 }

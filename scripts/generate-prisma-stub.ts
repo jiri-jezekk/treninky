@@ -165,6 +165,13 @@ lines.push("    $connect(): Promise<void>;");
 lines.push("    $disconnect(): Promise<void>;");
 lines.push("  };");
 lines.push("");
+// Prisma.DbNull / JsonNull — prázdná hodnota v nullable Json sloupci.
+// Obyčejné null tam znamená „neměnit“, ne „vyprázdnit“.
+lines.push("  export const Prisma: {");
+lines.push('    DbNull: { readonly __brand: "DbNull" };');
+lines.push('    JsonNull: { readonly __brand: "JsonNull" };');
+lines.push("  };");
+lines.push("");
 lines.push("  export const PrismaClient: {");
 lines.push("    new (args?: Args): PrismaClientLike;");
 lines.push("  };");

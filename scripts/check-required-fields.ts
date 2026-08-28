@@ -15,7 +15,7 @@ import { join } from "node:path";
 const SCHEMA = "prisma/schema.prisma";
 const SRC = "src";
 
-type Model = { name: string; required: string[] };
+type Model = { name: string; required: string[]; jsonFields: string[] };
 
 function parseModels(schema: string): Model[] {
   const models: Model[] = [];
@@ -25,6 +25,7 @@ function parseModels(schema: string): Model[] {
   while ((m = modelRe.exec(schema)) !== null) {
     const name = m[1]!;
     const required: string[] = [];
+    const jsonFields: string[] = [];
 
     // Blokové komentáře pryč ještě před rozborem — jejich prostřední
     // řádky začínají hvězdičkou a jinak by se četly jako pole.
@@ -40,6 +41,8 @@ function parseModels(schema: string): Model[] {
       const type = parts[1];
       if (!type) continue;
 
+      if (type.replace(/[?[\]]/g, "") === "Json") jsonFields.push(field);
+
       // volitelné, seznamy, výchozí hodnoty a relace povinné nejsou
       if (type.endsWith("?") || type.endsWith("[]")) continue;
       if (line.includes("@default") || line.includes("@updatedAt")) continue;
@@ -50,7 +53,7 @@ function parseModels(schema: string): Model[] {
       }
       required.push(field);
     }
-    models.push({ name, required });
+    models.push({ name, required, jsonFields });
   }
   return models;
 }
@@ -85,6 +88,24 @@ function walk(dir: string, out: string[] = []): string[] {
     else if (/\.tsx?$/.test(entry)) out.push(full);
   }
   return out;
+}
+
+/** Tělo bloku `data: { … }` u volání začínajícího na `from`. */
+function dataBody(source: string, from: number): string | null {
+  const dataIdx = source.indexOf("data:", from);
+  if (dataIdx === -1 || dataIdx > from + 200) return null;
+  const open = source.indexOf("{", dataIdx);
+  if (open === -1) return null;
+
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return null;
 }
 
 /** Najde blok `data: { … }` a vrátí jména klíčů na nejvyšší úrovni. */
@@ -157,10 +178,56 @@ for (const file of walk(SRC)) {
   }
 }
 
+/**
+ * Prázdný Json sloupec se v Prismě nastavuje přes `Prisma.DbNull`.
+ * Obyčejné `null` znamená „neměnit“ a typová kontrola ho zamítne —
+ * ale až při buildu, protože náhradní typy zápisy nekontrolují.
+ */
+let jsonProblems = 0;
+const modelsWithJson = models.filter((m) => m.jsonFields.length > 0);
+
+if (modelsWithJson.length > 0) {
+  for (const file of walk(SRC)) {
+    const source = readFileSync(file, "utf8");
+
+    for (const model of modelsWithJson) {
+      const callRe = new RegExp(
+        `prisma\\.${lower(model.name)}\\.(create|update|updateMany|upsert)\\s*\\(`,
+        "g",
+      );
+      let call: RegExpExecArray | null;
+
+      while ((call = callRe.exec(source)) !== null) {
+        // Jen vlastní blok data — širší okno by zasahovalo do sousedního
+        // volání a hlásilo tutéž chybu dvakrát.
+        const chunk = dataBody(source, call.index);
+        if (!chunk) continue;
+        for (const field of model.jsonFields) {
+          const bad = new RegExp(`\\b${field}\\s*:\\s*null\\b`);
+          if (bad.test(chunk)) {
+            jsonProblems++;
+            const line = source.slice(0, call.index).split("\n").length;
+            console.log(
+              `  JSON   ${file}:${line}  ${model.name}.${field} se nastavuje na null — použij Prisma.DbNull`,
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
 console.log(`\nProkontrolováno ${checked} volání create().`);
 console.log(
   problems === 0
     ? "Všechna povinná pole jsou vyplněná."
     : `${problems} volání s chybějícím povinným polem.`,
 );
-process.exit(problems === 0 ? 0 : 1);
+if (modelsWithJson.length > 0) {
+  console.log(
+    jsonProblems === 0
+      ? "Json sloupce se nikde nenastavují na null."
+      : `${jsonProblems} zápisů null do Json sloupce.`,
+  );
+}
+process.exit(problems === 0 && jsonProblems === 0 ? 0 : 1);
