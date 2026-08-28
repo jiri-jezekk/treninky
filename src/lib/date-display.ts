@@ -5,9 +5,14 @@ export function formatDateDdMmYyyy(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+/** Samotný čas v 24hodinovém formátu: HH:mm */
+export function formatTime24h(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 /** Datum a čas v 24hodinovém formátu: DD/MM/YYYY HH:mm */
 export function formatDateTimeDdMmYyyy24h(d: Date): string {
-  return `${formatDateDdMmYyyy(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return `${formatDateDdMmYyyy(d)} ${formatTime24h(d)}`;
 }
 
 /** Řetězec DD/MM/YYYY → lokální datum (00:00), nebo null při neplatné kombinaci. */

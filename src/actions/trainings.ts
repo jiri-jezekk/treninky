@@ -7,10 +7,27 @@ import { prisma } from "@/lib/prisma";
 import {
   combineDdMmYyyyAndTime24h,
   parseDdMmYyyyAtNoon,
-  parseTime24h,
 } from "@/lib/date-display";
 import { requireUserId } from "@/lib/session";
 import { parseCzkToCents } from "@/lib/money";
+import {
+  occurrenceKey,
+  planTrainings,
+  splitExisting,
+  type Slot,
+} from "@/lib/training-slots";
+
+/** Nový trénink dostane všechny aktivní hráče jako nepřítomné. */
+async function seedAttendance(trainingId: string, playerIds: string[]) {
+  if (playerIds.length === 0) return;
+  await prisma.attendance.createMany({
+    data: playerIds.map((playerId) => ({
+      trainingId,
+      playerId,
+      status: AttendanceStatus.ABSENT,
+    })),
+  });
+}
 
 export async function createTraining(formData: FormData) {
   const userId = await requireUserId();
@@ -29,88 +46,120 @@ export async function createTraining(formData: FormData) {
   if (defaultPriceCents === null && priceRaw !== "") {
     throw new Error("Neplatná cena tréninku.");
   }
-  const training = await prisma.training.create({
-    data: {
-      userId,
-      startsAt,
-      notes,
-      defaultPriceCents,
-    },
+
+  const endRaw = String(formData.get("endTime") ?? "").trim();
+  let endsAt: Date | null = null;
+  if (endRaw !== "") {
+    try {
+      endsAt = combineDdMmYyyyAndTime24h(dateStr, endRaw);
+      // Konec po půlnoci patří na další den, jinak by vyšel před začátkem.
+      if (endsAt <= startsAt) endsAt.setDate(endsAt.getDate() + 1);
+    } catch {
+      throw new Error("Neplatný čas konce. Použijte HH:mm (24 h).");
+    }
+  }
+
+  // Dva tréninky na tentýž okamžik by hráči zdvojily platbu.
+  const dayStart = new Date(startsAt);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const sameDay = await prisma.training.findMany({
+    where: { userId, startsAt: { gte: dayStart, lt: dayEnd } },
+    select: { startsAt: true },
   });
+  if (sameDay.some((t) => occurrenceKey(t.startsAt) === occurrenceKey(startsAt))) {
+    throw new Error("Trénink v tenhle termín už existuje.");
+  }
+
+  const training = await prisma.training.create({
+    data: { userId, startsAt, endsAt, notes, defaultPriceCents },
+  });
+
   const players = await prisma.player.findMany({
     where: { userId, active: true },
     select: { id: true },
   });
-  if (players.length > 0) {
-    await prisma.attendance.createMany({
-      data: players.map((p) => ({
-        trainingId: training.id,
-        playerId: p.id,
-        status: AttendanceStatus.ABSENT,
-      })),
-    });
-  }
+  await seedAttendance(
+    training.id,
+    players.map((p) => p.id),
+  );
+
   revalidatePath("/treninky");
   const y = training.startsAt.getFullYear();
   const m = training.startsAt.getMonth() + 1;
   redirect(`/treninky?mesic=${y}-${String(m).padStart(2, "0")}`);
 }
 
-/** Vygeneruje tréninky na úterý a čtvrtek — ceny automaticky (110 / 100 Kč, junioři 60 Kč). */
-export async function generateTuesdayThursdayTrainings(formData: FormData) {
+/**
+ * Vygeneruje tréninky z rozvrhu za zadané období.
+ *
+ * Dřív byly úterý a čtvrtek napevno v kódu a formulář měl jediné pole
+ * na čas, takže rozvrh s různým časem pro každý den jím nešel zadat.
+ * Teď se termíny berou z rozvrhu — i s cenou, která se do tréninku uloží,
+ * aby pozdější změna ceny v rozvrhu nepřepsala už naúčtované měsíce.
+ *
+ * Termín, který v databázi už je, se přeskočí. Generovat se dá klidně
+ * opakovaně, třeba po přidání dalšího termínu do rozvrhu.
+ */
+export async function generateTrainingsFromSchedule(formData: FormData) {
   const userId = await requireUserId();
-  const startDateRaw = String(formData.get("startDate") ?? "").trim();
-  const endDateRaw = String(formData.get("endDate") ?? "").trim();
-  const timeRaw = String(formData.get("time") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim() || null;
 
-  const start = parseDdMmYyyyAtNoon(startDateRaw);
-  const end = parseDdMmYyyyAtNoon(endDateRaw);
+  const start = parseDdMmYyyyAtNoon(String(formData.get("startDate") ?? "").trim());
+  const end = parseDdMmYyyyAtNoon(String(formData.get("endDate") ?? "").trim());
   if (!start || !end) {
     throw new Error("Neplatné datum Od nebo Do. Použijte DD/MM/YYYY.");
   }
   if (end < start) throw new Error("Konec období musí být po začátku.");
 
-  const tm = parseTime24h(timeRaw);
-  if (!tm) throw new Error("Neplatný čas. Použijte HH:mm (24 h).");
-  const th = tm.hour;
-  const tmin = tm.minute;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
 
-  const dates: Date[] = [];
-  const cur = new Date(start);
-  while (cur <= end) {
-    const dow = cur.getDay();
-    if (dow === 2 || dow === 4) {
-      const slot = new Date(cur);
-      slot.setHours(th, tmin, 0, 0);
-      dates.push(slot);
-    }
-    cur.setDate(cur.getDate() + 1);
+  // Bez zaškrtnutí se berou všechny zapnuté termíny rozvrhu.
+  const chosen = formData.getAll("slotIds").map(String).filter(Boolean);
+  const slots = await prisma.trainingSlot.findMany({
+    where: {
+      userId,
+      active: true,
+      ...(chosen.length > 0 && { id: { in: chosen } }),
+    },
+    orderBy: [{ dayOfWeek: "asc" }, { startMinutes: "asc" }],
+  });
+  if (slots.length === 0) {
+    throw new Error("V rozvrhu není žádný zapnutý termín, ze kterého generovat.");
   }
+
+  const planned = planTrainings(slots as Slot[], start, end);
+  if (planned.length === 0) {
+    throw new Error("V zadaném období nevychází podle rozvrhu žádný trénink.");
+  }
+
+  const rangeStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const rangeEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1);
+  const existing = await prisma.training.findMany({
+    where: { userId, startsAt: { gte: rangeStart, lt: rangeEnd } },
+    select: { startsAt: true },
+  });
+
+  const { toCreate } = splitExisting(planned, existing);
 
   const players = await prisma.player.findMany({
     where: { userId, active: true },
     select: { id: true },
   });
+  const playerIds = players.map((p) => p.id);
 
-  for (const startsAt of dates) {
+  for (const item of toCreate) {
     const training = await prisma.training.create({
       data: {
         userId,
-        startsAt,
+        slotId: item.slotId,
+        startsAt: item.startsAt,
+        endsAt: item.endsAt,
         notes,
-        defaultPriceCents: null,
+        defaultPriceCents: item.priceCents,
       },
     });
-    if (players.length > 0) {
-      await prisma.attendance.createMany({
-        data: players.map((p) => ({
-          trainingId: training.id,
-          playerId: p.id,
-          status: AttendanceStatus.ABSENT,
-        })),
-      });
-    }
+    await seedAttendance(training.id, playerIds);
   }
 
   revalidatePath("/treninky");

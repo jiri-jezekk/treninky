@@ -50,6 +50,7 @@ model User {
   paymentBatches PaymentBatch[]
   seasons      Season[]
   prepayments  Prepayment[]
+  trainingSlots TrainingSlot[]
 }
 
 /**
@@ -215,14 +216,44 @@ model PlayerGroupMembership {
   @@index([groupId])
 }
 
+/**
+ * Rozvrh — pravidelné termíny klubu. Dřív byly úterý a čtvrtek napevno
+ * v kódu a generátor uměl jen jeden čas pro oba dny, takže rozvrh
+ * „úterý 18:00, čtvrtek 19:30“ jím nešel zadat vůbec.
+ */
+model TrainingSlot {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /** Den v týdnu jako v JS: 0 = neděle … 6 = sobota. */
+  dayOfWeek Int
+  /** Minuty od půlnoci — snadno se řadí i porovnává. */
+  startMinutes Int
+  endMinutes   Int
+  /** Cena za tento termín. Zvýhodněné kategorie platí dál svou sazbu. */
+  priceCents Int
+  /** Vypnutý termín se nenabízí ke generování, ale historii nechává být. */
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  trainings Training[]
+
+  @@unique([userId, dayOfWeek, startMinutes])
+  @@index([userId, dayOfWeek])
+}
+
 model Training {
   id                String       @id @default(cuid())
   userId            String
   user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   startsAt          DateTime
+  /** Konec tréninku. Null u starších záznamů, kdy se délka neevidovala. */
+  endsAt            DateTime?
+  /** Z jakého termínu rozvrhu vznikl. Null = ručně přidaný. */
+  slotId            String?
+  slot              TrainingSlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
   cancelled         Boolean      @default(false)
   notes             String?
-  /** Null = automatická cena (út/čt/junioři). Není null = jednotná cena za tento výjimečný trénink (Kč z formuláře). */
+  /** Null = automatická cena podle dne. Není null = cena za tento trénink (z rozvrhu nebo ručně). */
   defaultPriceCents Int?
   attendances       Attendance[]
 

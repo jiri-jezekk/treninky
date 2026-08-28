@@ -5,7 +5,7 @@ import { GroupFilterNav } from "@/components/GroupFilterNav";
 import { listGroups, parseGroupFilter } from "@/lib/groups";
 import { getPrepaidRangesByPlayer } from "@/lib/monthly-billing";
 import { isPrepaidOn } from "@/lib/prepaid";
-import { formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
+import { formatDateTimeDdMmYyyy24h, formatTime24h } from "@/lib/date-display";
 import { formatCzkFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
@@ -96,15 +96,21 @@ export default async function TrainingDetailPage({
         <div className="min-w-0">
           <h1 className="font-heading text-2xl font-extrabold uppercase tracking-wide text-slate-800 sm:text-3xl">
             {formatDateTimeDdMmYyyy24h(training.startsAt)}
+            {training.endsAt && (
+              <span className="text-slate-500">
+                {"–"}
+                {formatTime24h(training.endsAt)}
+              </span>
+            )}
           </h1>
           <div className="mt-3 h-1 w-14 rounded bg-club" />
           {training.notes && (
             <p className="mt-3 text-sm text-slate-600">{training.notes}</p>
           )}
           <p className="mt-2 text-xs text-slate-500">
-            {training.defaultPriceCents != null
-              ? `Výjimečný trénink s vlastní cenou ${formatCzkFromCents(training.defaultPriceCents)}. Zvýhodněné kategorie platí dál svou sazbu.`
-              : "Cena podle dne v týdnu: úterý 110 Kč, čtvrtek 100 Kč. Zvýhodněné kategorie platí svou sazbu."}
+            {training.defaultPriceCents == null
+              ? "Cena podle dne v týdnu. Zvýhodněné kategorie platí svou sazbu."
+              : `${training.slotId ? "Termín z rozvrhu" : "Mimořádný trénink"} za ${formatCzkFromCents(training.defaultPriceCents)}. Zvýhodněné kategorie platí dál svou sazbu.`}
           </p>
         </div>
         <form action={setTrainingCancelled.bind(null, id, !training.cancelled)}>

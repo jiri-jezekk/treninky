@@ -2,15 +2,18 @@ import Link from "next/link";
 import { TrainingListBulkSelect } from "@/components/TrainingListBulkSelect";
 import { getMonthlyBillingRows } from "@/lib/monthly-billing";
 import { formatCzkFromCents } from "@/lib/money";
-import { formatDateDdMmYyyy, formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
+import {
+  formatDateDdMmYyyy,
+  formatDateTimeDdMmYyyy24h,
+  formatTime24h,
+} from "@/lib/date-display";
 import { formatMonthLabelCs } from "@/lib/training-pricing";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
-import {
-  bulkDeleteTrainings,
-  createTraining,
-  generateTuesdayThursdayTrainings,
-} from "@/actions/trainings";
+import { bulkDeleteTrainings } from "@/actions/trainings";
+import { ScheduleCard, type SlotRow } from "./ScheduleCard";
+import { CreateTrainingForms } from "./CreateTrainingForms";
+import { formatMinutes } from "@/lib/training-slots";
 import {
   TRAINING_STATUS_LABELS,
   trainingListStatus,
@@ -19,12 +22,6 @@ import {
 
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
-const field =
-  "mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-club";
-const btnOutline =
-  "inline-flex items-center justify-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft";
-const btnPrimary =
-  "inline-flex items-center justify-center rounded-full border-2 border-club bg-club px-4 py-2 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover";
 
 const STATUS_CLASS: Record<TrainingListStatus, string> = {
   cancelled: "bg-slate-50 text-slate-500",
@@ -57,7 +54,7 @@ export default async function TreninkyPage({
   const monthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
   const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
 
-  const [trainings, activePlayerCount, billing] = await Promise.all([
+  const [trainings, activePlayerCount, billing, slots] = await Promise.all([
     prisma.training.findMany({
       where: { userId, startsAt: { gte: monthStart, lte: monthEnd } },
       orderBy: { startsAt: "asc" },
@@ -67,7 +64,22 @@ export default async function TreninkyPage({
     }),
     prisma.player.count({ where: { userId, active: true } }),
     getMonthlyBillingRows(userId, year, month),
+    prisma.trainingSlot.findMany({
+      where: { userId },
+      orderBy: [{ dayOfWeek: "asc" }, { startMinutes: "asc" }],
+      include: { _count: { select: { trainings: true } } },
+    }),
   ]);
+
+  const slotRows: SlotRow[] = slots.map((s) => ({
+    id: s.id,
+    dayOfWeek: s.dayOfWeek,
+    startTime: formatMinutes(s.startMinutes),
+    endTime: formatMinutes(s.endMinutes),
+    priceCents: s.priceCents,
+    active: s.active,
+    trainingCount: s._count.trainings,
+  }));
 
   const now = new Date();
   const monthTotal = billing.reduce((s, r) => s + r.totalCents, 0);
@@ -195,6 +207,7 @@ export default async function TreninkyPage({
                             className="font-medium tabular-nums text-slate-800 underline decoration-slate-300 underline-offset-4 hover:text-club"
                           >
                             {formatDateTimeDdMmYyyy24h(t.startsAt)}
+                            {t.endsAt && `–${formatTime24h(t.endsAt)}`}
                           </Link>
                           {t.defaultPriceCents != null && (
                             <span className="ml-2 rounded-full bg-slate-50 px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -256,102 +269,15 @@ export default async function TreninkyPage({
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <h2 className={label}>Nový trénink</h2>
-          <form action={createTraining} className="mt-4 flex flex-col gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className={label}>Datum</span>
-                <input
-                  name="startDate"
-                  required
-                  defaultValue={formatDateDdMmYyyy(now)}
-                  placeholder="DD/MM/YYYY"
-                  className={`${field} tabular-nums`}
-                />
-              </label>
-              <label className="block">
-                <span className={label}>Čas</span>
-                <input
-                  name="time"
-                  required
-                  defaultValue="19:30"
-                  placeholder="HH:mm"
-                  className={`${field} tabular-nums`}
-                />
-              </label>
-            </div>
-            <label className="block">
-              <span className={label}>Poznámka (nepovinné)</span>
-              <input name="notes" className={field} />
-            </label>
-            <label className="block">
-              <span className={label}>Vlastní cena (nepovinné)</span>
-              <input name="customPrice" inputMode="decimal" className={field} />
-              <span className="mt-1.5 block text-xs italic text-slate-500">
-                Prázdné = automaticky podle dne. Zvýhodněné kategorie platí svou
-                sazbu i tady.
-              </span>
-            </label>
-            <button type="submit" className={`${btnPrimary} self-start`}>
-              Vytvořit trénink
-            </button>
-          </form>
-        </section>
+      <ScheduleCard slots={slotRows} />
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <h2 className={label}>Vygenerovat úterky a čtvrtky</h2>
-          <form
-            action={generateTuesdayThursdayTrainings}
-            className="mt-4 flex flex-col gap-4"
-          >
-            <input type="hidden" name="redirectMesic" value={mesicStr} />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className={label}>Od</span>
-                <input
-                  name="startDate"
-                  required
-                  defaultValue={formatDateDdMmYyyy(firstOfThisMonth)}
-                  placeholder="DD/MM/YYYY"
-                  className={`${field} tabular-nums`}
-                />
-              </label>
-              <label className="block">
-                <span className={label}>Do</span>
-                <input
-                  name="endDate"
-                  required
-                  defaultValue={formatDateDdMmYyyy(lastOfThisMonth)}
-                  placeholder="DD/MM/YYYY"
-                  className={`${field} tabular-nums`}
-                />
-              </label>
-            </div>
-            <label className="block">
-              <span className={label}>Čas</span>
-              <input
-                name="time"
-                required
-                defaultValue="19:30"
-                placeholder="HH:mm"
-                className={`${field} tabular-nums sm:max-w-[10rem]`}
-              />
-            </label>
-            <label className="block">
-              <span className={label}>Poznámka (nepovinné)</span>
-              <input name="notes" className={field} />
-            </label>
-            <button type="submit" className={`${btnOutline} self-start`}>
-              Vygenerovat
-            </button>
-            <p className="text-xs italic text-slate-500">
-              Ceny se řídí dnem v týdnu — úterý 110 Kč, čtvrtek 100 Kč.
-            </p>
-          </form>
-        </section>
-      </div>
+      <CreateTrainingForms
+        slots={slotRows}
+        today={formatDateDdMmYyyy(now)}
+        rangeFrom={formatDateDdMmYyyy(firstOfThisMonth)}
+        rangeTo={formatDateDdMmYyyy(lastOfThisMonth)}
+        mesic={mesicStr}
+      />
     </div>
   );
 }
