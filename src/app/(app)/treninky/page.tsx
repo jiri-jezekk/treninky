@@ -78,6 +78,7 @@ export default async function TreninkyPage({
     endTime: formatMinutes(s.endMinutes),
     priceCents: s.priceCents,
     active: s.active,
+    isGym: s.kind === "GYM",
     trainingCount: s._count.trainings,
   }));
 

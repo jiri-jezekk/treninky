@@ -17,6 +17,7 @@ export type SlotRow = {
   endTime: string;
   priceCents: number;
   active: boolean;
+  isGym: boolean;
   trainingCount: number;
 };
 
@@ -145,7 +146,9 @@ export function ScheduleCard({ slots }: { slots: SlotRow[] }) {
                     </span>
                   </span>
                   <span className="block text-xs text-slate-500">
-                    {formatCzkFromCents(s.priceCents)} za trénink
+                    {s.isGym
+                      ? "Posilovna — neúčtuje se, počítá se do ratingu"
+                      : `${formatCzkFromCents(s.priceCents)} za trénink`}
                     {!s.active && " · vypnuto"}
                   </span>
                 </span>
@@ -215,12 +218,14 @@ function SlotFields({ slot }: { slot?: SlotRow }) {
           name="price"
           required
           inputMode="decimal"
-          defaultValue={
-            slot ? String(slot.priceCents / 100) : ""
-          }
+          defaultValue={slot ? String(slot.priceCents / 100) : ""}
           placeholder="110"
           className={`${field} tabular-nums`}
         />
+      </label>
+      <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700 sm:col-span-4">
+        <input type="checkbox" name="gym" defaultChecked={slot?.isGym ?? false} />
+        Posilovna — neúčtuje se, ale za účast je +1 do ratingu
       </label>
     </div>
   );

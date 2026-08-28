@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { duelDeltas, scoreFromValues } from "@/lib/elo";
-import { applyRatingChange, getEffectiveRating } from "@/lib/rating";
+import { applyRatingChange, getActiveSeason, getEffectiveRating } from "@/lib/rating";
 
 function revalidateRating(payToken?: string) {
   revalidatePath("/rating");
@@ -78,11 +78,15 @@ export async function createDuel(formData: FormData) {
   ]);
   if (!discipline || !challenger || !opponent) return;
 
+  const season = await getActiveSeason(actor.userId);
+  if (!season) return;
+
   // Otevřená výzva na totéž se stejným soupeřem už být nemá — jinak
   // by se seznam zaplnil duplikáty, které nikdo nedohraje.
   const open = await prisma.duel.findFirst({
     where: {
       userId: actor.userId,
+      seasonId: season.id,
       disciplineId,
       status: { in: ["PENDING", "ACCEPTED", "REPORTED"] },
       OR: [
@@ -97,6 +101,7 @@ export async function createDuel(formData: FormData) {
   await prisma.duel.create({
     data: {
       userId: actor.userId,
+      seasonId: season.id,
       disciplineId,
       challengerId,
       opponentId,
@@ -179,7 +184,12 @@ export async function confirmDuel(duelId: string, payToken?: string) {
 
   const duel = await prisma.duel.findFirst({
     where: { id: duelId, userId: actor.userId, status: "REPORTED" },
-    include: { discipline: { select: { higherWins: true, name: true } } },
+    include: {
+      discipline: {
+        select: { higherWins: true, name: true, weightPercent: true },
+      },
+      season: true,
+    },
   });
   if (!duel) return;
   if (duel.challengerValue == null || duel.opponentValue == null) return;
@@ -194,8 +204,8 @@ export async function confirmDuel(duelId: string, payToken?: string) {
   }
 
   const [ratingChallenger, ratingOpponent] = await Promise.all([
-    getEffectiveRating(String(duel.challengerId)),
-    getEffectiveRating(String(duel.opponentId)),
+    getEffectiveRating(String(duel.challengerId), duel.season),
+    getEffectiveRating(String(duel.opponentId), duel.season),
   ]);
 
   const score = scoreFromValues(
@@ -203,7 +213,13 @@ export async function confirmDuel(duelId: string, payToken?: string) {
     duel.opponentValue,
     duel.discipline.higherWins,
   );
-  const { deltaA, deltaB } = duelDeltas(ratingChallenger, ratingOpponent, score);
+  // Váha disciplíny i to, jak těsný výsledek byl: 20:0 hne ratingem
+  // dvakrát tolik co těsná výhra.
+  const { deltaA, deltaB } = duelDeltas(ratingChallenger, ratingOpponent, score, {
+    weightPercent: duel.discipline.weightPercent,
+    valueA: duel.challengerValue,
+    valueB: duel.opponentValue,
+  });
 
   await prisma.$transaction(async (tx) => {
     // Podmínka na stav uvnitř transakce — dvojí potvrzení by jinak
@@ -222,6 +238,7 @@ export async function confirmDuel(duelId: string, payToken?: string) {
     const label = `Duel — ${duel.discipline.name}`;
     await applyRatingChange(tx, {
       userId: actor.userId,
+      seasonId: duel.seasonId,
       playerId: String(duel.challengerId),
       delta: deltaA,
       source: "DUEL",
@@ -230,6 +247,7 @@ export async function confirmDuel(duelId: string, payToken?: string) {
     });
     await applyRatingChange(tx, {
       userId: actor.userId,
+      seasonId: duel.seasonId,
       playerId: String(duel.opponentId),
       delta: deltaB,
       source: "DUEL",
@@ -263,15 +281,19 @@ export async function awardCoachRating(formData: FormData) {
   if (!playerId || !Number.isFinite(delta) || delta === 0) return;
   if (Math.abs(delta) > 200) return;
 
-  const player = await prisma.player.findFirst({
-    where: { id: playerId, userId },
-    select: { id: true },
-  });
-  if (!player) return;
+  const [player, season] = await Promise.all([
+    prisma.player.findFirst({
+      where: { id: playerId, userId },
+      select: { id: true },
+    }),
+    getActiveSeason(userId),
+  ]);
+  if (!player || !season) return;
 
   await prisma.$transaction(async (tx) => {
     await applyRatingChange(tx, {
       userId,
+      seasonId: season.id,
       playerId,
       delta: Math.round(delta),
       source: "COACH",

@@ -12,6 +12,7 @@ import {
   challengeDeltas,
   duelDeltas,
   expectedScore,
+  marginMultiplier,
   ratingBand,
   scoreFromValues,
   STARTING_RATING,
@@ -199,24 +200,108 @@ console.log("\nMěsíční výzva:");
   eq("prázdná výzva nespadne", challengeDeltas([], true).length, 0);
 }
 {
-  // Výzva nesmí vynést víc než duel — jinak by se vyplácelo jen soutěžit hromadně.
-  const mnoho = Array.from({ length: 20 }, (_, i) => ({
+  // Velikost pohybu nemá záviset na tom, kolik lidí se přihlásilo —
+  // o tom rozhoduje váha výzvy.
+  const maloLidi = [
+    { playerId: "a", rating: 1000, value: 3 },
+    { playerId: "b", rating: 1000, value: 2 },
+    { playerId: "c", rating: 1000, value: 1 },
+  ];
+  const hodneLidi = Array.from({ length: 20 }, (_, i) => ({
     playerId: `p${i}`,
     rating: 1000,
     value: 20 - i,
   }));
-  const d = challengeDeltas(mnoho, true);
-  const nejvetsi = Math.max(...d.map((x) => Math.abs(x.delta)));
+  const male = Math.max(...challengeDeltas(maloLidi, true).map((x) => Math.abs(x.delta)));
+  const velke = Math.max(...challengeDeltas(hodneLidi, true).map((x) => Math.abs(x.delta)));
   ok(
-    "největší pohyb nepřesáhne jeden duel",
-    nejvetsi <= K_DUEL / 2 + 1,
-    `(${nejvetsi})`,
+    "tři lidi i dvacet hýbou ratingem podobně",
+    Math.abs(male - velke) <= 2,
+    `(${male} vs ${velke})`,
   );
+  const d = challengeDeltas(hodneLidi, true);
   ok(
     "součet zůstává kolem nuly",
     Math.abs(d.reduce((s, x) => s + x.delta, 0)) <= 2,
     `(${d.reduce((s, x) => s + x.delta, 0)})`,
   );
+}
+
+console.log("\nVáha — výzva má vážit víc než duel:");
+{
+  const vyzva = challengeDeltas(
+    [
+      { playerId: "a", rating: 1000, value: 2 },
+      { playerId: "b", rating: 1000, value: 1 },
+    ],
+    true,
+  );
+  const duel = duelDeltas(1000, 1000, 1).deltaA;
+  const prvni = vyzva.find((x) => x.playerId === "a")!.delta;
+  ok("výzva vynese víc než duel", prvni > duel, `(${prvni} vs ${duel})`);
+}
+{
+  const lehka = duelDeltas(1000, 1000, 1, { weightPercent: 50 }).deltaA;
+  const bezna = duelDeltas(1000, 1000, 1, { weightPercent: 100 }).deltaA;
+  const tezka = duelDeltas(1000, 1000, 1, { weightPercent: 200 }).deltaA;
+  eq("poloviční váha, poloviční pohyb", lehka, Math.round(bezna / 2));
+  eq("dvojnásobná váha, dvojnásobný pohyb", tezka, bezna * 2);
+}
+{
+  const vyzva = challengeDeltas(
+    [
+      { playerId: "a", rating: 1000, value: 2 },
+      { playerId: "b", rating: 1000, value: 1 },
+    ],
+    true,
+    { weightPercent: 100 },
+  );
+  eq(
+    "se stejnou váhou vyjde výzva jako duel",
+    vyzva.find((x) => x.playerId === "a")!.delta,
+    duelDeltas(1000, 1000, 1).deltaA,
+  );
+}
+
+console.log("\nRozdíl skóre — 20:0 má vážit víc než těsný výsledek:");
+eq("nula ku nule nic nenásobí", marginMultiplier(0, 0), 1);
+eq("shodné hodnoty násobí jednou", marginMultiplier(10, 10), 1);
+eq("úplná jednostrannost násobí dvěma", marginMultiplier(20, 0), 2);
+ok(
+  "těsný zápas 11:9 násobí jen málo",
+  Math.abs(marginMultiplier(11, 9) - 1.1) < 0.001,
+  `(${marginMultiplier(11, 9)})`,
+);
+ok(
+  "u času je 12,4 proti 13,1 těsný výsledek",
+  marginMultiplier(12.4, 13.1) < 1.05,
+  `(${marginMultiplier(12.4, 13.1)})`,
+);
+{
+  const tesne = duelDeltas(1000, 1000, 1, { valueA: 11, valueB: 9 }).deltaA;
+  const drtive = duelDeltas(1000, 1000, 1, { valueA: 20, valueB: 0 }).deltaA;
+  const bezSkore = duelDeltas(1000, 1000, 1).deltaA;
+  ok("drtivá výhra vynese víc než těsná", drtive > tesne, `(${drtive} vs ${tesne})`);
+  eq("těsná výhra je blízko základu", tesne, Math.round(bezSkore * 1.1));
+  eq("drtivá výhra je dvojnásobek", drtive, bezSkore * 2);
+}
+{
+  // I s rozdílem skóre musí součet zůstat nulový.
+  const { deltaA, deltaB } = duelDeltas(1200, 900, 0, { valueA: 0, valueB: 20 });
+  eq("součet je pořád nula", deltaA + deltaB, 0);
+}
+{
+  // Rozdíl skóre nesmí zvrátit to hlavní: prohra se silnějším je levná.
+  const prohra = duelDeltas(1000, 1400, 0, { valueA: 0, valueB: 20 }).deltaA;
+  ok(
+    "drtivá prohra se silnějším pořád stojí málo",
+    prohra >= -6,
+    `(${prohra})`,
+  );
+}
+{
+  const remiza = duelDeltas(1000, 1000, 0.5, { valueA: 10, valueB: 10 }).deltaA;
+  eq("remíza zůstává nulová", remiza, 0);
 }
 
 console.log("\nZařazení:");

@@ -6,13 +6,24 @@ import { requireUserId } from "@/lib/session";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { challengeDeltas } from "@/lib/elo";
 import { parseDateInput } from "@/lib/prepaid";
-import { applyRatingChange, RATING_PER_ATTENDANCE } from "@/lib/rating";
+import {
+  applyRatingChange,
+  getActiveSeason,
+  RATING_PER_ATTENDANCE,
+} from "@/lib/rating";
 import { STARTING_RATING } from "@/lib/elo";
 
 function revalidateChallenges(payToken?: string) {
   revalidatePath("/rating");
   revalidatePath("/prehled");
   if (payToken) revalidatePath(`/p/${payToken}`);
+}
+
+/** Váha v procentech. Mimo rozumný rozsah se vrátí výchozí hodnota. */
+function parseWeight(raw: unknown, fallback: number): number {
+  const n = Number(String(raw ?? "").trim());
+  if (!Number.isFinite(n) || n < 10 || n > 500) return fallback;
+  return Math.round(n);
 }
 
 function parseValue(raw: unknown): number | null {
@@ -42,9 +53,19 @@ export async function createChallenge(formData: FormData) {
     : null;
   if (disciplineId && !discipline) return;
 
+  const season = await getActiveSeason(userId);
+  if (!season) return;
+
+  const weight = Number(String(formData.get("weightPercent") ?? "").trim());
+
   await prisma.challenge.create({
     data: {
       userId,
+      seasonId: season.id,
+      weightPercent:
+        Number.isFinite(weight) && weight >= 10 && weight <= 500
+          ? Math.round(weight)
+          : 150,
       name,
       description: String(formData.get("description") ?? "").trim() || null,
       disciplineId: discipline?.id ?? null,
@@ -131,11 +152,8 @@ export async function closeChallenge(challengeId: string) {
   const challenge = await prisma.challenge.findFirst({
     where: { id: challengeId, userId, closedAt: null },
     include: {
-      entries: {
-        include: {
-          player: { select: { id: true, name: true, ratingPoints: true } },
-        },
-      },
+      season: true,
+      entries: { include: { player: { select: { id: true, name: true } } } },
     },
   });
   if (!challenge) return;
@@ -143,28 +161,44 @@ export async function closeChallenge(challengeId: string) {
 
   // Docházková část se do ratingu započítá i tady, aby výpočet
   // vycházel ze stejného čísla, jaké hráči vidí v žebříčku.
-  const counts = await prisma.attendance.groupBy({
-    by: ["playerId"],
-    where: {
-      status: "PRESENT",
-      training: { userId, cancelled: false },
-      playerId: { in: challenge.entries.map((e) => e.playerId) },
-    },
-    _count: { playerId: true },
-  });
+  const from = new Date(challenge.season.startsOn);
+  const to = new Date(challenge.season.endsOn);
+  to.setUTCHours(23, 59, 59, 999);
+
+  const playerIds = challenge.entries.map((e) => e.playerId);
+  const [counts, ratings] = await Promise.all([
+    prisma.attendance.groupBy({
+      by: ["playerId"],
+      where: {
+        status: "PRESENT",
+        training: { userId, cancelled: false, startsAt: { gte: from, lte: to } },
+        playerId: { in: playerIds },
+      },
+      _count: { playerId: true },
+    }),
+    prisma.playerRating.findMany({
+      where: { seasonId: challenge.seasonId, playerId: { in: playerIds } },
+      select: { playerId: true, points: true },
+    }),
+  ]);
+
   const attendanceById = new Map<string, number>(
     counts.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
+  );
+  const pointsById = new Map<string, number>(
+    ratings.map((r) => [String(r.playerId), r.points]),
   );
 
   const deltas = challengeDeltas(
     challenge.entries.map((e) => ({
       playerId: String(e.playerId),
       rating:
-        (e.player.ratingPoints ?? STARTING_RATING) +
+        (pointsById.get(String(e.playerId)) ?? STARTING_RATING) +
         (attendanceById.get(String(e.playerId)) ?? 0) * RATING_PER_ATTENDANCE,
       value: e.value,
     })),
     challenge.higherWins,
+    { weightPercent: challenge.weightPercent },
   );
 
   await prisma.$transaction(async (tx) => {
@@ -178,6 +212,7 @@ export async function closeChallenge(challengeId: string) {
       if (d.delta === 0) continue;
       await applyRatingChange(tx, {
         userId,
+        seasonId: challenge.seasonId,
         playerId: d.playerId,
         delta: d.delta,
         source: "CHALLENGE",
@@ -222,6 +257,7 @@ export async function createDiscipline(formData: FormData) {
       description: String(formData.get("description") ?? "").trim() || null,
       unit: String(formData.get("unit") ?? "").trim() || null,
       higherWins: formData.get("higherWins") !== "off",
+      weightPercent: parseWeight(formData.get("weightPercent"), 100),
     },
   });
   revalidateChallenges();
@@ -251,6 +287,7 @@ export async function updateDiscipline(disciplineId: string, formData: FormData)
       description: String(formData.get("description") ?? "").trim() || null,
       unit: String(formData.get("unit") ?? "").trim() || null,
       higherWins: formData.get("higherWins") !== "off",
+      weightPercent: parseWeight(formData.get("weightPercent"), 100),
       archived: formData.get("archived") === "on",
     },
   });

@@ -38,7 +38,14 @@ export async function createTrainingSlot(formData: FormData) {
   if (clash) return;
 
   await prisma.trainingSlot.create({
-    data: { userId, dayOfWeek, startMinutes, endMinutes, priceCents },
+    data: {
+      userId,
+      dayOfWeek,
+      startMinutes,
+      endMinutes,
+      priceCents,
+      kind: formData.get("gym") === "on" ? "GYM" : "TRAINING",
+    },
   });
   revalidateTrainings();
 }
@@ -71,6 +78,7 @@ export async function updateTrainingSlot(slotId: string, formData: FormData) {
       startMinutes,
       endMinutes,
       priceCents,
+      kind: formData.get("gym") === "on" ? "GYM" : "TRAINING",
       active: formData.get("active") !== "off",
     },
   });

@@ -64,6 +64,7 @@ export function PortalRating({
   myRating,
   myRank,
   myBand,
+  seasonName,
   board,
   duels,
   disciplines,
@@ -75,6 +76,7 @@ export function PortalRating({
   myRating: number | null;
   myRank: number | null;
   myBand: string | null;
+  seasonName: string | null;
   board: BoardRow[];
   duels: PortalDuel[];
   disciplines: { id: string; name: string; unit: string | null }[];
@@ -94,7 +96,7 @@ export function PortalRating({
           {myRating ?? "—"}
         </p>
         <p className="mt-2 font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
-          Tvůj rating
+          Tvůj rating{seasonName ? ` · ${seasonName}` : ""}
         </p>
         {myRank && (
           <p className="mt-2 text-sm text-slate-600">
@@ -384,7 +386,7 @@ export function PortalRating({
       </section>
 
       <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
-        Za každý odchozený trénink je +1. Zbytek si vybojuješ v duelech
+        Za každou účast — trénink i posilovnu — je +1. Zbytek si vybojuješ v duelech
         a výzvách — porazit silnějšího vynese nejvíc, prohrát s ním skoro nic
         nestojí.
       </p>

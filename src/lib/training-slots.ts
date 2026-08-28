@@ -13,6 +13,8 @@ export type Slot = {
   startMinutes: number;
   endMinutes: number;
   priceCents: number;
+  /** GYM = posilovna: počítá se do ratingu, ale neúčtuje se. */
+  kind?: string;
 };
 
 export const DAY_NAMES = [
@@ -64,6 +66,7 @@ export type PlannedTraining = {
   startsAt: Date;
   endsAt: Date;
   priceCents: number;
+  kind: string;
 };
 
 /**
@@ -108,6 +111,7 @@ export function planTrainings(
         startsAt,
         endsAt,
         priceCents: slot.priceCents,
+        kind: slot.kind ?? "TRAINING",
       });
     }
     cursor.setDate(cursor.getDate() + 1);

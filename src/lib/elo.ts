@@ -19,8 +19,34 @@ export const STARTING_RATING = 1000;
  */
 export const K_DUEL = 32;
 
+/**
+ * Váha se zadává v procentech, aby šlo v aplikaci napsat „150 %“
+ * místo abstraktního koeficientu. 100 % = běžný duel.
+ */
+export const WEIGHT_DUEL_DEFAULT = 100;
+export const WEIGHT_CHALLENGE_DEFAULT = 150;
+
 /** Výsledek z pohledu jednoho hráče. */
 export type Score = 0 | 0.5 | 1;
+
+/**
+ * Násobek podle toho, jak těsný výsledek byl.
+ *
+ * Vrací 1 při nejtěsnějším rozdílu a 2 při úplné jednostrannosti.
+ * Počítá se **poměrem**, ne absolutním rozdílem — jinak by 20:0
+ * v zápase znamenalo něco úplně jiného než 12,4 s proti 13,1 s
+ * na člunkovém běhu, přestože obojí je jedna disciplína svého druhu.
+ */
+export function marginMultiplier(valueA: number, valueB: number): number {
+  const a = Math.abs(valueA);
+  const b = Math.abs(valueB);
+  const total = a + b;
+  if (total === 0) return 1;
+  const dominance = Math.abs(a - b) / total;
+  // Strop na dvojnásobku: ani nejjednostrannější výsledek nemá
+  // udělat z jednoho duelu půlku sezóny.
+  return 1 + Math.min(1, dominance);
+}
 
 /**
  * Očekávaná úspěšnost hráče A proti B — číslo mezi 0 a 1.
@@ -39,10 +65,26 @@ export function duelDeltas(
   ratingA: number,
   ratingB: number,
   scoreA: Score,
-  k: number = K_DUEL,
+  options: {
+    /** Váha disciplíny v procentech; 100 = běžný duel. */
+    weightPercent?: number;
+    /** Zapsané hodnoty — z nich se určí, jak těsný výsledek byl. */
+    valueA?: number;
+    valueB?: number;
+    k?: number;
+  } = {},
 ): { deltaA: number; deltaB: number } {
+  const base = options.k ?? K_DUEL;
+  const weight = (options.weightPercent ?? WEIGHT_DUEL_DEFAULT) / 100;
+  const margin =
+    options.valueA != null && options.valueB != null
+      ? marginMultiplier(options.valueA, options.valueB)
+      : 1;
+
   const expectedA = expectedScore(ratingA, ratingB);
-  const deltaA = Math.round(k * (scoreA - expectedA));
+  // U remízy nemá rozdíl skóre co násobit — hodnoty jsou stejné.
+  const effective = scoreA === 0.5 ? base * weight : base * weight * margin;
+  const deltaA = Math.round(effective * (scoreA - expectedA));
   // Druhý dostane přesný opak, ať součet sedí i po zaokrouhlení.
   return { deltaA, deltaB: -deltaA };
 }
@@ -75,8 +117,11 @@ export type ChallengeDelta = {
  * Rating po měsíční výzvě.
  *
  * Pořadí se rozloží na dvojice: každý „hraje“ proti každému a vyhrává
- * ten s lepším umístěním. Součet se vydělí počtem soupeřů, aby jedna
- * výzva neznamenala víc než jeden duel.
+ * ten s lepším umístěním. Součet se vydělí počtem soupeřů, aby výsledek
+ * nezávisel na tom, kolik lidí se přihlásilo — o velikosti pohybu má
+ * rozhodovat váha výzvy, ne účast.
+ *
+ * Výchozí váha je 150 %, takže výzva váží víc než běžný duel.
  *
  * Díky tomu platí to, oč jde: skončit pátý mezi samými silnějšími
  * rating zvedne, kdežto stejné umístění mezi slabšími ho srazí.
@@ -84,8 +129,10 @@ export type ChallengeDelta = {
 export function challengeDeltas(
   results: ChallengeResult[],
   higherWins: boolean,
-  k: number = K_DUEL,
+  options: { weightPercent?: number; k?: number } = {},
 ): ChallengeDelta[] {
+  const k =
+    (options.k ?? K_DUEL) * ((options.weightPercent ?? WEIGHT_CHALLENGE_DEFAULT) / 100);
   if (results.length < 2) {
     return results.map((r) => ({ playerId: r.playerId, rank: 1, delta: 0 }));
   }

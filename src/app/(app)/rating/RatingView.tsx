@@ -23,6 +23,7 @@ export type DuelRow = {
   id: string;
   discipline: string;
   unit: string | null;
+  weightPercent: number;
   challengerName: string;
   opponentName: string;
   status: string;
@@ -40,6 +41,7 @@ export type ChallengeRow = {
   description: string | null;
   unit: string | null;
   higherWins: boolean;
+  weightPercent: number;
   startsOn: string;
   endsOn: string;
   closed: boolean;
@@ -58,6 +60,7 @@ export type DisciplineRow = {
   description: string | null;
   unit: string | null;
   higherWins: boolean;
+  weightPercent: number;
   archived: boolean;
 };
 
@@ -110,12 +113,15 @@ export function RatingView({
   challenges,
   disciplines,
   players,
+  hasSeason,
 }: {
   board: RatingRow[];
   duels: DuelRow[];
   challenges: ChallengeRow[];
   disciplines: DisciplineRow[];
   players: { id: string; name: string }[];
+  /** Bez běžící sezóny se rating nemá kam zapsat. */
+  hasSeason: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("Žebříček");
 
@@ -124,6 +130,13 @@ export function RatingView({
 
   return (
     <>
+      {!hasSeason && (
+        <p className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Neběží žádná ratingová sezóna, takže se nedá zakládat ani vyhodnocovat.
+          Napiš mi a založím další.
+        </p>
+      )}
+
       <dl className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat title="Hráčů v žebříčku" value={String(board.length)} />
         <Stat
@@ -380,7 +393,10 @@ function Duels({
                     >
                       {STATUS_LABEL[d.status] ?? d.status}
                     </span>
-                    <span className="text-xs text-slate-500">{d.discipline}</span>
+                    <span className="text-xs text-slate-500">
+                      {d.discipline}
+                      {d.weightPercent !== 100 && ` · váha ${d.weightPercent} %`}
+                    </span>
                   </div>
                   <p className="mt-1.5 font-medium text-slate-800">
                     {d.challengerName}{" "}
@@ -535,6 +551,15 @@ function Challenges({
                 <span className={label}>Jednotka</span>
                 <input name="unit" placeholder="min, km, opakování" className={field} />
               </label>
+              <label className="block">
+                <span className={label}>Váha (%)</span>
+                <input
+                  name="weightPercent"
+                  inputMode="numeric"
+                  defaultValue="150"
+                  className={`${field} tabular-nums`}
+                />
+              </label>
               <label className="flex cursor-pointer items-end gap-2.5 pb-2 text-sm text-slate-700">
                 <input type="checkbox" name="higherWins" defaultChecked />
                 Vyhrává vyšší hodnota
@@ -557,7 +582,8 @@ function Challenges({
               </button>
             </div>
             <p className="mt-2 text-xs italic text-slate-500">
-              U výzvy na čas odškrtni „vyhrává vyšší hodnota“ — pak vede nižší číslo.
+              U výzvy na čas odškrtni „vyhrává vyšší hodnota“ — pak vede nižší
+              číslo. Váha 150 % znamená, že výzva hne ratingem víc než běžný duel.
             </p>
           </form>
         )}
@@ -590,6 +616,7 @@ function Challenges({
                     {c.startsOn} – {c.endsOn}
                     {c.unit && ` · ${c.unit}`}
                     {!c.higherWins && " · vyhrává nižší"}
+                    {` · váha ${c.weightPercent} %`}
                   </p>
                   {c.description && (
                     <p className="mt-1 text-sm text-slate-600">{c.description}</p>
@@ -753,7 +780,8 @@ function Disciplines({ disciplines }: { disciplines: DisciplineRow[] }) {
                 </span>
                 <span className="block text-xs text-slate-500">
                   {d.unit ?? "bez jednotky"} ·{" "}
-                  {d.higherWins ? "vyhrává vyšší" : "vyhrává nižší"}
+                  {d.higherWins ? "vyhrává vyšší" : "vyhrává nižší"} · váha{" "}
+                  {d.weightPercent} %
                   {d.description && ` · ${d.description}`}
                 </span>
               </span>
@@ -800,6 +828,18 @@ function DisciplineFields({ discipline }: { discipline?: DisciplineRow }) {
           Vyhrává vyšší
         </label>
       </div>
+      <label className="block sm:max-w-[10rem]">
+        <span className={label}>Váha (%)</span>
+        <input
+          name="weightPercent"
+          inputMode="numeric"
+          defaultValue={discipline?.weightPercent ?? 100}
+          className={`${field} tabular-nums`}
+        />
+        <span className="mt-1 block text-xs italic text-slate-500">
+          100 = běžný duel. Náročnější disciplína může vážit víc.
+        </span>
+      </label>
       <label className="block">
         <span className={label}>Popis</span>
         <input

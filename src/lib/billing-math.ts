@@ -7,6 +7,8 @@ import { priceCentsForTrainingSession } from "./training-pricing.ts";
 export type ChargeableSession = {
   startsAt: Date;
   defaultPriceCents: number | null;
+  /** GYM = posilovna, do peněz se nepočítá. */
+  kind?: string;
 };
 
 export type MonthCharge = {

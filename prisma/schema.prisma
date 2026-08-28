@@ -18,6 +18,12 @@ enum AttendanceStatus {
   ABSENT
 }
 
+/** Posilovna se počítá do ratingu, ale neúčtuje se — chodí se na ni po svém. */
+enum TrainingKind {
+  TRAINING
+  GYM
+}
+
 /**
  * Účetní druh příjmu. Spolek má u každého jiný daňový režim, proto to
  * evidujeme u zdroje — jinak se to při uzávěrce dohledává ručně z výpisu.
@@ -56,6 +62,7 @@ model User {
   duels        Duel[]
   challenges   Challenge[]
   ratingEntries RatingEntry[]
+  ratingSeasons RatingSeason[]
 }
 
 /**
@@ -99,11 +106,10 @@ model Player {
   paymentBatches PaymentBatch[]
   prepayments  Prepayment[]
   /**
-   * Rating z duelů, výzev a trenérských úprav. Body za docházku se
-   * nepřičítají sem — dopočítávají se z docházky, aby se samy srovnaly,
-   * když trenér účast dodatečně opraví.
+   * Rating po sezónách. Body za docházku se sem nepřičítají —
+   * dopočítávají se, aby se samy srovnaly, když trenér účast opraví.
    */
-  ratingPoints Int                       @default(1000)
+  ratings      PlayerRating[]
   ratingEntries RatingEntry[]
   duelsChallenged Duel[]                 @relation("DuelChallenger")
   duelsFaced      Duel[]                 @relation("DuelOpponent")
@@ -124,6 +130,8 @@ model Discipline {
   unit        String?
   /** false u disciplín na čas, kde vyhrává nižší hodnota. */
   higherWins  Boolean  @default(true)
+  /** Váha v procentech; 100 = běžný duel. Náročnější disciplína může vážit víc. */
+  weightPercent Int    @default(100)
   archived    Boolean  @default(false)
   createdAt   DateTime @default(now())
   duels       Duel[]
@@ -150,6 +158,8 @@ model Duel {
   id             String     @id @default(cuid())
   userId         String
   user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seasonId       String
+  season         RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   disciplineId   String
   discipline     Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
   challengerId   String
@@ -178,12 +188,16 @@ model Challenge {
   id           String      @id @default(cuid())
   userId       String
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seasonId     String
+  season       RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   name         String
   description  String?
   disciplineId String?
   discipline   Discipline? @relation(fields: [disciplineId], references: [id], onDelete: SetNull)
   unit         String?
   higherWins   Boolean     @default(true)
+  /** Váha v procentech. Výchozích 150 dělá z výzvy víc než běžný duel. */
+  weightPercent Int        @default(150)
   startsOn     DateTime    @db.Date
   endsOn       DateTime    @db.Date
   /** Vyplněné = pořadí vyhodnoceno a rating rozdán. Podruhé to nejde. */
@@ -208,6 +222,42 @@ model ChallengeEntry {
   @@index([playerId])
 }
 
+/**
+ * Ratingová sezóna. Rating platí vždycky na jednu — na začátku nové
+ * začínají všichni znovu na 1000, aby loňská forma nedržela pořadí
+ * zabetonované. Je to vlastní číselník, ne ten od předplatného:
+ * předplacené období končí v červnu, ale rating se sbírá jen do května.
+ */
+model RatingSeason {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  createdAt DateTime @default(now())
+  ratings   PlayerRating[]
+  duels     Duel[]
+  challenges Challenge[]
+  entries   RatingEntry[]
+
+  @@unique([userId, name])
+  @@index([userId, startsOn])
+}
+
+/** Rating jednoho hráče v jedné sezóně. */
+model PlayerRating {
+  id       String       @id @default(cuid())
+  seasonId String
+  season   RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  points   Int          @default(1000)
+
+  @@unique([seasonId, playerId])
+  @@index([playerId])
+}
+
 enum RatingSource {
   DUEL
   CHALLENGE
@@ -219,6 +269,8 @@ model RatingEntry {
   id          String       @id @default(cuid())
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seasonId    String
+  season      RatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   playerId    String
   player      Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
   source      RatingSource
@@ -366,6 +418,7 @@ model TrainingSlot {
   /** Minuty od půlnoci — snadno se řadí i porovnává. */
   startMinutes Int
   endMinutes   Int
+  kind      TrainingKind @default(TRAINING)
   /** Cena za tento termín. Zvýhodněné kategorie platí dál svou sazbu. */
   priceCents Int
   /** Vypnutý termín se nenabízí ke generování, ale historii nechává být. */
@@ -382,6 +435,7 @@ model Training {
   userId            String
   user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   startsAt          DateTime
+  kind              TrainingKind @default(TRAINING)
   /** Konec tréninku. Null u starších záznamů, kdy se délka neevidovala. */
   endsAt            DateTime?
   /** Z jakého termínu rozvrhu vznikl. Null = ručně přidaný. */

@@ -5,7 +5,7 @@ import { PortalGate } from "../PortalGate";
 import { SessionRefresh } from "../SessionRefresh";
 import { PortalRating, type PortalDuel } from "./PortalRating";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { getLeaderboard } from "@/lib/rating";
+import { getActiveSeason, getLeaderboard } from "@/lib/rating";
 import { toDateInputValue } from "@/lib/prepaid";
 import { prisma } from "@/lib/prisma";
 
@@ -52,11 +52,14 @@ export default async function PortalRatingPage({
   const userId = String(player.user.id);
   const me = String(player.id);
 
+  const season = await getActiveSeason(userId);
+
   const [board, duels, disciplines, players, challenges] = await Promise.all([
-    getLeaderboard(userId),
+    getLeaderboard(userId, season),
     prisma.duel.findMany({
       where: {
         userId,
+        ...(season && { seasonId: season.id }),
         OR: [{ challengerId: me }, { opponentId: me }],
       },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -78,7 +81,7 @@ export default async function PortalRatingPage({
       select: { id: true, name: true },
     }),
     prisma.challenge.findMany({
-      where: { userId, closedAt: null },
+      where: { userId, closedAt: null, ...(season && { seasonId: season.id }) },
       orderBy: { endsOn: "asc" },
       include: {
         entries: {
@@ -126,6 +129,7 @@ export default async function PortalRatingPage({
           myRating={myRow?.rating ?? null}
           myRank={myRow?.rank ?? null}
           myBand={myRow?.band ?? null}
+          seasonName={season?.name ?? null}
           board={board.map((r) => ({
             playerId: r.playerId,
             playerName: r.playerName,

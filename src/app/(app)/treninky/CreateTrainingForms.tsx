@@ -232,6 +232,11 @@ function SingleForm({ slots, today }: { slots: SlotRow[]; today: string }) {
           <input name="notes" className={field} />
         </label>
 
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+          <input type="checkbox" name="gym" />
+          Posilovna — neúčtuje se, ale za účast je +1 do ratingu
+        </label>
+
         <label className="block">
           <span className={label}>Cena (Kč)</span>
           <input

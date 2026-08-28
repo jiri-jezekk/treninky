@@ -1,30 +1,33 @@
 import { RatingView, type ChallengeRow, type DisciplineRow, type DuelRow } from "./RatingView";
-import { getLeaderboard } from "@/lib/rating";
+import { getActiveSeason, getLeaderboard } from "@/lib/rating";
 import { toDateInputValue } from "@/lib/prepaid";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 
 export default async function RatingPage() {
   const userId = await requireUserId();
+  const season = await getActiveSeason(userId);
 
   const [board, disciplines, duels, challenges, players] = await Promise.all([
-    getLeaderboard(userId),
+    getLeaderboard(userId, season),
     prisma.discipline.findMany({
       where: { userId },
       orderBy: [{ archived: "asc" }, { name: "asc" }],
     }),
     prisma.duel.findMany({
-      where: { userId },
+      where: { userId, ...(season && { seasonId: season.id }) },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       take: 60,
       include: {
-        discipline: { select: { name: true, unit: true, higherWins: true } },
+        discipline: {
+          select: { name: true, unit: true, higherWins: true, weightPercent: true },
+        },
         challenger: { select: { name: true } },
         opponent: { select: { name: true } },
       },
     }),
     prisma.challenge.findMany({
-      where: { userId },
+      where: { userId, ...(season && { seasonId: season.id }) },
       orderBy: [{ closedAt: "asc" }, { endsOn: "desc" }],
       include: {
         entries: {
@@ -44,6 +47,7 @@ export default async function RatingPage() {
     id: d.id,
     discipline: d.discipline.name,
     unit: d.discipline.unit,
+    weightPercent: d.discipline.weightPercent,
     challengerName: d.challenger.name,
     opponentName: d.opponent.name,
     status: d.status,
@@ -66,6 +70,7 @@ export default async function RatingPage() {
       description: c.description,
       unit: c.unit,
       higherWins: c.higherWins,
+      weightPercent: c.weightPercent,
       startsOn: toDateInputValue(c.startsOn),
       endsOn: toDateInputValue(c.endsOn),
       closed: c.closedAt != null,
@@ -85,6 +90,7 @@ export default async function RatingPage() {
     description: d.description,
     unit: d.unit,
     higherWins: d.higherWins,
+    weightPercent: d.weightPercent,
     archived: d.archived,
   }));
 
@@ -95,11 +101,20 @@ export default async function RatingPage() {
           Rating
         </h1>
         <div className="mt-3 h-1 w-14 rounded bg-club" />
-        <p className="mt-3 max-w-prose text-sm text-slate-600">
+        {season && (
+          <p className="mt-3 font-heading text-sm font-bold text-slate-800">
+            {season.name}
+            <span className="ml-2 font-sans text-xs font-normal text-slate-500">
+              do {toDateInputValue(season.endsOn)}
+            </span>
+          </p>
+        )}
+        <p className="mt-2 max-w-prose text-sm text-slate-600">
           Každý začíná na 1000. Rozhoduje rozdíl ratingů, ne absolutní číslo —
           kdo porazí výrazně silnějšího, získá hodně; kdo s ním prohraje,
-          ztratí skoro nic. Za odchozený trénink přibývá{" "}
-          <span className="text-slate-800">1 bod</span>.
+          ztratí skoro nic. Za každou účast — trénink i posilovnu — přibývá{" "}
+          <span className="text-slate-800">1 bod</span>. Rating platí na sezónu;
+          v té další začínají všichni znovu na 1000.
         </p>
       </div>
 
@@ -109,6 +124,7 @@ export default async function RatingPage() {
         challenges={challengeRows}
         disciplines={disciplineRows}
         players={players.map((p) => ({ id: p.id, name: p.name }))}
+        hasSeason={season != null}
       />
     </div>
   );

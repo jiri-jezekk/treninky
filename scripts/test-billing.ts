@@ -114,6 +114,28 @@ console.log("\nSoučty sedí:");
   eq("účtované + předplacené = všechny tréninky", pocetMesicu + r.prepaidCount, vse.length);
 }
 
+console.log("\nPosilovna se nepočítá do peněz:");
+{
+  const fitko = { startsAt: new Date(2026, 10, 3, 18, 0), defaultPriceCents: 11000, kind: "GYM" };
+  const r = splitChargesByMonth([fitko], [], null);
+  eq("posilovna nic nestojí", r.totalCents, 0);
+}
+{
+  // I zvýhodněná kategorie platí za posilovnu nulu — jinak by
+  // junior platil 60 Kč za to, že si šel zaběhat sám.
+  const fitko = { startsAt: new Date(2026, 10, 3, 18, 0), defaultPriceCents: null, kind: "GYM" };
+  const r = splitChargesByMonth([fitko], [], 6000);
+  eq("ani junior za posilovnu neplatí", r.totalCents, 0);
+}
+{
+  const mix = [
+    utery(2026, 11, 3),
+    { startsAt: new Date(2026, 10, 5, 18, 0), defaultPriceCents: null, kind: "GYM" },
+  ];
+  const r = splitChargesByMonth(mix, [], null);
+  eq("v měsíci zůstane jen běžný trénink", r.totalCents, 11000);
+}
+
 console.log("\nŘazení:");
 {
   const r = splitChargesByMonth([utery(2026, 12, 1), utery(2025, 11, 4)], [], null);

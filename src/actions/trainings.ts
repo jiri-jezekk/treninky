@@ -73,7 +73,14 @@ export async function createTraining(formData: FormData) {
   }
 
   const training = await prisma.training.create({
-    data: { userId, startsAt, endsAt, notes, defaultPriceCents },
+    data: {
+      userId,
+      startsAt,
+      endsAt,
+      notes,
+      defaultPriceCents,
+      kind: formData.get("gym") === "on" ? "GYM" : "TRAINING",
+    },
   });
 
   const players = await prisma.player.findMany({
@@ -153,6 +160,7 @@ export async function generateTrainingsFromSchedule(formData: FormData) {
       data: {
         userId,
         slotId: item.slotId,
+        kind: item.kind,
         startsAt: item.startsAt,
         endsAt: item.endsAt,
         notes,

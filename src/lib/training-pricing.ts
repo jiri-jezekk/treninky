@@ -33,9 +33,12 @@ export function isRegularTuesdayThursdayAuto(
  * stejně, jako to dřív platilo pro juniory.
  */
 export function priceCentsForTrainingSession(
-  training: Pick<Training, "startsAt" | "defaultPriceCents">,
+  training: Pick<Training, "startsAt" | "defaultPriceCents"> & { kind?: string },
   discountPriceCents: number | null,
 ): number {
+  // Posilovna se neúčtuje vůbec — chodí se na ni po svém. Musí to být
+  // dřív než zvýhodněná sazba, jinak by junior platil i za ni.
+  if (training.kind === "GYM") return 0;
   if (discountPriceCents != null) return discountPriceCents;
   if (training.defaultPriceCents != null) return training.defaultPriceCents;
   const dow = training.startsAt.getDay();
