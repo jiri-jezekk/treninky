@@ -45,6 +45,8 @@ export type RatingRow = {
   fromAttendance: number;
   attendanceCount: number;
   gymCount: number;
+  /** Individuální tréninky, které si hráč zapsal sám. */
+  soloCount: number;
   band: string;
   rank: number;
   duelsWon: number;
@@ -68,9 +70,11 @@ export async function getLeaderboard(
   const to = new Date(season.endsOn);
   to.setUTCHours(23, 59, 59, 999);
 
-  const [players, attendances, duels, ratings] = await Promise.all([
+  const [players, attendances, solos, duels, ratings] = await Promise.all([
+    // Vyřazení hráči se nepočítají ani nezobrazují — trenér je zatím
+    // vede jen kvůli platbám.
     prisma.player.findMany({
-      where: { userId, active: true },
+      where: { userId, active: true, inRating: true },
       select: { id: true, name: true },
     }),
     prisma.attendance.findMany({
@@ -83,6 +87,10 @@ export async function getLeaderboard(
         },
       },
       select: { playerId: true, training: { select: { kind: true } } },
+    }),
+    prisma.soloSession.findMany({
+      where: { userId, performedOn: { gte: from, lte: to } },
+      select: { playerId: true },
     }),
     prisma.duel.findMany({
       where: { userId, seasonId: season.id, status: "CONFIRMED" },
@@ -108,6 +116,12 @@ export async function getLeaderboard(
     }
   }
 
+  const soloCount = new Map<string, number>();
+  for (const so of solos) {
+    const key = String(so.playerId);
+    soloCount.set(key, (soloCount.get(key) ?? 0) + 1);
+  }
+
   const won = new Map<string, number>();
   const lost = new Map<string, number>();
   const bump = (map: Map<string, number>, id: string) =>
@@ -130,7 +144,8 @@ export async function getLeaderboard(
   const rows = players
     .map((p) => {
       const id = String(p.id);
-      const count = attendanceCount.get(id) ?? 0;
+      const solo = soloCount.get(id) ?? 0;
+      const count = (attendanceCount.get(id) ?? 0) + solo;
       const fromAttendance = count * RATING_PER_ATTENDANCE;
       const points = pointsById.get(id) ?? STARTING_RATING;
       return {
@@ -141,6 +156,7 @@ export async function getLeaderboard(
         fromAttendance,
         attendanceCount: count,
         gymCount: gymCount.get(id) ?? 0,
+        soloCount: solo,
         band: ratingBand(points + fromAttendance),
         rank: 0,
         duelsWon: won.get(id) ?? 0,
@@ -168,7 +184,7 @@ export async function getEffectiveRating(
   const to = new Date(season.endsOn);
   to.setUTCHours(23, 59, 59, 999);
 
-  const [rating, count] = await Promise.all([
+  const [rating, count, solo] = await Promise.all([
     prisma.playerRating.findFirst({
       where: { seasonId: season.id, playerId },
       select: { points: true },
@@ -180,9 +196,14 @@ export async function getEffectiveRating(
         training: { cancelled: false, startsAt: { gte: from, lte: to } },
       },
     }),
+    prisma.soloSession.count({
+      where: { playerId, performedOn: { gte: from, lte: to } },
+    }),
   ]);
 
-  return (rating?.points ?? STARTING_RATING) + count * RATING_PER_ATTENDANCE;
+  return (
+    (rating?.points ?? STARTING_RATING) + (count + solo) * RATING_PER_ATTENDANCE
+  );
 }
 
 /** Rating několika hráčů najednou — pro náhledy, kde se počítá víc duelů. */
@@ -198,7 +219,7 @@ export async function getEffectiveRatings(
   to.setUTCHours(23, 59, 59, 999);
 
   const unique = [...new Set(playerIds)];
-  const [ratings, counts] = await Promise.all([
+  const [ratings, counts, solos] = await Promise.all([
     prisma.playerRating.findMany({
       where: { seasonId: season.id, playerId: { in: unique } },
       select: { playerId: true, points: true },
@@ -212,6 +233,11 @@ export async function getEffectiveRatings(
       },
       _count: { playerId: true },
     }),
+    prisma.soloSession.groupBy({
+      by: ["playerId"],
+      where: { playerId: { in: unique }, performedOn: { gte: from, lte: to } },
+      _count: { playerId: true },
+    }),
   ]);
 
   const pointsById = new Map<string, number>(
@@ -220,12 +246,16 @@ export async function getEffectiveRatings(
   const countById = new Map<string, number>(
     counts.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
   );
+  const soloById = new Map<string, number>(
+    solos.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
+  );
 
   for (const id of unique) {
     out.set(
       id,
       (pointsById.get(id) ?? STARTING_RATING) +
-        (countById.get(id) ?? 0) * RATING_PER_ATTENDANCE,
+        ((countById.get(id) ?? 0) + (soloById.get(id) ?? 0)) *
+          RATING_PER_ATTENDANCE,
     );
   }
   return out;
@@ -330,5 +360,38 @@ export async function getRatingHistory(
     ratingAfter: e.ratingAfter,
     label: e.label,
     createdAt: e.createdAt,
+  }));
+}
+
+export type SoloRow = {
+  id: string;
+  playerName: string;
+  name: string;
+  performedOn: Date;
+};
+
+/** Co si kdo zapsal jako individuální trénink — kontrola pro trenéra. */
+export async function getSoloSessions(
+  userId: string,
+  season: SeasonInfo | null,
+  limit = 40,
+): Promise<SoloRow[]> {
+  if (!season) return [];
+
+  const rows = await prisma.soloSession.findMany({
+    where: {
+      userId,
+      performedOn: { gte: season.startsOn, lte: season.endsOn },
+    },
+    orderBy: { performedOn: "desc" },
+    take: limit,
+    include: { player: { select: { name: true } } },
+  });
+
+  return rows.map((r) => ({
+    id: String(r.id),
+    playerName: r.player.name,
+    name: r.name,
+    performedOn: r.performedOn,
   }));
 }

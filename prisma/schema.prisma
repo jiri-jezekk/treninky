@@ -47,6 +47,11 @@ model User {
   clubIco      String?
   /** Jak se účetně chovají měsíční platby za tréninky. */
   monthlyIncomeKind IncomeKind @default(TRAINING)
+  /**
+   * Hráčům se v jejich odkazu ukazují jen platby od tohohle dne.
+   * Starší sezóna zůstává trenérovi, hráče už nezajímá.
+   */
+  playerVisibleFrom DateTime? @db.Date
   createdAt    DateTime @default(now())
   players      Player[]
   groups       Group[]
@@ -61,6 +66,7 @@ model User {
   duels        Duel[]
   challenges   Challenge[]
   matches      Match[]
+  soloSessions SoloSession[]
   ratingEntries RatingEntry[]
   ratingSeasons RatingSeason[]
 }
@@ -115,6 +121,9 @@ model Player {
   duelsFaced      Duel[]                 @relation("DuelOpponent")
   challengeEntries ChallengeEntry[]
   matchTeams   MatchTeamMember[]
+  soloSessions SoloSession[]
+  /** Vypnuté = hráč se do ratingu nepočítá a v žebříčku není. */
+  inRating     Boolean                   @default(true)
 
   @@unique([userId, number])
   @@index([userId])
@@ -239,6 +248,28 @@ model PlayerRating {
 
   @@unique([seasonId, playerId])
   @@index([playerId])
+}
+
+/**
+ * Individuální trénink, který si hráč zapíše sám — házení, posilovna,
+ * běh. Počítá se stejně jako účast na klubovém tréninku: +1.
+ *
+ * Jeden zápis na den. Rating za docházku má odměňovat pravidelnost,
+ * ne to, kdo si nakliká víc řádků.
+ */
+model SoloSession {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  performedOn DateTime @db.Date
+  name        String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@unique([playerId, performedOn])
+  @@index([userId, performedOn])
 }
 
 enum RatingSource {

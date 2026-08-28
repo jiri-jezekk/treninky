@@ -33,6 +33,12 @@ export type BalanceItem = {
   paid: boolean;
   /** Řazení od nejstaršího dluhu; akce jdou nakonec. */
   sortKey: number;
+  /**
+   * Měsíc, do kterého položka patří (rok * 12 + měsíc). Slouží k oříznutí
+   * na aktuální sezónu — sortKey k tomu použít nejde, akce v něm mají
+   * vlastní škálu a filtrem by prošly vždycky.
+   */
+  monthKey: number;
   year?: number;
   month?: number;
   sharedPaymentId?: string;
@@ -68,6 +74,11 @@ export async function getPlayerBalance(
   playerId: string,
   /** Předané, když se počítá víc hráčů najednou — ušetří dotaz na uživatele. */
   monthlyIncomeKind?: IncomeKind,
+  /**
+   * Hráčův pohled: starší položky se skryjí. Trenér volá bez tohohle,
+   * takže ve výpisu vidí všechno včetně loňských dluhů.
+   */
+  visibleFrom?: Date | null,
 ): Promise<PlayerBalance | null> {
   const player = await prisma.player.findFirst({
     where: { id: playerId, userId },
@@ -90,7 +101,7 @@ export async function getPlayerBalance(
       })
     ).monthlyIncomeKind as IncomeKind);
 
-  const items = await buildItems(userId, player, kind);
+  const items = filterFrom(await buildItems(userId, player, kind), visibleFrom);
 
   const unpaid = items.filter((i) => !i.paid).sort((a, b) => a.sortKey - b.sortKey);
   const paid = items.filter((i) => i.paid).sort((a, b) => b.sortKey - a.sortKey);
@@ -103,6 +114,22 @@ export async function getPlayerBalance(
     paid,
     totalCents: unpaid.reduce((sum, i) => sum + i.amountCents, 0),
   };
+}
+
+/**
+ * Ořízne položky na to, co má hráč vidět.
+ *
+ * Musí se to dít na jednom místě a projít i do souhrnné platby —
+ * jinak by hráč zaplatil jednou částkou i dluh, který nemá na očích.
+ */
+function filterFrom(
+  items: BalanceItem[],
+  visibleFrom: Date | null | undefined,
+): BalanceItem[] {
+  if (!visibleFrom) return items;
+  const cutoff =
+    visibleFrom.getUTCFullYear() * 12 + visibleFrom.getUTCMonth() + 1;
+  return items.filter((i) => i.monthKey >= cutoff);
 }
 
 async function buildItems(
@@ -139,6 +166,7 @@ async function buildItems(
       paid: p.paidAt != null,
       // Řadí se podle začátku období, aby stálo mezi měsíci na svém místě.
       sortKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
+      monthKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
       prepaymentId: p.id,
     });
   }
@@ -179,6 +207,7 @@ async function buildItems(
         incomeKind: monthlyIncomeKind,
         paid: paidMonths.has(`${year}-${month}`),
         sortKey: year * 12 + month,
+        monthKey: year * 12 + month,
         year,
         month,
       });
@@ -204,6 +233,10 @@ async function buildItems(
       incomeKind: sp.incomeKind as IncomeKind,
       paid: p.paidAt != null,
       sortKey: 100000 + sp.number,
+      // Akce se ořezává podle toho, kdy vznikla — loňský turnaj
+      // hráči v nové sezóně ukazovat nemá smysl.
+      monthKey:
+        sp.createdAt.getFullYear() * 12 + sp.createdAt.getMonth() + 1,
       sharedPaymentId: sp.id,
     });
   }

@@ -95,7 +95,10 @@ export async function savePlayer(playerId: string, formData: FormData) {
 
   await prisma.player.updateMany({
     where: { id: playerId, userId },
-    data: { active: formData.get("active") === "on" },
+    data: {
+      active: formData.get("active") === "on",
+      inRating: formData.get("inRating") === "on",
+    },
   });
 
   revalidatePlayerRelated();
@@ -141,6 +144,11 @@ export async function bulkPlayerAction(formData: FormData) {
     await prisma.player.updateMany({
       where: { id: { in: ownedIds }, userId },
       data: { active: action === "activate" },
+    });
+  } else if (action === "rating-on" || action === "rating-off") {
+    await prisma.player.updateMany({
+      where: { id: { in: ownedIds }, userId },
+      data: { inRating: action === "rating-on" },
     });
   } else if (action === "delete") {
     await prisma.player.deleteMany({ where: { id: { in: ownedIds }, userId } });

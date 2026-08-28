@@ -21,6 +21,7 @@ import {
   updateMatchScores,
 } from "@/actions/matches";
 import { czPlural, initials } from "@/lib/czech";
+import { deleteSoloSession } from "@/actions/solo-sessions";
 import type { RatingRow } from "@/lib/rating";
 
 export type DuelRow = {
@@ -148,6 +149,7 @@ export function RatingView({
   players,
   trainings,
   history,
+  solos,
   hasSeason,
   today,
 }: {
@@ -158,6 +160,7 @@ export function RatingView({
   players: { id: string; name: string }[];
   trainings: { id: string; label: string }[];
   history: HistoryRow[];
+  solos: { id: string; playerName: string; name: string; performedOn: string }[];
   /** Bez běžící sezóny se rating nemá kam zapsat. */
   hasSeason: boolean;
   today: string;
@@ -227,7 +230,7 @@ export function RatingView({
         />
       )}
       {tab === "Výzvy" && <Challenges challenges={challenges} today={today} />}
-      {tab === "Historie" && <History history={history} />}
+      {tab === "Historie" && <History history={history} solos={solos} />}
     </>
   );
 }
@@ -1018,8 +1021,14 @@ function Challenges({
 
 /* --------------------------------------------------------- historie */
 
-function History({ history }: { history: HistoryRow[] }) {
-  if (history.length === 0) {
+function History({
+  history,
+  solos,
+}: {
+  history: HistoryRow[];
+  solos: { id: string; playerName: string; name: string; performedOn: string }[];
+}) {
+  if (history.length === 0 && solos.length === 0) {
     return (
       <p className={`${card} px-5 py-12 text-center text-sm italic text-slate-500`}>
         Zatím se rating nikde nezměnil.
@@ -1028,6 +1037,7 @@ function History({ history }: { history: HistoryRow[] }) {
   }
 
   return (
+    <>
     <section className={card}>
       <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
         <h2 className={label}>Historie ratingu</h2>
@@ -1067,6 +1077,51 @@ function History({ history }: { history: HistoryRow[] }) {
         ))}
       </ul>
     </section>
+
+    {solos.length > 0 && (
+      <section className={`${card} mt-5`}>
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
+          <h2 className={label}>Individuální tréninky</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Co si hráči zapsali sami. Každý den +1, stejně jako za klubový
+            trénink. Kdyby něco nesedělo, smaž to křížkem.
+          </p>
+        </div>
+        <ul className="divide-y divide-slate-100">
+          {solos.map((so) => (
+            <li
+              key={so.id}
+              className="flex items-center gap-3 px-4 py-2.5 sm:px-5"
+            >
+              <span className="w-20 shrink-0 text-xs tabular-nums text-slate-500">
+                {so.performedOn}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-slate-800">
+                  {so.playerName}
+                </span>
+                <span className="block truncate text-xs text-slate-500">
+                  {so.name}
+                </span>
+              </span>
+              <span className="shrink-0 font-heading text-sm font-bold text-emerald-800">
+                +1
+              </span>
+              <form action={deleteSoloSession.bind(null, so.id, undefined)}>
+                <button
+                  type="submit"
+                  className="px-1 text-xs text-slate-500 hover:text-red-800"
+                  aria-label="Smazat"
+                >
+                  ✕
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+    </>
   );
 }
 

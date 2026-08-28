@@ -146,7 +146,7 @@ export async function closeChallenge(challengeId: string) {
   to.setUTCHours(23, 59, 59, 999);
 
   const playerIds = challenge.entries.map((e) => e.playerId);
-  const [counts, ratings] = await Promise.all([
+  const [counts, solos, ratings] = await Promise.all([
     prisma.attendance.groupBy({
       by: ["playerId"],
       where: {
@@ -154,6 +154,11 @@ export async function closeChallenge(challengeId: string) {
         training: { userId, cancelled: false, startsAt: { gte: from, lte: to } },
         playerId: { in: playerIds },
       },
+      _count: { playerId: true },
+    }),
+    prisma.soloSession.groupBy({
+      by: ["playerId"],
+      where: { playerId: { in: playerIds }, performedOn: { gte: from, lte: to } },
       _count: { playerId: true },
     }),
     prisma.playerRating.findMany({
@@ -165,6 +170,9 @@ export async function closeChallenge(challengeId: string) {
   const attendanceById = new Map<string, number>(
     counts.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
   );
+  const soloById = new Map<string, number>(
+    solos.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
+  );
   const pointsById = new Map<string, number>(
     ratings.map((r) => [String(r.playerId), r.points]),
   );
@@ -174,7 +182,9 @@ export async function closeChallenge(challengeId: string) {
       playerId: String(e.playerId),
       rating:
         (pointsById.get(String(e.playerId)) ?? STARTING_RATING) +
-        (attendanceById.get(String(e.playerId)) ?? 0) * RATING_PER_ATTENDANCE,
+        ((attendanceById.get(String(e.playerId)) ?? 0) +
+          (soloById.get(String(e.playerId)) ?? 0)) *
+          RATING_PER_ATTENDANCE,
       value: e.value,
     })),
     challenge.higherWins,

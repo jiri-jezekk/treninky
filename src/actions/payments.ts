@@ -48,6 +48,8 @@ export async function setMonthPaid(formData: FormData) {
  */
 export async function markPlayerAllPaid(playerId: string) {
   const userId = await requireUserId();
+  // Bez oříznutí na sezónu — trenér označuje i starší dluhy, které
+  // hráč ve svém odkazu nevidí.
   const balance = await getPlayerBalance(userId, playerId);
   if (!balance) return;
 

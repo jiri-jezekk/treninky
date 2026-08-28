@@ -8,6 +8,7 @@ import {
   respondToDuel,
 } from "@/actions/duels";
 import { submitChallengeEntry } from "@/actions/challenges";
+import { deleteSoloSession, logSoloSession } from "@/actions/solo-sessions";
 import { initials } from "@/lib/czech";
 
 export type PortalDuel = {
@@ -93,6 +94,9 @@ export function PortalRating({
   opponents,
   challenges,
   history,
+  solos,
+  inRating,
+  today,
 }: {
   payToken: string;
   myName: string;
@@ -105,12 +109,27 @@ export function PortalRating({
   opponents: { id: string; name: string }[];
   challenges: ChallengeRow[];
   history: HistoryRow[];
+  solos: { id: string; name: string; performedOn: string }[];
+  inRating: boolean;
+  today: string;
 }) {
   const [challenging, setChallenging] = useState(false);
   const [reporting, setReporting] = useState<string | null>(null);
+  const [loggingSolo, setLoggingSolo] = useState(false);
 
   const open = duels.filter((d) => d.status !== "CONFIRMED" && d.status !== "DECLINED");
   const done = duels.filter((d) => d.status === "CONFIRMED");
+
+  if (!inRating) {
+    return (
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center">
+        <p className="text-sm text-slate-600">
+          Zatím nejsi zapojený do ratingu. Kdybys chtěl, řekni trenérovi —
+          zapne ti to.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -395,6 +414,104 @@ export function PortalRating({
         </section>
       )}
 
+      {/* ------------------------------------- individuální tréninky */}
+      <section className={`${card} mt-4`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className={label}>Trénoval jsem sám</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Házení, posilovna, běh — každý den +1 jako za trénink.
+            </p>
+          </div>
+          {!loggingSolo && (
+            <button
+              type="button"
+              className={`${btnOutline} ${btnSm}`}
+              onClick={() => setLoggingSolo(true)}
+            >
+              + Zapsat
+            </button>
+          )}
+        </div>
+
+        {loggingSolo && (
+          <form
+            action={logSoloSession}
+            onSubmit={() => setLoggingSolo(false)}
+            className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3"
+          >
+            <input type="hidden" name="payToken" value={payToken} />
+            <label className="block">
+              <span className={label}>Co jsi dělal</span>
+              <input
+                name="name"
+                required
+                placeholder="Házení na terč"
+                className={field}
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className={label}>Kdy</span>
+              <input
+                type="date"
+                name="performedOn"
+                required
+                defaultValue={today}
+                max={today}
+                className={field}
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="submit" className={`${btnPrimary} ${btnSm}`}>
+                Zapsat
+              </button>
+              <button
+                type="button"
+                className={`${btnOutline} ${btnSm}`}
+                onClick={() => setLoggingSolo(false)}
+              >
+                Zrušit
+              </button>
+            </div>
+            <p className="mt-2 text-xs italic text-slate-500">
+              Jeden zápis na den — počítá se pravidelnost, ne počet řádků.
+              Zápis na tentýž den ten předchozí přepíše.
+            </p>
+          </form>
+        )}
+
+        {solos.length === 0 ? (
+          <p className="mt-3 text-sm italic text-slate-500">
+            Zatím nic. Zapiš si, co jsi natrénoval mimo klub.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-slate-100">
+            {solos.map((so) => (
+              <li key={so.id} className="flex items-center gap-2 py-2">
+                <span className="w-20 shrink-0 text-xs tabular-nums text-slate-500">
+                  {so.performedOn}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
+                  {so.name}
+                </span>
+                <span className="shrink-0 font-heading text-sm font-bold text-emerald-800">
+                  +1
+                </span>
+                <form action={deleteSoloSession.bind(null, so.id, payToken)}>
+                  <button
+                    type="submit"
+                    className="px-1 text-xs text-slate-500 hover:text-red-800"
+                    aria-label="Smazat"
+                  >
+                    ✕
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {/* ------------------------------------------------- žebříček */}
       <section className={`${card} mt-4`}>
         <h2 className={label}>Žebříček</h2>
@@ -466,7 +583,8 @@ export function PortalRating({
       )}
 
       <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
-        Za každou účast — trénink i posilovnu — je +1. Zbytek si vybojuješ v duelech
+        Za každou účast je +1 — klubový trénink, posilovna i to, co si
+        zapíšeš sám. Zbytek si vybojuješ v duelech
         a výzvách — porazit silnějšího vynese nejvíc, prohrát s ním skoro nic
         nestojí.
       </p>

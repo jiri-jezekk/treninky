@@ -28,7 +28,14 @@ export default async function PortalPage({
       id: true,
       name: true,
       passwordHash: true,
-      user: { select: { id: true, bankIban: true, clubName: true } },
+      user: {
+        select: {
+          id: true,
+          bankIban: true,
+          clubName: true,
+          playerVisibleFrom: true,
+        },
+      },
     },
   });
   if (!player) notFound();
@@ -51,7 +58,14 @@ export default async function PortalPage({
     );
   }
 
-  const balance = await getPlayerBalance(player.user.id, player.id);
+  // Hráč vidí jen běžící sezónu. Starší dluhy zůstávají trenérovi
+  // v jeho výpisu — a nesmí se dostat ani do souhrnné platby.
+  const balance = await getPlayerBalance(
+    player.user.id,
+    player.id,
+    undefined,
+    player.user.playerVisibleFrom,
+  );
   if (!balance) notFound();
 
   const firstName = player.name.split(" ")[0];

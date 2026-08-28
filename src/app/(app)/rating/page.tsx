@@ -9,6 +9,7 @@ import {
   getEffectiveRatings,
   getLeaderboard,
   getRatingHistory,
+  getSoloSessions,
 } from "@/lib/rating";
 import { duelOutcome } from "@/lib/elo";
 import { toDateInputValue } from "@/lib/prepaid";
@@ -21,7 +22,7 @@ export default async function RatingPage() {
   const season = await getActiveSeason(userId);
   const inSeason = season ? { seasonId: season.id } : {};
 
-  const [board, duels, matches, challenges, players, history, trainings] =
+  const [board, duels, matches, challenges, players, history, trainings, solos] =
     await Promise.all([
       getLeaderboard(userId, season),
       prisma.duel.findMany({
@@ -61,6 +62,7 @@ export default async function RatingPage() {
         take: 12,
         select: { id: true, startsAt: true },
       }),
+      getSoloSessions(userId, season),
     ]);
 
   // Náhled „co se stane, když potvrdíš“ — u zapsaných, ale ještě
@@ -196,6 +198,12 @@ export default async function RatingPage() {
           ratingAfter: h.ratingAfter,
           label: h.label,
           createdAt: formatDateDdMmYyyy(h.createdAt),
+        }))}
+        solos={solos.map((so) => ({
+          id: so.id,
+          playerName: so.playerName,
+          name: so.name,
+          performedOn: formatDateDdMmYyyy(so.performedOn),
         }))}
         hasSeason={season != null}
         today={toDateInputValue(new Date())}

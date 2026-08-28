@@ -34,6 +34,7 @@ export default async function PortalRatingPage({
       id: true,
       name: true,
       passwordHash: true,
+      inRating: true,
       user: { select: { id: true, clubName: true } },
     },
   });
@@ -61,7 +62,7 @@ export default async function PortalRatingPage({
 
   const season = await getActiveSeason(userId);
 
-  const [board, duels, players, challenges, history] = await Promise.all([
+  const [board, duels, players, challenges, history, solos] = await Promise.all([
     getLeaderboard(userId, season),
     prisma.duel.findMany({
       where: {
@@ -92,6 +93,16 @@ export default async function PortalRatingPage({
       },
     }),
     getRatingHistory(userId, season, 40),
+    prisma.soloSession.findMany({
+      where: {
+        playerId: me,
+        ...(season && {
+          performedOn: { gte: season.startsOn, lte: season.endsOn },
+        }),
+      },
+      orderBy: { performedOn: "desc" },
+      take: 10,
+    }),
   ]);
 
   // Náhled u zapsaných, ale nepotvrzených duelů — hráč musí před
@@ -186,6 +197,13 @@ export default async function PortalRatingPage({
             unit: c.unit,
             endsOn: toDateInputValue(c.endsOn),
             myValue: c.entries[0]?.value ?? null,
+          }))}
+          inRating={player.inRating}
+          today={toDateInputValue(new Date())}
+          solos={solos.map((so) => ({
+            id: so.id,
+            name: so.name,
+            performedOn: toDateInputValue(so.performedOn),
           }))}
           history={history.map((h) => ({
             id: h.id,

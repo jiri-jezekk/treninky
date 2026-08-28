@@ -65,11 +65,23 @@ export async function ensurePaymentBatch(payToken: string): Promise<BatchResult>
 
   const player = await prisma.player.findUnique({
     where: { payToken },
-    select: { id: true, number: true, userId: true },
+    select: {
+      id: true,
+      number: true,
+      userId: true,
+      user: { select: { playerVisibleFrom: true } },
+    },
   });
   if (!player) return { ok: false, error: "Odkaz je neplatný." };
 
-  const balance = await getPlayerBalance(player.userId, player.id);
+  // Stejné oříznutí jako v odkazu — hráč nesmí jednou částkou zaplatit
+  // i dluh, který nemá na očích.
+  const balance = await getPlayerBalance(
+    player.userId,
+    player.id,
+    undefined,
+    player.user.playerVisibleFrom,
+  );
   if (!balance || balance.unpaid.length === 0) {
     return { ok: false, error: "Není co platit." };
   }

@@ -17,6 +17,7 @@ export type PlayerRow = {
   name: string;
   number: number;
   active: boolean;
+  inRating: boolean;
   payToken: string;
   hasPassword: boolean;
   groupIds: string[];
@@ -334,6 +335,7 @@ export function PlayersManager({
                   {p.prepaid.some((r) => r.current) && (
                     <Badge tone="warn">Předplaceno</Badge>
                   )}
+                  {!p.inRating && <Badge tone="off">Bez ratingu</Badge>}
                 </span>
               </span>
             </button>
@@ -370,6 +372,8 @@ export function PlayersManager({
             </span>
             <BulkButton value="activate">Aktivovat</BulkButton>
             <BulkButton value="deactivate">Deaktivovat</BulkButton>
+            <BulkButton value="rating-off">Bez ratingu</BulkButton>
+            <BulkButton value="rating-on">Do ratingu</BulkButton>
             <BulkButton value="delete" danger>
               Smazat
             </BulkButton>
@@ -464,6 +468,12 @@ export function PlayersManager({
                     defaultChecked={editing.active}
                     title="Aktivní hráč"
                     note="Neaktivní se nenabízí u nových tréninků ani ve vyúčtování."
+                  />
+                  <Switch
+                    name="inRating"
+                    defaultChecked={editing.inRating}
+                    title="Počítat do ratingu"
+                    note="Vypnuté = v žebříčku není a duely ani výzvy se mu nezobrazí. Platby chodí dál."
                   />
                 </div>
 

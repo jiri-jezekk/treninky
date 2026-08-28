@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import { parseDateInput } from "@/lib/prepaid";
 
 const schema = z.object({
   bankIban: z.string().optional(),
@@ -35,10 +36,14 @@ export async function updateSettings(formData: FormData) {
   const iban = String(raw.bankIban ?? "")
     .replace(/\s/g, "")
     .toUpperCase();
+  // Od kdy hráči vidí platby ve svém odkazu. Prázdné = vidí všechno.
+  const visibleFrom = parseDateInput(formData.get("playerVisibleFrom"));
+
   await prisma.user.update({
     where: { id: userId },
     data: {
       bankIban: iban === "" ? null : iban,
+      playerVisibleFrom: visibleFrom,
     },
   });
   revalidatePath("/nastaveni");
