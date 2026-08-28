@@ -7,6 +7,7 @@ const links = [
   { href: "/treninky", label: "Tréninky" },
   { href: "/platby", label: "Platby" },
   { href: "/statistiky", label: "Statistiky" },
+  { href: "/rating", label: "Rating" },
   { href: "/nastaveni", label: "Nastavení" },
 ];
 

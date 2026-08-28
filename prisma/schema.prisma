@@ -52,6 +52,10 @@ model User {
   prepayments  Prepayment[]
   trainingSlots TrainingSlot[]
   drills       Drill[]
+  disciplines  Discipline[]
+  duels        Duel[]
+  challenges   Challenge[]
+  ratingEntries RatingEntry[]
 }
 
 /**
@@ -94,9 +98,140 @@ model Player {
   monthlyPaymentMarks MonthlyPaymentMark[]
   paymentBatches PaymentBatch[]
   prepayments  Prepayment[]
+  /**
+   * Rating z duelů, výzev a trenérských úprav. Body za docházku se
+   * nepřičítají sem — dopočítávají se z docházky, aby se samy srovnaly,
+   * když trenér účast dodatečně opraví.
+   */
+  ratingPoints Int                       @default(1000)
+  ratingEntries RatingEntry[]
+  duelsChallenged Duel[]                 @relation("DuelChallenger")
+  duelsFaced      Duel[]                 @relation("DuelOpponent")
+  challengeEntries ChallengeEntry[]
 
   @@unique([userId, number])
   @@index([userId])
+}
+
+/** Disciplína, ve které se dá soupeřit — hod na přesnost, chytání… */
+model Discipline {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  /** Jednotka výsledku: „zásahů“, „s“, „m“… */
+  unit        String?
+  /** false u disciplín na čas, kde vyhrává nižší hodnota. */
+  higherWins  Boolean  @default(true)
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  duels       Duel[]
+  challenges  Challenge[]
+
+  @@unique([userId, name])
+  @@index([userId, archived])
+}
+
+enum DuelStatus {
+  PENDING
+  ACCEPTED
+  REPORTED
+  CONFIRMED
+  DECLINED
+}
+
+/**
+ * Duel dvou hráčů. Výsledek zapíše jeden, potvrdí druhý — teprve pak
+ * se hne rating. Bez potvrzení by si každý mohl připsat výhru a
+ * žebříček by přestal něco znamenat.
+ */
+model Duel {
+  id             String     @id @default(cuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  disciplineId   String
+  discipline     Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+  challengerId   String
+  challenger     Player     @relation("DuelChallenger", fields: [challengerId], references: [id], onDelete: Cascade)
+  opponentId     String
+  opponent       Player     @relation("DuelOpponent", fields: [opponentId], references: [id], onDelete: Cascade)
+  status         DuelStatus @default(PENDING)
+  challengerValue Float?
+  opponentValue   Float?
+  /** Kdo výsledek zapsal — ten ho už nemůže sám potvrdit. */
+  reportedById   String?
+  note           String?
+  /** Změny ratingu při potvrzení; drží se, aby šel duel číst i zpětně. */
+  challengerDelta Int?
+  opponentDelta   Int?
+  createdAt      DateTime   @default(now())
+  confirmedAt    DateTime?
+
+  @@index([userId, status])
+  @@index([challengerId])
+  @@index([opponentId])
+}
+
+/** Měsíční výzva — kdokoli zapíše výsledek, po uzavření se rozdá rating podle pořadí. */
+model Challenge {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  disciplineId String?
+  discipline   Discipline? @relation(fields: [disciplineId], references: [id], onDelete: SetNull)
+  unit         String?
+  higherWins   Boolean     @default(true)
+  startsOn     DateTime    @db.Date
+  endsOn       DateTime    @db.Date
+  /** Vyplněné = pořadí vyhodnoceno a rating rozdán. Podruhé to nejde. */
+  closedAt     DateTime?
+  createdAt    DateTime    @default(now())
+  entries      ChallengeEntry[]
+
+  @@index([userId, endsOn])
+}
+
+model ChallengeEntry {
+  id          String    @id @default(cuid())
+  challengeId String
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  value       Float
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([challengeId, playerId])
+  @@index([playerId])
+}
+
+enum RatingSource {
+  DUEL
+  CHALLENGE
+  COACH
+}
+
+/** Historie změn ratingu — aby šlo dohledat, odkud se kdo kam dostal. */
+model RatingEntry {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  source      RatingSource
+  delta       Int
+  /** Rating hráče po této změně. */
+  ratingAfter Int
+  label       String
+  duelId      String?
+  challengeId String?
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([playerId, createdAt])
 }
 
 /**

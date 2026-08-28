@@ -141,6 +141,21 @@ export default async function PortalPage({
           </div>
         )}
 
+        <a
+          href={`/p/${token}/rating`}
+          className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-club-line bg-club-soft px-5 py-4 transition hover:border-club"
+        >
+          <span className="min-w-0">
+            <span className="block font-heading text-sm font-bold text-slate-800">
+              Rating a duely
+            </span>
+            <span className="block text-xs text-slate-600">
+              Žebříček, výzvy, vyzvi spoluhráče
+            </span>
+          </span>
+          <span className="shrink-0 text-club">→</span>
+        </a>
+
         <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
           Naskenuj QR v bankovní aplikaci.
           <br />
