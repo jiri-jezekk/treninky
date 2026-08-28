@@ -90,6 +90,51 @@ export function duelDeltas(
   return { deltaA, deltaB: -deltaA };
 }
 
+export type DuelOutcome = {
+  score: Score;
+  challengerDelta: number;
+  opponentDelta: number;
+  /** null u remízy. */
+  challengerWins: boolean | null;
+};
+
+/**
+ * Výsledek duelu na jednom místě.
+ *
+ * Používá to potvrzení i náhled „co se stane, když potvrdíš“. Kdyby
+ * každé počítalo po svém, mohl by hráč vidět jedno číslo a dostat jiné.
+ */
+export function duelOutcome(params: {
+  ratingChallenger: number;
+  ratingOpponent: number;
+  challengerValue: number;
+  opponentValue: number;
+  higherWins: boolean;
+  weightPercent: number;
+}): DuelOutcome {
+  const score = scoreFromValues(
+    params.challengerValue,
+    params.opponentValue,
+    params.higherWins,
+  );
+  const { deltaA, deltaB } = duelDeltas(
+    params.ratingChallenger,
+    params.ratingOpponent,
+    score,
+    {
+      weightPercent: params.weightPercent,
+      valueA: params.challengerValue,
+      valueB: params.opponentValue,
+    },
+  );
+  return {
+    score,
+    challengerDelta: deltaA,
+    opponentDelta: deltaB,
+    challengerWins: score === 0.5 ? null : score === 1,
+  };
+}
+
 /** Kdo vyhrál podle zapsaných hodnot. */
 export function scoreFromValues(
   valueA: number,

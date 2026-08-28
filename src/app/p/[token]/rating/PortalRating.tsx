@@ -22,6 +22,13 @@ export type PortalDuel = {
   myDelta: number | null;
   iReported: boolean;
   note: string | null;
+  higherWins: boolean;
+  /** Co se stane po potvrzení. Null, dokud se výsledek nezapsal. */
+  preview: {
+    myDelta: number;
+    theirDelta: number;
+    iWin: boolean | null;
+  } | null;
 };
 
 type BoardRow = {
@@ -246,30 +253,23 @@ export function PortalRating({
                       className="mt-3"
                     >
                       <input type="hidden" name="payToken" value={payToken} />
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="block">
-                          <span className={label}>
-                            {d.iAmChallenger ? myName : d.opponentName}
-                          </span>
-                          <input
-                            name="challengerValue"
-                            required
-                            inputMode="decimal"
-                            className={`${field} tabular-nums`}
-                          />
-                        </label>
-                        <label className="block">
-                          <span className={label}>
-                            {d.iAmChallenger ? d.opponentName : myName}
-                          </span>
-                          <input
-                            name="opponentValue"
-                            required
-                            inputMode="decimal"
-                            className={`${field} tabular-nums`}
-                          />
-                        </label>
+                      {/* Řádky, ne dva sloupce — dlouhá jména se na telefon
+                          vedle sebe nevejdou a rozhodí layout. */}
+                      <div className="overflow-hidden rounded-xl border border-slate-200">
+                        <ScoreInput
+                          name="challengerValue"
+                          player={d.iAmChallenger ? myName : d.opponentName}
+                        />
+                        <ScoreInput
+                          name="opponentValue"
+                          player={d.iAmChallenger ? d.opponentName : myName}
+                        />
                       </div>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {d.higherWins
+                          ? "Vyhrává vyšší číslo."
+                          : "Vyhrává nižší číslo (čas)."}
+                      </p>
                       <button type="submit" className={`${btnPrimary} ${btnSm} mt-3`}>
                         Zapsat
                       </button>
@@ -292,9 +292,16 @@ export function PortalRating({
               {/* zapsáno — čeká na potvrzení */}
               {d.status === "REPORTED" && (
                 <>
-                  <p className="mt-2 text-sm tabular-nums text-slate-700">
-                    {fmt(d.myValue)} : {fmt(d.theirValue)}
-                  </p>
+                  <DuelResult
+                    myName={myName}
+                    theirName={d.opponentName}
+                    myValue={d.myValue}
+                    theirValue={d.theirValue}
+                    myDelta={d.preview?.myDelta ?? null}
+                    theirDelta={d.preview?.theirDelta ?? null}
+                    iWin={d.preview?.iWin ?? null}
+                    pending
+                  />
                   {d.iReported ? (
                     <p className="mt-2 text-xs italic text-slate-500">
                       Čeká se, až to {d.opponentName} potvrdí. Sám sobě výsledek
@@ -324,7 +331,12 @@ export function PortalRating({
             {done.slice(0, 6).map((d) => (
               <li key={d.id} className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate">
-                  {d.name} — {d.opponentName}
+                  {(d.myDelta ?? 0) > 0
+                    ? "Výhra"
+                    : (d.myDelta ?? 0) < 0
+                      ? "Prohra"
+                      : "Remíza"}{" "}
+                  · {d.name} — {d.opponentName}
                 </span>
                 <span
                   className={`shrink-0 tabular-nums ${
@@ -459,5 +471,97 @@ export function PortalRating({
         nestojí.
       </p>
     </>
+  );
+}
+
+/** Jeden řádek zadání skóre: jméno vlevo, políčko vpravo. */
+function ScoreInput({ name, player }: { name: string; player: string }) {
+  return (
+    <label className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0">
+      <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{player}</span>
+      <input
+        name={name}
+        required
+        inputMode="decimal"
+        placeholder="0"
+        className="w-16 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-sm tabular-nums text-slate-900 outline-none focus:border-club"
+      />
+    </label>
+  );
+}
+
+/**
+ * Výsledek duelu tak, aby bylo jasné, kdo vyhrál a kolik to komu udělá.
+ * U nepotvrzených je to náhled ze stejné funkce, jaká se pak použije
+ * při zápisu — hráč nesmí vidět jedno číslo a dostat jiné.
+ */
+function DuelResult({
+  myName,
+  theirName,
+  myValue,
+  theirValue,
+  myDelta,
+  theirDelta,
+  iWin,
+  pending,
+}: {
+  myName: string;
+  theirName: string;
+  myValue: number | null;
+  theirValue: number | null;
+  myDelta: number | null;
+  theirDelta: number | null;
+  iWin: boolean | null;
+  pending?: boolean;
+}) {
+  const rows = [
+    { name: myName, value: myValue, delta: myDelta, wins: iWin === true },
+    { name: theirName, value: theirValue, delta: theirDelta, wins: iWin === false },
+  ];
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+      {rows.map((r) => (
+        <div
+          key={r.name}
+          className={`flex items-center gap-2 px-3 py-2 ${r.wins ? "bg-emerald-50" : ""}`}
+        >
+          {/* Štítek nesmí být uvnitř ořezávaného jména — ořízl by se
+              zrovna on, a to je ta nejdůležitější informace v řádku. */}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="min-w-0 truncate text-sm text-slate-800">{r.name}</span>
+            {r.wins && (
+              <span className="shrink-0 font-heading text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                vyhrál
+              </span>
+            )}
+          </span>
+          <span className="w-14 shrink-0 text-right text-sm tabular-nums text-slate-700">
+            {fmt(r.value)}
+          </span>
+          <span
+            className={`w-12 shrink-0 text-right font-heading text-sm font-bold tabular-nums ${
+              (r.delta ?? 0) > 0
+                ? "text-emerald-800"
+                : (r.delta ?? 0) < 0
+                  ? "text-red-800"
+                  : "text-slate-500"
+            }`}
+          >
+            {r.delta == null ? "—" : r.delta > 0 ? `+${r.delta}` : String(r.delta)}
+          </span>
+        </div>
+      ))}
+      {iWin === null && myValue != null && (
+        <p className="border-t border-slate-100 px-3 py-1.5 text-xs italic text-slate-500">
+          Remíza — rating se nemění.
+        </p>
+      )}
+      {pending && (
+        <p className="border-t border-slate-100 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+          Takhle se rating změní po potvrzení.
+        </p>
+      )}
+    </div>
   );
 }

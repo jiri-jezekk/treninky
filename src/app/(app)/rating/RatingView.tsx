@@ -37,6 +37,12 @@ export type DuelRow = {
   challengerDelta: number | null;
   opponentDelta: number | null;
   note: string | null;
+  /** Co se stane po potvrzení. Null u duelů, kde se ještě nezapsalo. */
+  preview: {
+    challengerDelta: number;
+    opponentDelta: number;
+    challengerWins: boolean | null;
+  } | null;
 };
 
 export type MatchRow = {
@@ -459,14 +465,24 @@ function Duels({
                     <p className="mt-1 text-xs text-slate-500">{d.description}</p>
                   )}
                   {d.challengerValue != null && (
-                    <p className="mt-1 text-sm tabular-nums text-slate-700">
-                      {fmt(d.challengerValue)} : {fmt(d.opponentValue)}
-                      {d.status === "CONFIRMED" && (
-                        <span className="ml-2 text-xs text-slate-500">
-                          ({delta(d.challengerDelta)} / {delta(d.opponentDelta)})
-                        </span>
-                      )}
-                    </p>
+                    <Scoreboard
+                      leftName={d.challengerName}
+                      rightName={d.opponentName}
+                      leftValue={d.challengerValue}
+                      rightValue={d.opponentValue}
+                      leftDelta={d.preview?.challengerDelta ?? d.challengerDelta}
+                      rightDelta={d.preview?.opponentDelta ?? d.opponentDelta}
+                      leftWins={
+                        d.preview
+                          ? d.preview.challengerWins
+                          : d.challengerDelta == null
+                            ? null
+                            : d.challengerDelta === 0
+                              ? null
+                              : d.challengerDelta > 0
+                      }
+                      pending={d.status === "REPORTED"}
+                    />
                   )}
                 </div>
 
@@ -1051,6 +1067,89 @@ function History({ history }: { history: HistoryRow[] }) {
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Výsledek duelu tak, aby bylo na první pohled jasné, kdo vyhrál
+ * a kolik to komu udělá. U nepotvrzených je to náhled — počítá se
+ * stejnou funkcí, jaká se pak použije při zápisu.
+ */
+function Scoreboard({
+  leftName,
+  rightName,
+  leftValue,
+  rightValue,
+  leftDelta,
+  rightDelta,
+  leftWins,
+  pending,
+}: {
+  leftName: string;
+  rightName: string;
+  leftValue: number | null;
+  rightValue: number | null;
+  leftDelta: number | null;
+  rightDelta: number | null;
+  leftWins: boolean | null;
+  pending: boolean;
+}) {
+  const rows: {
+    name: string;
+    value: number | null;
+    delta: number | null;
+    wins: boolean;
+  }[] = [
+    { name: leftName, value: leftValue, delta: leftDelta, wins: leftWins === true },
+    { name: rightName, value: rightValue, delta: rightDelta, wins: leftWins === false },
+  ];
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+      {rows.map((r) => (
+        <div
+          key={r.name}
+          className={`flex items-center gap-2 px-3 py-2 ${
+            r.wins ? "bg-emerald-50" : ""
+          }`}
+        >
+          {/* Štítek nesmí být uvnitř ořezávaného jména — ořízl by se
+              zrovna on, a to je ta nejdůležitější informace v řádku. */}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="min-w-0 truncate text-sm text-slate-800">{r.name}</span>
+            {r.wins && (
+              <span className="shrink-0 font-heading text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                vyhrál
+              </span>
+            )}
+          </span>
+          <span className="w-16 shrink-0 text-right text-sm tabular-nums text-slate-700">
+            {fmt(r.value)}
+          </span>
+          <span
+            className={`w-14 shrink-0 text-right font-heading text-sm font-bold tabular-nums ${
+              (r.delta ?? 0) > 0
+                ? "text-emerald-800"
+                : (r.delta ?? 0) < 0
+                  ? "text-red-800"
+                  : "text-slate-500"
+            }`}
+          >
+            {r.delta == null ? "—" : delta(r.delta) || "±0"}
+          </span>
+        </div>
+      ))}
+      {leftWins === null && (
+        <p className="border-t border-slate-100 px-3 py-1.5 text-xs italic text-slate-500">
+          Remíza — rating se nemění.
+        </p>
+      )}
+      {pending && (
+        <p className="border-t border-slate-100 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+          Takhle se rating změní po potvrzení.
+        </p>
+      )}
+    </div>
   );
 }
 

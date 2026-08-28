@@ -11,6 +11,7 @@ import {
   K_DUEL,
   challengeDeltas,
   duelDeltas,
+  duelOutcome,
   expectedScore,
   averageRating,
   marginMultiplier,
@@ -307,6 +308,79 @@ ok(
 {
   const remiza = duelDeltas(1000, 1000, 0.5, { valueA: 10, valueB: 10 }).deltaA;
   eq("remíza zůstává nulová", remiza, 0);
+}
+
+console.log("\nVýsledek duelu — jedna funkce pro náhled i zápis:");
+{
+  // Disciplína na čas: vyhrává nižší číslo.
+  const o = duelOutcome({
+    ratingChallenger: 1000,
+    ratingOpponent: 1000,
+    challengerValue: 12.4,
+    opponentValue: 13.1,
+    higherWins: false,
+    weightPercent: 100,
+  });
+  eq("rychlejší čas vyhrává", o.challengerWins, true);
+  ok("a získává", o.challengerDelta > 0, `(${o.challengerDelta})`);
+  eq("součet je nula", o.challengerDelta + o.opponentDelta, 0);
+}
+{
+  const o = duelOutcome({
+    ratingChallenger: 1000,
+    ratingOpponent: 1000,
+    challengerValue: 20,
+    opponentValue: 10,
+    higherWins: false,
+    weightPercent: 100,
+  });
+  eq("pomalejší čas prohrává", o.challengerWins, false);
+  ok("a ztrácí", o.challengerDelta < 0, `(${o.challengerDelta})`);
+}
+{
+  const o = duelOutcome({
+    ratingChallenger: 1000,
+    ratingOpponent: 1000,
+    challengerValue: 8,
+    opponentValue: 5,
+    higherWins: true,
+    weightPercent: 100,
+  });
+  eq("víc bodů vyhrává", o.challengerWins, true);
+}
+{
+  const o = duelOutcome({
+    ratingChallenger: 1000,
+    ratingOpponent: 1000,
+    challengerValue: 7,
+    opponentValue: 7,
+    higherWins: true,
+    weightPercent: 100,
+  });
+  eq("shoda je remíza", o.challengerWins, null);
+  eq("a nikoho nepohne", [o.challengerDelta, o.opponentDelta], [0, 0]);
+}
+{
+  // Náhled a zápis musí dát totéž — proto je to jedna funkce.
+  const params = {
+    ratingChallenger: 1120,
+    ratingOpponent: 980,
+    challengerValue: 15,
+    opponentValue: 11,
+    higherWins: true,
+    weightPercent: 150,
+  };
+  eq("dvojí volání dá stejný výsledek", duelOutcome(params), duelOutcome(params));
+  const primo = duelDeltas(1120, 980, 1, {
+    weightPercent: 150,
+    valueA: 15,
+    valueB: 11,
+  });
+  eq(
+    "a sedí i s přímým výpočtem",
+    duelOutcome(params).challengerDelta,
+    primo.deltaA,
+  );
 }
 
 console.log("\nTři váhy jdou po sobě:");

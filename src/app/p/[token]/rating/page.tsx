@@ -5,7 +5,13 @@ import { PortalGate } from "../PortalGate";
 import { SessionRefresh } from "../SessionRefresh";
 import { PortalRating, type PortalDuel } from "./PortalRating";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { getActiveSeason, getLeaderboard, getRatingHistory } from "@/lib/rating";
+import {
+  getActiveSeason,
+  getEffectiveRatings,
+  getLeaderboard,
+  getRatingHistory,
+} from "@/lib/rating";
+import { duelOutcome } from "@/lib/elo";
 import { toDateInputValue } from "@/lib/prepaid";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
@@ -88,8 +94,44 @@ export default async function PortalRatingPage({
     getRatingHistory(userId, season, 40),
   ]);
 
+  // Náhled u zapsaných, ale nepotvrzených duelů — hráč musí před
+  // odklepnutím vidět, kolik to komu udělá.
+  const previewRatings = await getEffectiveRatings(
+    duels
+      .filter((d) => d.status === "REPORTED")
+      .flatMap((d) => [String(d.challengerId), String(d.opponentId)]),
+    season,
+  );
+
   const myDuels: PortalDuel[] = duels.map((d) => {
     const iAmChallenger = String(d.challengerId) === me;
+
+    let preview: PortalDuel["preview"] = null;
+    if (
+      d.status === "REPORTED" &&
+      d.challengerValue != null &&
+      d.opponentValue != null
+    ) {
+      const o = duelOutcome({
+        ratingChallenger: previewRatings.get(String(d.challengerId)) ?? 1000,
+        ratingOpponent: previewRatings.get(String(d.opponentId)) ?? 1000,
+        challengerValue: d.challengerValue,
+        opponentValue: d.opponentValue,
+        higherWins: d.higherWins,
+        weightPercent: d.weightPercent,
+      });
+      preview = {
+        myDelta: iAmChallenger ? o.challengerDelta : o.opponentDelta,
+        theirDelta: iAmChallenger ? o.opponentDelta : o.challengerDelta,
+        iWin:
+          o.challengerWins == null
+            ? null
+            : iAmChallenger
+              ? o.challengerWins
+              : !o.challengerWins,
+      };
+    }
+
     return {
       id: d.id,
       name: d.name,
@@ -103,6 +145,8 @@ export default async function PortalRatingPage({
       // Kdo výsledek zapsal, ten ho nemůže sám potvrdit.
       iReported: d.reportedById != null && String(d.reportedById) === me,
       note: d.note,
+      higherWins: d.higherWins,
+      preview,
     };
   });
 

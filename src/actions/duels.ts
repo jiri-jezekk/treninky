@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { duelDeltas, scoreFromValues } from "@/lib/elo";
+import { duelOutcome } from "@/lib/elo";
 import { applyRatingChange, getActiveSeason, getEffectiveRating } from "@/lib/rating";
 
 function revalidateRating(payToken?: string) {
@@ -201,17 +201,15 @@ export async function confirmDuel(duelId: string, payToken?: string) {
     getEffectiveRating(String(duel.opponentId), duel.season),
   ]);
 
-  const score = scoreFromValues(
-    duel.challengerValue,
-    duel.opponentValue,
-    duel.higherWins,
-  );
-  // Váha duelu i to, jak těsný výsledek byl: 20:0 hne ratingem
-  // dvakrát tolik co těsná výhra.
-  const { deltaA, deltaB } = duelDeltas(ratingChallenger, ratingOpponent, score, {
+  // Stejná funkce jako u náhledu „co se stane, když potvrdíš“ —
+  // hráč nesmí vidět jedno číslo a dostat jiné.
+  const { challengerDelta: deltaA, opponentDelta: deltaB } = duelOutcome({
+    ratingChallenger,
+    ratingOpponent,
+    challengerValue: duel.challengerValue,
+    opponentValue: duel.opponentValue,
+    higherWins: duel.higherWins,
     weightPercent: duel.weightPercent,
-    valueA: duel.challengerValue,
-    valueB: duel.opponentValue,
   });
 
   await prisma.$transaction(async (tx) => {

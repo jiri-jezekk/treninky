@@ -185,6 +185,52 @@ export async function getEffectiveRating(
   return (rating?.points ?? STARTING_RATING) + count * RATING_PER_ATTENDANCE;
 }
 
+/** Rating několika hráčů najednou — pro náhledy, kde se počítá víc duelů. */
+export async function getEffectiveRatings(
+  playerIds: string[],
+  season: SeasonInfo | null,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!season || playerIds.length === 0) return out;
+
+  const from = new Date(season.startsOn);
+  const to = new Date(season.endsOn);
+  to.setUTCHours(23, 59, 59, 999);
+
+  const unique = [...new Set(playerIds)];
+  const [ratings, counts] = await Promise.all([
+    prisma.playerRating.findMany({
+      where: { seasonId: season.id, playerId: { in: unique } },
+      select: { playerId: true, points: true },
+    }),
+    prisma.attendance.groupBy({
+      by: ["playerId"],
+      where: {
+        playerId: { in: unique },
+        status: "PRESENT",
+        training: { cancelled: false, startsAt: { gte: from, lte: to } },
+      },
+      _count: { playerId: true },
+    }),
+  ]);
+
+  const pointsById = new Map<string, number>(
+    ratings.map((r) => [String(r.playerId), r.points]),
+  );
+  const countById = new Map<string, number>(
+    counts.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
+  );
+
+  for (const id of unique) {
+    out.set(
+      id,
+      (pointsById.get(id) ?? STARTING_RATING) +
+        (countById.get(id) ?? 0) * RATING_PER_ATTENDANCE,
+    );
+  }
+  return out;
+}
+
 /**
  * Zapíše změnu ratingu hráči i do historie.
  * Volá se uvnitř transakce, aby se rating a záznam nemohly rozejít.

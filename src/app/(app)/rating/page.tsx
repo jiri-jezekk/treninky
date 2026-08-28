@@ -4,7 +4,13 @@ import {
   type DuelRow,
   type MatchRow,
 } from "./RatingView";
-import { getActiveSeason, getLeaderboard, getRatingHistory } from "@/lib/rating";
+import {
+  getActiveSeason,
+  getEffectiveRatings,
+  getLeaderboard,
+  getRatingHistory,
+} from "@/lib/rating";
+import { duelOutcome } from "@/lib/elo";
 import { toDateInputValue } from "@/lib/prepaid";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
@@ -57,21 +63,54 @@ export default async function RatingPage() {
       }),
     ]);
 
-  const duelRows: DuelRow[] = duels.map((d) => ({
-    id: d.id,
-    name: d.name,
-    description: d.description,
-    higherWins: d.higherWins,
-    weightPercent: d.weightPercent,
-    challengerName: d.challenger.name,
-    opponentName: d.opponent.name,
-    status: d.status,
-    challengerValue: d.challengerValue,
-    opponentValue: d.opponentValue,
-    challengerDelta: d.challengerDelta,
-    opponentDelta: d.opponentDelta,
-    note: d.note,
-  }));
+  // Náhled „co se stane, když potvrdíš“ — u zapsaných, ale ještě
+  // nepotvrzených duelů. Bez toho není při potvrzování poznat,
+  // kdo kolik dostane.
+  const ratingsForPreview = await getEffectiveRatings(
+    duels
+      .filter((d) => d.status === "REPORTED")
+      .flatMap((d) => [String(d.challengerId), String(d.opponentId)]),
+    season,
+  );
+
+  const duelRows: DuelRow[] = duels.map((d) => {
+    let preview: DuelRow["preview"] = null;
+    if (
+      d.status === "REPORTED" &&
+      d.challengerValue != null &&
+      d.opponentValue != null
+    ) {
+      const o = duelOutcome({
+        ratingChallenger: ratingsForPreview.get(String(d.challengerId)) ?? 1000,
+        ratingOpponent: ratingsForPreview.get(String(d.opponentId)) ?? 1000,
+        challengerValue: d.challengerValue,
+        opponentValue: d.opponentValue,
+        higherWins: d.higherWins,
+        weightPercent: d.weightPercent,
+      });
+      preview = {
+        challengerDelta: o.challengerDelta,
+        opponentDelta: o.opponentDelta,
+        challengerWins: o.challengerWins,
+      };
+    }
+    return {
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      higherWins: d.higherWins,
+      weightPercent: d.weightPercent,
+      challengerName: d.challenger.name,
+      opponentName: d.opponent.name,
+      status: d.status,
+      challengerValue: d.challengerValue,
+      opponentValue: d.opponentValue,
+      challengerDelta: d.challengerDelta,
+      opponentDelta: d.opponentDelta,
+      note: d.note,
+      preview,
+    };
+  });
 
   const matchRows: MatchRow[] = matches.map((m) => ({
     id: m.id,
