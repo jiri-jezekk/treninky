@@ -8,6 +8,7 @@ import { hasPortalSession } from "@/lib/player-portal-session";
 import { getDuelDetail } from "@/lib/rating";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
+import { PortalShell } from "../../../PortalShell";
 
 export const metadata: Metadata = {
   title: "Detail duelu",
@@ -41,16 +42,16 @@ export default async function PortalDuelDetailPage({
 
   if (!viewer.passwordHash) {
     return (
-      <Shell clubName={clubName}>
+      <PortalShell clubName={clubName} token={token}>
         <PortalGate payToken={token} mode="set" playerName={viewer.name} />
-      </Shell>
+      </PortalShell>
     );
   }
   if (!(await hasPortalSession(token))) {
     return (
-      <Shell clubName={clubName}>
+      <PortalShell clubName={clubName} token={token}>
         <PortalGate payToken={token} mode="enter" playerName={viewer.name} />
-      </Shell>
+      </PortalShell>
     );
   }
 
@@ -58,7 +59,7 @@ export default async function PortalDuelDetailPage({
   if (!duel) notFound();
 
   return (
-    <Shell clubName={clubName}>
+    <PortalShell clubName={clubName} token={token}>
       <SessionRefresh payToken={token} />
       <div className="mx-auto w-full max-w-md">
         <Link
@@ -80,23 +81,6 @@ export default async function PortalDuelDetailPage({
           />
         </div>
       </div>
-    </Shell>
-  );
-}
-
-function Shell({
-  clubName,
-  children,
-}: {
-  clubName: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <main className="flex min-h-dvh flex-col items-center px-4 py-10">
-      <p className="mb-6 font-heading text-sm font-extrabold uppercase tracking-[0.2em] text-club">
-        {clubName}
-      </p>
-      {children}
-    </main>
+    </PortalShell>
   );
 }

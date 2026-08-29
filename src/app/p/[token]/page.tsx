@@ -8,6 +8,7 @@ import { getPlayerBalance } from "@/lib/player-balance";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { formatCzkFromCents } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
+import { PortalShell } from "./PortalShell";
 
 export const metadata: Metadata = {
   title: "Moje platby",
@@ -44,17 +45,17 @@ export default async function PortalPage({
 
   if (!player.passwordHash) {
     return (
-      <Shell clubName={clubName}>
+      <PortalShell clubName={clubName} token={token} home>
         <PortalGate payToken={token} mode="set" playerName={player.name} />
-      </Shell>
+      </PortalShell>
     );
   }
 
   if (!(await hasPortalSession(token))) {
     return (
-      <Shell clubName={clubName}>
+      <PortalShell clubName={clubName} token={token} home>
         <PortalGate payToken={token} mode="enter" playerName={player.name} />
-      </Shell>
+      </PortalShell>
     );
   }
 
@@ -71,7 +72,7 @@ export default async function PortalPage({
   const firstName = player.name.split(" ")[0];
 
   return (
-    <Shell clubName={clubName}>
+    <PortalShell clubName={clubName} token={token} home>
       <SessionRefresh payToken={token} />
 
       <div className="mx-auto w-full max-w-md">
@@ -176,23 +177,6 @@ export default async function PortalPage({
           Něco nesedí? Napiš trenérovi.
         </p>
       </div>
-    </Shell>
-  );
-}
-
-function Shell({
-  clubName,
-  children,
-}: {
-  clubName: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <main className="flex min-h-dvh flex-col items-center px-4 py-10">
-      <p className="mb-6 font-heading text-sm font-extrabold uppercase tracking-[0.2em] text-club">
-        {clubName}
-      </p>
-      {children}
-    </main>
+    </PortalShell>
   );
 }
