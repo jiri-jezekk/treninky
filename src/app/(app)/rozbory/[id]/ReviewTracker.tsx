@@ -965,9 +965,6 @@ export function ReviewTracker({
 
             <div className={`${sec} mb-2.5`}>Rozpad akcí</div>
             <RozpadAkci stats={stats} />
-
-            <div className={`${sec} mb-2.5 mt-4`}>Hráči podle akcí</div>
-            <HraciPodleAkci stats={stats} />
           </Panel>
 
           <Panel className="!p-0">
@@ -998,6 +995,15 @@ export function ReviewTracker({
             )}
           </Panel>
         </div>
+      </div>
+
+      {/* Tabulka hráč × akce je široká — v úzkém sloupci se musela
+          posouvat posuvníkem. Přes celou šířku se přečte na jeden pohled. */}
+      <div className="mt-4">
+        <Panel>
+          <div className={`${sec} mb-2.5`}>Hráči podle akcí</div>
+          <HraciPodleAkci stats={stats} />
+        </Panel>
       </div>
 
       {/* Debata k rozboru. Hráči píšou ze svého odkazu, trenér odsud. */}

@@ -26,7 +26,8 @@ import { czPlural } from "@/lib/czech";
  * 2. Poznámky jsou zabalené. Rozbor s padesáti zápisy by jinak byl
  *    metr dlouhý a nedalo by se v něm nic najít.
  * 3. Kliknutí na čas přetočí video a vrátí ho na obrazovku — jinak by
- *    se přetočilo někde nahoře mimo výhled.
+ *    se přetočilo někde nahoře mimo výhled. Naopak samo od sebe se
+ *    stránka nikdy neposouvá: kdo kouká, nechce, aby mu video ujelo.
  */
 
 const card = "rounded-2xl border border-slate-200 bg-white p-4 sm:p-5";
@@ -69,7 +70,6 @@ export function ReviewReadOnly({
   const [bezi, setBezi] = useState(false);
   const [rychlost, setRychlost] = useState(1);
   const [jenMoje, setJenMoje] = useState(false);
-  const [sledovat, setSledovat] = useState(true);
 
   const onReady = useCallback((h: PlayerHandle) => {
     playerRef.current = h;
@@ -215,11 +215,6 @@ export function ReviewReadOnly({
               </Chip>
             </>
           )}
-          {!bezVidea && (
-            <Chip on={sledovat} onClick={() => setSledovat((x) => !x)}>
-              {sledovat ? "✓ " : ""}Sledovat
-            </Chip>
-          )}
         </div>
 
         {/* Takhle se rozbor doopravdy kouká: pusť mi tyhle body za sebou. */}
@@ -262,7 +257,6 @@ export function ReviewReadOnly({
                 ev={e}
                 typ={typById.get(e.typeId)}
                 aktivni={e.id === ted?.id}
-                sledovat={sledovat}
                 bezVidea={bezVidea}
                 onSeek={() => skoc(e.atSeconds)}
               />
@@ -399,32 +393,22 @@ function RadekZaznamu({
   ev,
   typ,
   aktivni,
-  sledovat,
   bezVidea,
   onSeek,
 }: {
   ev: Zapis;
   typ: StatType | undefined;
   aktivni: boolean;
-  /** Seznam jede s videem — aktivní řádek se sám doroluje. */
-  sledovat: boolean;
   bezVidea: boolean;
   onSeek: () => void;
 }) {
   const [otevreno, setOtevreno] = useState(false);
-  const radekRef = useRef<HTMLLIElement | null>(null);
 
-  // Posun seznamu je práce s DOM, ne se stavem — proto efekt. Kdo si
-  // scrolluje sám, vypne si sledování a nic ho neruší.
-  useEffect(() => {
-    if (aktivni && sledovat) {
-      radekRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [aktivni, sledovat]);
-
+  // Seznam se schválně sám neposouvá. Zkoušeli jsme to a při každém
+  // dalším bodu stránka sjela dolů — člověk zrovna kouká na video
+  // a ono mu zmizelo. Aktivní řádek se jen zvýrazní, kdo chce, doscrolluje.
   return (
     <li
-      ref={radekRef}
       className={`py-2 ${aktivni ? "-mx-2 rounded-lg bg-club-soft px-2" : ""}`}
       aria-current={aktivni ? "true" : undefined}
     >
