@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   awardCoachRating,
@@ -345,27 +346,37 @@ function Leaderboard({
 
         <ul className="divide-y divide-slate-100">
           {board.map((r) => (
-            <li key={r.playerId} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-              <span className="w-7 shrink-0 text-center font-heading text-sm font-extrabold tabular-nums text-slate-500">
-                {r.rank}
-              </span>
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-club-line bg-club-soft font-heading text-[11px] font-extrabold text-club">
-                {initials(r.playerName)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium text-slate-800">
-                  {r.playerName}
+            <li key={r.playerId}>
+              {/* Celý řádek je odkaz na profil — tam je vidět, odkud se
+                  rating vzal, po jednotlivých změnách. */}
+              <Link
+                href={`/rating/hrac/${r.playerId}`}
+                className="flex items-center gap-3 px-4 py-3 transition hover:bg-club-soft sm:px-5"
+              >
+                <span className="w-7 shrink-0 text-center font-heading text-sm font-extrabold tabular-nums text-slate-500">
+                  {r.rank}
                 </span>
-                <span className="block truncate text-xs text-slate-500">
-                  {r.band} · {r.duelsWon}–{r.duelsLost} v duelech ·{" "}
-                  {r.fromDuels === 0 ? "±0" : delta(r.fromDuels)} z duelů,{" "}
-                  +{r.fromAttendance} za {r.attendanceCount}{" "}
-                  {czPlural(r.attendanceCount, "trénink", "tréninky", "tréninků")}
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-club-line bg-club-soft font-heading text-[11px] font-extrabold text-club">
+                  {initials(r.playerName)}
                 </span>
-              </span>
-              <span className="shrink-0 font-heading text-lg font-extrabold tabular-nums text-slate-800">
-                {r.rating}
-              </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-slate-800">
+                    {r.playerName}
+                  </span>
+                  <span className="block truncate text-xs text-slate-500">
+                    {r.band} · {r.duelsWon}–{r.duelsLost} v duelech ·{" "}
+                    {r.fromDuels === 0 ? "±0" : delta(r.fromDuels)} z duelů,{" "}
+                    +{r.fromAttendance} za {r.attendanceCount}{" "}
+                    {czPlural(r.attendanceCount, "trénink", "tréninky", "tréninků")}
+                  </span>
+                </span>
+                <span className="shrink-0 font-heading text-lg font-extrabold tabular-nums text-slate-800">
+                  {r.rating}
+                </span>
+                <span aria-hidden className="shrink-0 text-slate-400">
+                  ›
+                </span>
+              </Link>
             </li>
           ))}
         </ul>

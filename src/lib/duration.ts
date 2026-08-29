@@ -94,9 +94,17 @@ export function formatMeasured(
   return unit ? `${n} ${unit}` : n;
 }
 
-/** Nápověda pod polem, ať je jasné, co se čeká. */
+/**
+ * Nápověda pod polem, ať je jasné, co se čeká.
+ *
+ * Musí sedět s tím, jak pole doopravdy vypadá. Dřív tu stálo
+ * „např. 1:23,45“, jenže čas se zadává do dvou políček a dvojtečka se
+ * nepíše — návod tak radil něco jiného, než co šlo vyplnit.
+ */
 export function measureHint(measure: Measure, unit?: string | null): string {
-  if (measure === "TIME") return "čas, např. 1:23,45 nebo 83,4";
+  if (measure === "TIME") {
+    return "minuty a sekundy zvlášť; setiny za čárkou, třeba 38 : 24,50";
+  }
   return unit ? `číslo v jednotkách: ${unit}` : "číslo";
 }
 

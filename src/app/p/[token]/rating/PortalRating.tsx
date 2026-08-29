@@ -22,6 +22,7 @@ import {
   type ScoreMode,
 } from "@/lib/duration";
 import { MeasuredInput } from "@/components/MeasuredInput";
+import Link from "next/link";
 const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type PortalDuel = {
@@ -52,22 +53,6 @@ type BoardRow = {
   rating: number;
   rank: number;
   isMe: boolean;
-};
-
-type HistoryRow = {
-  id: string;
-  playerName: string;
-  source: string;
-  delta: number;
-  label: string;
-  createdAt: string;
-};
-
-const SOURCE_LABEL: Record<string, string> = {
-  DUEL: "Duel",
-  MATCH: "Zápas",
-  CHALLENGE: "Výzva",
-  COACH: "Trenér",
 };
 
 type ChallengeRow = {
@@ -113,7 +98,6 @@ export function PortalRating({
   duels,
   opponents,
   challenges,
-  history,
   solos,
   inRating,
   today,
@@ -128,7 +112,6 @@ export function PortalRating({
   duels: PortalDuel[];
   opponents: { id: string; name: string }[];
   challenges: ChallengeRow[];
-  history: HistoryRow[];
   solos: { id: string; name: string; performedOn: string }[];
   inRating: boolean;
   today: string;
@@ -639,72 +622,47 @@ export function PortalRating({
       {/* ------------------------------------------------- žebříček */}
       <section className={`${card} mt-4`}>
         <h2 className={label}>Žebříček</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Klikni na hráče a uvidíš, co za sezónu udělal a jak se mu hnul
+          rating.
+        </p>
         <ul className="mt-3 divide-y divide-slate-100">
           {board.map((r) => (
-            <li
-              key={r.playerId}
-              className={`flex items-center gap-3 py-2 ${r.isMe ? "font-medium" : ""}`}
-            >
-              <span className="w-6 shrink-0 text-center font-heading text-xs font-extrabold tabular-nums text-slate-500">
-                {r.rank}
-              </span>
-              <span
-                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border font-heading text-[9px] font-extrabold ${
-                  r.isMe
-                    ? "border-club bg-club text-onclub"
-                    : "border-club-line bg-club-soft text-club"
+            <li key={r.playerId}>
+              {/* Celý řádek je odkaz na profil — aktivita spoluhráče
+                  se tak dá otevřít, ale nezabírá místo na žebříčku. */}
+              <Link
+                href={`/p/${payToken}/rating/hrac/${r.playerId}`}
+                className={`flex items-center gap-3 py-2 transition hover:bg-club-soft ${
+                  r.isMe ? "font-medium" : ""
                 }`}
               >
-                {initials(r.playerName)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
-                {r.playerName}
-              </span>
-              <span className="shrink-0 font-heading text-sm font-bold tabular-nums text-slate-800">
-                {r.rating}
-              </span>
+                <span className="w-6 shrink-0 text-center font-heading text-xs font-extrabold tabular-nums text-slate-500">
+                  {r.rank}
+                </span>
+                <span
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border font-heading text-[9px] font-extrabold ${
+                    r.isMe
+                      ? "border-club bg-club text-onclub"
+                      : "border-club-line bg-club-soft text-club"
+                  }`}
+                >
+                  {initials(r.playerName)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
+                  {r.playerName}
+                </span>
+                <span className="shrink-0 font-heading text-sm font-bold tabular-nums text-slate-800">
+                  {r.rating}
+                </span>
+                <span aria-hidden className="shrink-0 text-slate-400">
+                  ›
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
       </section>
-
-      {history.length > 0 && (
-        <section className={`${card} mt-4`}>
-          <h2 className={label}>Co se dělo</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Poslední změny ratingu celého týmu.
-          </p>
-          <ul className="mt-3 divide-y divide-slate-100">
-            {history.map((h) => (
-              <li key={h.id} className="flex items-center gap-2 py-2">
-                <span className="w-16 shrink-0 text-xs tabular-nums text-slate-500">
-                  {h.createdAt}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-slate-800">
-                    {h.playerName}
-                  </span>
-                  <span className="block truncate text-xs text-slate-500">
-                    {SOURCE_LABEL[h.source] ?? h.source} · {h.label}
-                  </span>
-                </span>
-                <span
-                  className={`shrink-0 font-heading text-sm font-bold tabular-nums ${
-                    h.delta > 0
-                      ? "text-emerald-800"
-                      : h.delta < 0
-                        ? "text-red-800"
-                        : "text-slate-500"
-                  }`}
-                >
-                  {h.delta > 0 ? "+" : ""}
-                  {h.delta}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
         Za každou účast je +1 — klubový trénink, posilovna i to, co si

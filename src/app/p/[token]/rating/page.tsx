@@ -9,7 +9,6 @@ import {
   getActiveSeason,
   getEffectiveRatings,
   getLeaderboard,
-  getRatingHistory,
 } from "@/lib/rating";
 import { duelOutcome } from "@/lib/elo";
 import { standings, type Attempt } from "@/lib/challenge-attempts";
@@ -63,7 +62,7 @@ export default async function PortalRatingPage({
 
   const season = await getActiveSeason(userId);
 
-  const [board, duels, players, challenges, history, solos] = await Promise.all([
+  const [board, duels, players, challenges, solos] = await Promise.all([
     getLeaderboard(userId, season),
     prisma.duel.findMany({
       where: {
@@ -92,7 +91,6 @@ export default async function PortalRatingPage({
         entries: { include: { player: { select: { name: true } } } },
       },
     }),
-    getRatingHistory(userId, season, 40),
     prisma.soloSession.findMany({
       where: {
         playerId: me,
@@ -239,14 +237,6 @@ export default async function PortalRatingPage({
             id: so.id,
             name: so.name,
             performedOn: toDateInputValue(so.performedOn),
-          }))}
-          history={history.map((h) => ({
-            id: h.id,
-            playerName: h.playerName,
-            source: h.source,
-            delta: h.delta,
-            label: h.label,
-            createdAt: formatDateDdMmYyyy(h.createdAt),
           }))}
         />
       </div>

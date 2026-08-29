@@ -428,3 +428,122 @@ export async function getSoloSessions(
     performedOn: r.performedOn,
   }));
 }
+
+export type PlayerActivity = {
+  playerId: string;
+  playerName: string;
+  inRating: boolean;
+  seasonName: string | null;
+  rating: number;
+  rank: number | null;
+  band: string;
+  /** Rozpad: kolik z duelů a zápasů, kolik z docházky. */
+  fromEvents: number;
+  fromAttendance: number;
+  attendanceCount: number;
+  gymCount: number;
+  soloCount: number;
+  duelsWon: number;
+  duelsLost: number;
+  entries: {
+    id: string;
+    source: string;
+    delta: number;
+    ratingAfter: number;
+    label: string;
+    createdAt: Date;
+  }[];
+  solos: { id: string; name: string; performedOn: Date }[];
+};
+
+/**
+ * Co za sezónu udělal jeden hráč.
+ *
+ * Dřív visel pod žebříčkem jeden dlouhý výpis změn celého týmu, ve kterém
+ * se nedalo nic najít. Tohle je totéž po jednom hráči — dostupné
+ * kliknutím na jeho jméno v žebříčku.
+ */
+export async function getPlayerActivity(
+  userId: string,
+  season: SeasonInfo | null,
+  playerId: string,
+): Promise<PlayerActivity | null> {
+  const player = await prisma.player.findFirst({
+    where: { id: playerId, userId },
+    select: { id: true, name: true, inRating: true },
+  });
+  if (!player) return null;
+
+  if (!season) {
+    return {
+      playerId: String(player.id),
+      playerName: player.name,
+      inRating: player.inRating,
+      seasonName: null,
+      rating: STARTING_RATING,
+      rank: null,
+      band: ratingBand(STARTING_RATING),
+      fromEvents: 0,
+      fromAttendance: 0,
+      attendanceCount: 0,
+      gymCount: 0,
+      soloCount: 0,
+      duelsWon: 0,
+      duelsLost: 0,
+      entries: [],
+      solos: [],
+    };
+  }
+
+  const from = new Date(season.startsOn);
+  const to = new Date(season.endsOn);
+  to.setUTCHours(23, 59, 59, 999);
+
+  // Žebříček kvůli pořadí a docházkové části — počítá se stejně jako
+  // všude jinde, aby profil a žebříček neukazovaly jiné číslo.
+  const [board, entries, solos] = await Promise.all([
+    getLeaderboard(userId, season),
+    prisma.ratingEntry.findMany({
+      where: { userId, seasonId: season.id, playerId },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+    prisma.soloSession.findMany({
+      where: { userId, playerId, performedOn: { gte: from, lte: to } },
+      orderBy: { performedOn: "desc" },
+      take: 100,
+    }),
+  ]);
+
+  const row = board.find((r) => r.playerId === String(player.id));
+
+  return {
+    playerId: String(player.id),
+    playerName: player.name,
+    inRating: player.inRating,
+    seasonName: season.name,
+    rating: row?.rating ?? STARTING_RATING,
+    rank: row?.rank ?? null,
+    band: row?.band ?? ratingBand(STARTING_RATING),
+    fromEvents: row?.fromDuels ?? 0,
+    fromAttendance: row?.fromAttendance ?? 0,
+    attendanceCount: row?.attendanceCount ?? 0,
+    gymCount: row?.gymCount ?? 0,
+    soloCount: row?.soloCount ?? 0,
+    duelsWon: row?.duelsWon ?? 0,
+    duelsLost: row?.duelsLost ?? 0,
+    entries: entries.map((e) => ({
+      id: String(e.id),
+      source: String(e.source),
+      delta: e.delta,
+      ratingAfter: e.ratingAfter,
+      label: e.label,
+      createdAt: e.createdAt,
+    })),
+    solos: solos.map((s) => ({
+      id: String(s.id),
+      name: s.name,
+      performedOn: s.performedOn,
+    })),
+  };
+}
