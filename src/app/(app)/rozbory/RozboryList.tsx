@@ -155,12 +155,25 @@ function NovyRozbor({ today, onDone }: { today: string; onDone: () => void }) {
 
 /* --------------------------------------------- správa tlačítek */
 
-type Radek = { id?: string; label: string; color: string; side: ReviewSideValue };
+type Radek = {
+  id?: string;
+  label: string;
+  color: string;
+  side: ReviewSideValue;
+  /** Nadřazená skupina (HIT, DEAD…); prázdné = tlačítko stojí samo. */
+  groupLabel: string;
+};
 
 function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => void }) {
   const router = useRouter();
   const [rows, setRows] = useState<Radek[]>(
-    types.map((t) => ({ id: t.id, label: t.label, color: t.color, side: t.side })),
+    types.map((t) => ({
+      id: t.id,
+      label: t.label,
+      color: t.color,
+      side: t.side,
+      groupLabel: t.groupLabel ?? "",
+    })),
   );
   const [chyba, setChyba] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -175,6 +188,18 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
         v každém zápase jiný název a porovnávat by se nedalo. Odebrané tlačítko
         se schová z počítadel, ale ve starých zápisech zůstane.
       </p>
+      <p className="mb-4 text-xs text-slate-500">
+        Skupina (třeba HIT nebo DEAD) tlačítka spojí dohromady. Ve statistice
+        pak vedle počtu vyjde i podíl uvnitř skupiny — teprve ten řekne, co
+        z toho funguje. Prázdná skupina znamená, že tlačítko stojí samo.
+      </p>
+
+      {/* Nabídka už použitých skupin: ať se HIT nezapíše třikrát jinak. */}
+      <datalist id="skupiny-tlacitek">
+        {[...new Set(rows.map((r) => r.groupLabel.trim()).filter((g) => g !== ""))].map((g) => (
+          <option key={g} value={g} />
+        ))}
+      </datalist>
 
       <div className="flex flex-col gap-3">
         {rows.map((t, i) => (
@@ -198,6 +223,14 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
                   </option>
                 ))}
               </select>
+              <input
+                value={t.groupLabel}
+                onChange={(e) => uprav(i, { groupLabel: e.target.value })}
+                list="skupiny-tlacitek"
+                placeholder="skupina"
+                aria-label="Skupina"
+                className="w-24 shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-club"
+              />
               <button
                 type="button"
                 aria-label="Odebrat tlačítko"
@@ -230,7 +263,10 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
         type="button"
         className={`${btn} mt-3`}
         onClick={() =>
-          setRows((r) => [...r, { label: "Nová akce", color: REVIEW_COLORS[0]!, side: "NEUTRAL" }])
+          setRows((r) => [
+            ...r,
+            { label: "Nová akce", color: REVIEW_COLORS[0]!, side: "NEUTRAL", groupLabel: "" },
+          ])
         }
       >
         + Přidat tlačítko
@@ -259,6 +295,7 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
                   label: r.label.trim(),
                   color: r.color,
                   side: r.side,
+                  groupLabel: r.groupLabel.trim(),
                 })),
               );
               if (!res.ok) {

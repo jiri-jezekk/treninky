@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { PortalShell } from "./PortalShell";
 
 export const metadata: Metadata = {
-  title: "Moje platby",
+  title: "Můj profil",
   // Veřejná adresa s tajným tokenem nemá co dělat ve vyhledávačích.
   robots: { index: false, follow: false },
 };

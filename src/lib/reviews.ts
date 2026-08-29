@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { StatEvent, StatType } from "@/lib/review-stats";
+import { mujSouhrn, souhrnRozboru, type MujSouhrn } from "@/lib/review-summary";
+import { formatDateDdMmYyyy } from "@/lib/date-display";
 
 /**
  * Čtení rozborů pro hráčský portál.
@@ -97,6 +99,7 @@ export async function getSharedReview(
       label: t.label,
       color: t.color,
       side: t.side,
+      groupLabel: t.groupLabel,
       sortOrder: t.sortOrder,
       archived: t.archived,
     })),
@@ -109,4 +112,65 @@ export async function getSharedReview(
       note: e.note,
     })),
   };
+}
+
+/**
+ * Souhrn hráče napříč nasdílenými rozbory.
+ *
+ * Počítá se jen z toho, co hráč smí vidět — kdyby se sčítalo přes
+ * všechny rozbory klubu, prozradilo by číslo i zápasy, ke kterým
+ * přístup nemá.
+ */
+export async function getSharedSummary(
+  userId: string,
+  playerId: string,
+): Promise<MujSouhrn | null> {
+  const [reviews, types] = await Promise.all([
+    prisma.videoReview.findMany({
+      where: { userId, ...sdilenoS(playerId) },
+      orderBy: { playedOn: "desc" },
+      include: {
+        events: {
+          select: {
+            id: true,
+            typeId: true,
+            atSeconds: true,
+            playerId: true,
+            player: { select: { name: true } },
+          },
+        },
+      },
+    }),
+    prisma.reviewEventType.findMany({ where: { userId }, orderBy: { sortOrder: "asc" } }),
+  ]);
+  if (reviews.length === 0) return null;
+
+  const statTypes: StatType[] = types.map((t) => ({
+    id: String(t.id),
+    label: t.label,
+    color: t.color,
+    side: t.side,
+    groupLabel: t.groupLabel,
+    sortOrder: t.sortOrder,
+    archived: t.archived,
+  }));
+
+  const souhrn = souhrnRozboru(
+    reviews.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      opponent: r.opponent,
+      playedOnLabel: formatDateDdMmYyyy(r.playedOn),
+      events: r.events.map((e) => ({
+        id: String(e.id),
+        typeId: String(e.typeId),
+        atSeconds: e.atSeconds,
+        playerId: e.playerId == null ? null : String(e.playerId),
+        playerName: e.player?.name ?? null,
+      })) satisfies StatEvent[],
+    })),
+    statTypes,
+  );
+
+  return mujSouhrn(souhrn, playerId);
 }

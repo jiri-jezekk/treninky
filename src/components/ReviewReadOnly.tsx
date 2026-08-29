@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
 import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
+import { VideoOvladani } from "@/components/VideoOvladani";
+import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
 import { computeStats, type StatEvent, type StatType } from "@/lib/review-stats";
 import { indexBoduVCase } from "@/lib/review-tracker";
 import { formatVideoTime } from "@/lib/youtube";
@@ -54,7 +56,10 @@ export function ReviewReadOnly({
   const videoRef = useRef<HTMLElement | null>(null);
   const [bezVidea, setBezVidea] = useState(review.videoId == null);
   const [cas, setCas] = useState(0);
+  const [bezi, setBezi] = useState(false);
+  const [rychlost, setRychlost] = useState(1);
   const [jenMoje, setJenMoje] = useState(false);
+  const [sledovat, setSledovat] = useState(true);
 
   const onReady = useCallback((h: PlayerHandle) => {
     playerRef.current = h;
@@ -64,13 +69,34 @@ export function ReviewReadOnly({
     setBezVidea(true);
   }, []);
 
+  // Přehrávání vybraných bodů za sebou. Ovládání se předává jako
+  // funkce, aby hook nemusel nic vědět o přehrávači.
+  const prehravani = usePrehravaniBodu(
+    [...events].sort((a, b) => a.atSeconds - b.atSeconds),
+    {
+      seek: (x) => playerRef.current?.seekTo(x),
+      play: () => playerRef.current?.play(),
+    },
+  );
+  const tikRef = useRef(prehravani.tik);
+  useEffect(() => {
+    tikRef.current = prehravani.tik;
+  }, [prehravani.tik]);
+
   // Čas se čte z přehrávače; bez videa se nic nesleduje a lišta
   // „právě teď“ se neukazuje.
   useEffect(() => {
     if (bezVidea) return;
     const t = setInterval(() => {
       const p = playerRef.current;
-      if (p) setCas(p.getTime());
+      if (!p) return;
+      const ted = p.getTime();
+      setCas(ted);
+      setBezi(p.isPlaying());
+      setRychlost(p.getRate());
+      // Posun playlistu patří sem, do tiku přehrávače: čas videa je
+      // vnější zdroj, na který se dá jen dívat.
+      tikRef.current(ted);
     }, 500);
     return () => clearInterval(t);
   }, [bezVidea]);
@@ -125,6 +151,18 @@ export function ReviewReadOnly({
         >
           <YouTubePlayer videoId={review.videoId} onReady={onReady} onFail={onFail} />
           <PraveTed ev={ted} typ={ted ? typById.get(ted.typeId) : undefined} cas={cas} />
+          <div className="border-t border-slate-100 px-4 py-2.5 sm:px-5">
+            <VideoOvladani
+              bezi={bezi}
+              rychlost={rychlost}
+              onKrok={(o) => playerRef.current?.seekTo(Math.max(0, cas + o))}
+              onPrehrat={() => playerRef.current?.toggle()}
+              onRychlost={(r) => {
+                playerRef.current?.setRate(r);
+                setRychlost(r);
+              }}
+            />
+          </div>
         </section>
       )}
 
@@ -148,14 +186,49 @@ export function ReviewReadOnly({
         </div>
 
         {/* Hráč se nejčastěji ptá „co jsem tam dělal já“. */}
-        {moje && (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            <Chip on={!jenMoje} onClick={() => setJenMoje(false)}>
-              Vše
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {moje && (
+            <>
+              <Chip on={!jenMoje} onClick={() => setJenMoje(false)}>
+                Vše
+              </Chip>
+              <Chip on={jenMoje} onClick={() => setJenMoje(true)}>
+                Jen moje ({moje.total})
+              </Chip>
+            </>
+          )}
+          {!bezVidea && (
+            <Chip on={sledovat} onClick={() => setSledovat((x) => !x)}>
+              {sledovat ? "✓ " : ""}Sledovat
             </Chip>
-            <Chip on={jenMoje} onClick={() => setJenMoje(true)}>
-              Jen moje ({moje.total})
-            </Chip>
+          )}
+        </div>
+
+        {/* Takhle se rozbor doopravdy kouká: pusť mi tyhle body za sebou. */}
+        {!bezVidea && videt.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {prehravani.bezi ? (
+              <>
+                <button
+                  type="button"
+                  onClick={prehravani.zastav}
+                  className="rounded-md border border-club bg-club px-3 py-1.5 text-[12.5px] font-medium text-onclub transition hover:bg-club-hover"
+                >
+                  ■ Zastavit
+                </button>
+                <span className="text-xs tabular-nums text-slate-500">
+                  bod {prehravani.kde} / {prehravani.pocet}
+                </span>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => prehravani.spust(videt.map((e) => e.id))}
+                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12.5px] text-slate-700 transition hover:bg-slate-100 hover:text-slate-800"
+              >
+                ▶ Přehrát {jenMoje ? "moje body" : "body"} ({videt.length})
+              </button>
+            )}
           </div>
         )}
 
@@ -171,6 +244,7 @@ export function ReviewReadOnly({
                 ev={e}
                 typ={typById.get(e.typeId)}
                 aktivni={e.id === ted?.id}
+                sledovat={sledovat}
                 bezVidea={bezVidea}
                 onSeek={() => skoc(e.atSeconds)}
               />
@@ -289,19 +363,32 @@ function RadekZaznamu({
   ev,
   typ,
   aktivni,
+  sledovat,
   bezVidea,
   onSeek,
 }: {
   ev: Zapis;
   typ: StatType | undefined;
   aktivni: boolean;
+  /** Seznam jede s videem — aktivní řádek se sám doroluje. */
+  sledovat: boolean;
   bezVidea: boolean;
   onSeek: () => void;
 }) {
   const [otevreno, setOtevreno] = useState(false);
+  const radekRef = useRef<HTMLLIElement | null>(null);
+
+  // Posun seznamu je práce s DOM, ne se stavem — proto efekt. Kdo si
+  // scrolluje sám, vypne si sledování a nic ho neruší.
+  useEffect(() => {
+    if (aktivni && sledovat) {
+      radekRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [aktivni, sledovat]);
 
   return (
     <li
+      ref={radekRef}
       className={`py-2 ${aktivni ? "-mx-2 rounded-lg bg-club-soft px-2" : ""}`}
       aria-current={aktivni ? "true" : undefined}
     >

@@ -7,8 +7,8 @@ import Link from "next/link";
  * a v detailu duelu. Když se měnil, muselo se to hlídat na čtyřech
  * místech; teď je na jednom.
  *
- * Název klubu nahoře je zároveň cesta zpátky na platby. Šipka „← Moje
- * platby“ je tam pořád, ale nadpis je větší terč a lidi na něj klikají
+ * Název klubu nahoře je zároveň cesta zpátky na profil. Šipka „← Můj
+ * profil“ je tam pořád, ale nadpis je větší terč a lidi na něj klikají
  * automaticky. Na samotné stránce plateb zůstává obyčejným textem —
  * odkaz sám na sebe nikam nevede a jen mate.
  */

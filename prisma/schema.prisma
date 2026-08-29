@@ -719,6 +719,12 @@ model ReviewEventType {
   /** Hex z klubové palety, vybírá se ze seznamu, nepíše se ručně. */
   color     String
   side      ReviewSide @default(NEUTRAL)
+  /**
+   * Nadřazená skupina, třeba HIT nebo DEAD. Kvůli vyhodnocení: samotný
+   * počet „Hit counter fast“ nic neřekne, teprve podíl na všech hitech
+   * ukáže, co funguje. Prázdné = tlačítko stojí samo.
+   */
+  groupLabel String?
   sortOrder Int        @default(0)
   /**
    * Smazané tlačítko se jen archivuje. Kdyby se mazalo doopravdy,

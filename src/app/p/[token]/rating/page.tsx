@@ -171,7 +171,7 @@ export default async function PortalRatingPage({
           href={`/p/${token}`}
           className="text-sm text-slate-500 underline decoration-slate-300 underline-offset-4"
         >
-          ← Moje platby
+          ← Můj profil
         </Link>
 
         <PortalRating

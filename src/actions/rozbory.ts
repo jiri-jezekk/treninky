@@ -392,8 +392,16 @@ const typesSchema = z.array(
     label: z.string().trim().min(1).max(40),
     color: z.string().trim(),
     side: z.enum(["FOR", "AGAINST", "NEUTRAL"]),
+    /** Nadřazená skupina (HIT, DEAD…); prázdné = tlačítko stojí samo. */
+    groupLabel: z.string().trim().max(24).optional(),
   }),
 ).max(30);
+
+/** Prázdná skupina se ukládá jako nic — jinak by vznikly dvě „bez skupiny“. */
+function skupina(hodnota: string | undefined): string | null {
+  const s = (hodnota ?? "").trim();
+  return s === "" ? null : s;
+}
 
 /**
  * Uloží sadu tlačítek pro celý klub.
@@ -432,11 +440,25 @@ export async function saveEventTypes(types: unknown): Promise<ActionResult> {
         if (t.id && existingIds.has(t.id)) {
           await tx.reviewEventType.updateMany({
             where: { id: t.id, userId },
-            data: { label: t.label, color, side: t.side, sortOrder: i, archived: false },
+            data: {
+              label: t.label,
+              color,
+              side: t.side,
+              groupLabel: skupina(t.groupLabel),
+              sortOrder: i,
+              archived: false,
+            },
           });
         } else {
           await tx.reviewEventType.create({
-            data: { userId, label: t.label, color, side: t.side, sortOrder: i },
+            data: {
+              userId,
+              label: t.label,
+              color,
+              side: t.side,
+              groupLabel: skupina(t.groupLabel),
+              sortOrder: i,
+            },
           });
         }
       }

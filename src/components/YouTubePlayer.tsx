@@ -22,6 +22,8 @@ type YTPlayer = {
   playVideo(): void;
   pauseVideo(): void;
   getPlayerState(): number;
+  setPlaybackRate(rate: number): void;
+  getPlaybackRate(): number;
   destroy(): void;
 };
 
@@ -91,7 +93,12 @@ export type PlayerHandle = {
   getDuration(): number;
   seekTo(seconds: number): void;
   toggle(): void;
+  /** Rozjet bez ohledu na stav — přehrávání bodů za sebou to potřebuje. */
+  play(): void;
   isPlaying(): boolean;
+  /** Rychlost přehrávání; YouTube umí 0,25× až 2×. */
+  setRate(rate: number): void;
+  getRate(): number;
 };
 
 export function YouTubePlayer({
@@ -169,6 +176,28 @@ export function YouTubePlayer({
                     else p.playVideo();
                   } catch {
                     /* přehrávač mezitím zmizel */
+                  }
+                },
+                play: () => {
+                  try {
+                    p.playVideo();
+                  } catch {
+                    /* přehrávač mezitím zmizel */
+                  }
+                },
+                setRate: (r) => {
+                  try {
+                    p.setPlaybackRate(r);
+                  } catch {
+                    /* starší přehrávač rychlost neumí */
+                  }
+                },
+                getRate: () => {
+                  try {
+                    const r = p.getPlaybackRate();
+                    return Number.isFinite(r) && r > 0 ? r : 1;
+                  } catch {
+                    return 1;
                   }
                 },
                 isPlaying: () => {

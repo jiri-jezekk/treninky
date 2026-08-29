@@ -28,6 +28,11 @@ export type StatType = {
   side: ReviewSideValue;
   sortOrder: number;
   archived: boolean;
+  /**
+   * Nadřazená skupina (HIT, DEAD…). Prázdné = tlačítko stojí samo.
+   * Kvůli vyhodnocení: podíl uvnitř skupiny říká víc než holý počet.
+   */
+  groupLabel?: string | null;
 };
 
 export type TypeCount = {
@@ -36,6 +41,15 @@ export type TypeCount = {
   color: string;
   side: ReviewSideValue;
   count: number;
+  /** Podíl uvnitř skupiny, 0–1. Bez skupiny podíl na všech zápisech. */
+  share: number;
+};
+
+/** Skupina tlačítek. `name === null` jsou tlačítka bez skupiny. */
+export type GroupCount = {
+  name: string | null;
+  total: number;
+  types: TypeCount[];
 };
 
 export type Balance = {
@@ -49,6 +63,8 @@ export type Balance = {
   /** Po typech, v pořadí tlačítek. Archivované typy tu jsou taky,
    *  pokud na ně nějaký zápis odkazuje — jinak by čísla nesedla. */
   byType: TypeCount[];
+  /** Totéž seskupené. Skupiny v pořadí prvního výskytu, bez skupiny na konci. */
+  byGroup: GroupCount[];
 };
 
 export type PlayerRow = {
@@ -71,6 +87,12 @@ export type ReviewStats = {
    */
   withoutPlayer: number;
 };
+
+/** Prázdný název skupiny je totéž co žádná — ať nevzniknou dvě „nic“. */
+function klicSkupiny(groupLabel: string | null | undefined): string | null {
+  const s = (groupLabel ?? "").trim();
+  return s === "" ? null : s;
+}
 
 export function computeStats(
   events: StatEvent[],
@@ -133,16 +155,51 @@ export function computeStats(
     row.diff = row.forCount - row.againstCount;
   }
 
-  const byType: TypeCount[] = poradi
+  const vPrehledu = poradi
     // Archivovaný typ má smysl ukazovat, jen když na něj něco visí.
-    .filter((t) => !t.archived || (pocty.get(t.id) ?? 0) > 0)
-    .map((t) => ({
+    .filter((t) => !t.archived || (pocty.get(t.id) ?? 0) > 0);
+
+  // Součty skupin se počítají dřív než podíly — čte se totiž podíl
+  // uvnitř skupiny („z našich hitů byla polovina fast“). Tlačítko
+  // bez skupiny se poměřuje se všemi zápisy.
+  const soucetSkupin = new Map<string | null, number>();
+  for (const t of vPrehledu) {
+    const klic = klicSkupiny(t.groupLabel);
+    soucetSkupin.set(klic, (soucetSkupin.get(klic) ?? 0) + (pocty.get(t.id) ?? 0));
+  }
+  const celkem = forCount + againstCount + neutralCount;
+
+  const byType: TypeCount[] = vPrehledu.map((t) => {
+    const klic = klicSkupiny(t.groupLabel);
+    const count = pocty.get(t.id) ?? 0;
+    const zaklad = klic == null ? celkem : (soucetSkupin.get(klic) ?? 0);
+    return {
       typeId: t.id,
       label: t.label,
       color: t.color,
       side: t.side,
-      count: pocty.get(t.id) ?? 0,
-    }));
+      count,
+      share: zaklad > 0 ? count / zaklad : 0,
+    };
+  });
+
+  // Skupiny v pořadí prvního výskytu, tlačítka bez skupiny na konci —
+  // jinak by se pořadí přehazovalo podle toho, co kdo naklikal.
+  const skupiny = new Map<string | null, GroupCount>();
+  for (let i = 0; i < vPrehledu.length; i++) {
+    const klic = klicSkupiny(vPrehledu[i]!.groupLabel);
+    let g = skupiny.get(klic);
+    if (!g) {
+      g = { name: klic, total: 0, types: [] };
+      skupiny.set(klic, g);
+    }
+    const radek = byType[i]!;
+    g.types.push(radek);
+    g.total += radek.count;
+  }
+  const byGroup = [...skupiny.values()].sort(
+    (a, b) => Number(a.name == null) - Number(b.name == null),
+  );
 
   const players = [...hraci.values()].sort(
     (a, b) =>
@@ -157,8 +214,9 @@ export function computeStats(
       againstCount,
       neutralCount,
       diff: forCount - againstCount,
-      total: forCount + againstCount + neutralCount,
+      total: celkem,
       byType,
+      byGroup,
     },
     players,
     withoutPlayer,

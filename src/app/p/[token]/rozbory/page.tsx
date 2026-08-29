@@ -5,7 +5,7 @@ import { PortalGate } from "../PortalGate";
 import { PortalShell } from "../PortalShell";
 import { SessionRefresh } from "../SessionRefresh";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { listSharedReviews } from "@/lib/reviews";
+import { getSharedSummary, listSharedReviews } from "@/lib/reviews";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { czPlural } from "@/lib/czech";
 import { prisma } from "@/lib/prisma";
@@ -51,10 +51,10 @@ export default async function PortalRozboryPage({
     );
   }
 
-  const reviews = await listSharedReviews(
-    String(viewer.user.id),
-    String(viewer.id),
-  );
+  const [reviews, souhrn] = await Promise.all([
+    listSharedReviews(String(viewer.user.id), String(viewer.id)),
+    getSharedSummary(String(viewer.user.id), String(viewer.id)),
+  ]);
 
   return (
     <PortalShell clubName={clubName} token={token}>
@@ -64,8 +64,66 @@ export default async function PortalRozboryPage({
           href={`/p/${token}`}
           className="text-sm text-slate-500 underline decoration-slate-300 underline-offset-4"
         >
-          ← Moje platby
+          ← Můj profil
         </Link>
+
+        {/* Napříč zápasy: jeden rozbor řekne, jak dopadl, tohle ukáže,
+            co se opakuje. */}
+        {souhrn && souhrn.zapisu > 0 && (
+          <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+            <h2 className="font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+              Tvůj souhrn
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Počítáno z rozborů, které máš nasdílené ({souhrn.zapasu}).
+            </p>
+
+            <dl className="mt-3 grid grid-cols-3 gap-2.5">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <dt className="font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                  Pro nás
+                </dt>
+                <dd className="mt-0.5 font-heading text-lg font-bold tabular-nums text-emerald-800">
+                  {souhrn.forCount}
+                </dd>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <dt className="font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                  Proti nám
+                </dt>
+                <dd className="mt-0.5 font-heading text-lg font-bold tabular-nums text-red-800">
+                  {souhrn.againstCount}
+                </dd>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <dt className="font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                  Rozdíl
+                </dt>
+                <dd className="mt-0.5 font-heading text-lg font-bold tabular-nums text-slate-900">
+                  {souhrn.diff > 0 ? `+${souhrn.diff}` : souhrn.diff}
+                </dd>
+              </div>
+            </dl>
+
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {souhrn.akce.map((a) => (
+                <li key={a.label} className="flex items-center gap-2.5">
+                  <i
+                    aria-hidden
+                    style={{ background: a.color }}
+                    className="inline-block h-1.5 w-1.5 shrink-0 rotate-45 rounded-[2px]"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-slate-700">
+                    {a.label}
+                  </span>
+                  <span className="shrink-0 font-heading text-sm font-bold tabular-nums text-slate-800">
+                    {a.count}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
           <h1 className="font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">

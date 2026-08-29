@@ -60,6 +60,30 @@ export function indexBoduVCase<T extends { atSeconds: number }>(
   return proslyy >= 0 ? proslyy : null;
 }
 
+/* ------------------------------------ přehrávání bodů za sebou */
+
+/** Kolik sekund před bodem a po něm se přehrává. */
+export const PRED_BODEM = 6;
+export const PO_BODU = 8;
+
+export type Usek = { od: number; do: number };
+
+/**
+ * Úsek videa kolem jednoho bodu.
+ *
+ * Náběh je potřeba: kdo se dívá na hit, chce vidět, co mu předcházelo.
+ * Na začátku záznamu se úsek zkrátí zepředu, ale konec zůstane — jinak
+ * by první bod probleskl.
+ */
+export function usekBodu(at: number, pred = PRED_BODEM, po = PO_BODU): Usek {
+  return { od: Math.max(0, at - pred), do: Math.max(0, at) + po };
+}
+
+/** Doběhl úsek, a má se tedy skočit na další bod? */
+export function usekDobehl(cas: number, usek: Usek): boolean {
+  return cas >= usek.do || cas < usek.od - 1;
+}
+
 export type KlicZapisu = { typeId: string; at: number };
 
 /**

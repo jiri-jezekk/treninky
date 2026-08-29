@@ -12,6 +12,8 @@ import {
 import { Panel } from "@/components/ui";
 import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
 import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
+import { VideoOvladani } from "@/components/VideoOvladani";
+import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
 import {
   deleteEvent,
   deleteReview,
@@ -163,6 +165,7 @@ export function ReviewTracker({
   // Délka záznamu z přehrávače. U živých přenosů má záznam klidně tři
   // hodiny — bez ní by se osa škálovala podle posledního zápisu.
   const [delkaVidea, setDelkaVidea] = useState(0);
+  const [rychlost, setRychlost] = useState(1);
   // Do refu se píše v efektu, ne při vykreslení: zápis potřebuje
   // aktuální čas, ale nesmí se kvůli němu překreslovat čtyřikrát
   // za sekundu.
@@ -180,6 +183,18 @@ export function ReviewTracker({
     setStopky(true);
   }, []);
 
+  // Přehrání bodů za sebou — v panelu Průběh. Body se předávají
+  // seřazené, hook si drží jen id.
+  const vsechnyKPrehrani = [...serverEvents].sort((a, b) => a.atSeconds - b.atSeconds);
+  const prehravani = usePrehravaniBodu(vsechnyKPrehrani, {
+    seek: (x) => playerRef.current?.seekTo(x),
+    play: () => playerRef.current?.play(),
+  });
+  const tikRef = useRef(prehravani.tik);
+  useEffect(() => {
+    tikRef.current = prehravani.tik;
+  }, [prehravani.tik]);
+
   // Jeden tik pro obojí: u videa se čas čte z přehrávače, u stopek
   // se přičítá. Bez čtení z přehrávače by se čas rozešel po přetočení.
   useEffect(() => {
@@ -192,6 +207,10 @@ export function ReviewTracker({
           const nova = p.getDuration();
           return nova > 0 && nova !== d ? nova : d;
         });
+        setRychlost(p.getRate());
+        // Posun přehrávání bodů patří do tiku: čas videa je vnější
+        // zdroj, na který se dá jen dívat.
+        tikRef.current(p.getTime());
       } else if (bezi) {
         setCas((c) => c + 0.25);
       }
@@ -740,9 +759,31 @@ export function ReviewTracker({
                       >
                         ›
                       </button>
+                      {prehravani.bezi ? (
+                        <button
+                          type="button"
+                          className={btn}
+                          onClick={prehravani.zastav}
+                          title="Zastavit přehrávání bodů"
+                        >
+                          ■
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={btn}
+                          onClick={() => prehravani.spust(vsechnyKPrehrani.map((e) => e.id))}
+                          disabled={vsechnyKPrehrani.length === 0}
+                          title="Přehrát body za sebou"
+                        >
+                          ▶ body
+                        </button>
+                      )}
                       <span className="flex-1" />
                       <span className="text-[11.5px] tabular-nums text-slate-500">
-                        {indexBodu == null ? "0" : indexBodu + 1} / {poCase.length}
+                        {prehravani.bezi
+                          ? `${prehravani.kde} / ${prehravani.pocet}`
+                          : `${indexBodu == null ? 0 : indexBodu + 1} / ${poCase.length}`}
                       </span>
                     </div>
 
@@ -779,6 +820,21 @@ export function ReviewTracker({
                   ⛶ Celá obrazovka
                 </button>
               </div>
+
+              {!stopky && (
+                <div className="mb-3">
+                  <VideoOvladani
+                    bezi={bezi}
+                    rychlost={rychlost}
+                    onKrok={(o) => skoc(Math.max(0, cas + o))}
+                    onPrehrat={prehrat}
+                    onRychlost={(r) => {
+                      playerRef.current?.setRate(r);
+                      setRychlost(r);
+                    }}
+                  />
+                </div>
+              )}
 
               <VyberHrace
                 players={naSoupisce}
@@ -860,6 +916,32 @@ export function ReviewTracker({
 
         {/* ------------------------------------- pravý sloupec */}
         <div className="flex min-w-0 flex-col gap-4">
+          {/* Poznámky k celému zápasu. Psaly se v úpravě rozboru, ale
+              vidět nebyly nikde — přitom je to shrnutí, kvůli kterému
+              se rozbor dělá. */}
+          <Panel>
+            <div className="mb-2.5 flex flex-wrap items-center gap-2">
+              <span className={sec}>Poznámky k zápasu</span>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => setModal("uprava")}
+                className="text-xs text-club underline decoration-club-line underline-offset-4"
+              >
+                {review.notes ? "Upravit" : "Napsat"}
+              </button>
+            </div>
+            {review.notes ? (
+              <p className="whitespace-pre-line text-sm text-slate-700">{review.notes}</p>
+            ) : (
+              <p className="text-xs italic text-slate-500">
+                Zatím nic. Sem patří shrnutí celého zápasu — co fungovalo, co
+                ne, na co se zaměřit na tréninku. Hráči to uvidí nahoře
+                v nasdíleném rozboru.
+              </p>
+            )}
+          </Panel>
+
           <Panel>
             <div className={`${sec} mb-2.5`}>Bilance</div>
             <dl className="mb-3.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:grid-cols-2">

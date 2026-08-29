@@ -42,7 +42,7 @@ export function PortalGate({
       </h1>
       <p className="mt-2 text-sm text-slate-600">
         {mode === "set"
-          ? "Zvol si heslo, kterým si svůj přehled plateb ochráníš. Budeš ho zadávat jen když se týden neukážeš."
+          ? "Zvol si heslo, kterým si svůj profil ochráníš. Najdeš v něm platby, rating i rozbory zápasů. Zadávat ho budeš jen když se týden neukážeš."
           : "Zadej svoje heslo."}
       </p>
 
@@ -92,7 +92,7 @@ export function PortalGate({
           ? "Moment…"
           : mode === "set"
             ? "Nastavit heslo a pokračovat"
-            : "Zobrazit platby"}
+            : "Přihlásit se"}
       </button>
 
       {mode === "enter" && (

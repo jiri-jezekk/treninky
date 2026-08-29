@@ -46,6 +46,7 @@ export default async function RozborDetailPage({
     label: t.label,
     color: t.color,
     side: t.side,
+    groupLabel: t.groupLabel,
     sortOrder: t.sortOrder,
     archived: t.archived,
   }));

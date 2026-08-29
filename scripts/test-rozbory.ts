@@ -18,12 +18,15 @@ import {
   rozsahOsy,
   vychoziOkno,
 } from "../src/lib/review-timeline.ts";
+import { mujSouhrn, souhrnRozboru } from "../src/lib/review-summary.ts";
 import {
   indexBoduVCase,
   MIN_H,
   MIN_W,
   najdiPosledniZapis,
   omezRamec,
+  usekBodu,
+  usekDobehl,
 } from "../src/lib/review-tracker.ts";
 
 let failures = 0;
@@ -185,6 +188,85 @@ console.log("\nŘazení podle času:");
   check("původní pole se nemění", [a, c, b].map((x) => x.id), ["a", "c", "b"]);
 }
 
+console.log("\nSkupiny tlačítek a podíly (kvůli vyhodnocení):");
+{
+  const sSkupinami: StatType[] = [
+    { id: "fast", label: "Hit counter fast", color: "#0ea5e9", side: "FOR", sortOrder: 0, archived: false, groupLabel: "HIT" },
+    { id: "slow", label: "Hit counter slow", color: "#059669", side: "FOR", sortOrder: 1, archived: false, groupLabel: "HIT" },
+    { id: "dead", label: "Dead counter", color: "#dc2626", side: "AGAINST", sortOrder: 2, archived: false, groupLabel: "DEAD" },
+    { id: "chyba", label: "Chyba", color: "#64748b", side: "NEUTRAL", sortOrder: 3, archived: false, groupLabel: "  " },
+  ];
+  const s = computeStats(
+    [
+      ev("fast", 10, "p1", "Ada"),
+      ev("fast", 20, "p1", "Ada"),
+      ev("fast", 30, null),
+      ev("slow", 40, "p2", "Bára"),
+      ev("dead", 50, "p1", "Ada"),
+      ev("chyba", 60, null),
+    ],
+    sSkupinami,
+  );
+
+  check("skupiny v pořadí tlačítek, bez skupiny na konci", s.balance.byGroup.map((g) => g.name), ["HIT", "DEAD", null]);
+  check("součet skupiny", s.balance.byGroup[0]!.total, 4);
+  // Tohle je ta věta, kvůli které skupiny vznikly: „z našich hitů byly
+  // tři čtvrtiny fast“.
+  check("podíl uvnitř skupiny", s.balance.byType.find((t) => t.typeId === "fast")!.share, 0.75);
+  check("a zbytek do jedné", s.balance.byType.find((t) => t.typeId === "slow")!.share, 0.25);
+  check("sám ve skupině má celou", s.balance.byType.find((t) => t.typeId === "dead")!.share, 1);
+  // Prázdný název skupiny je totéž co žádná — jinak by vznikly dvě „nic“.
+  check("mezery nejsou skupina", s.balance.byGroup[2]!.name, null);
+  check("bez skupiny se poměřuje se všemi", s.balance.byType.find((t) => t.typeId === "chyba")!.share, 1 / 6);
+  check("součet skupin sedí s bilancí", s.balance.byGroup.reduce((n, g) => n + g.total, 0), s.balance.total);
+}
+{
+  // Bez skupin se nic nemění: jedna skupina „nic“ a podíly na celku.
+  const s = computeStats([ev("hit", 10, null), ev("dostali", 20, null)], typy);
+  check("bez skupin je jedna skupina", s.balance.byGroup.map((g) => g.name), [null]);
+  check("podíl na všech zápisech", s.balance.byType.find((t) => t.typeId === "hit")!.share, 0.5);
+  check("nepoužité tlačítko má nulu", s.balance.byType.find((t) => t.typeId === "chyceni")!.share, 0);
+}
+
+console.log("\nSouhrn napříč zápasy:");
+{
+  const rozbory = [
+    {
+      id: "r1",
+      name: "Liga — 1. kolo",
+      opponent: "Praha",
+      playedOnLabel: "09.08.2026",
+      events: [ev("hit", 10, "p1", "Ada"), ev("hit", 20, null), ev("dostali", 30, "p2", "Bára")],
+    },
+    {
+      id: "r2",
+      name: "Liga — 2. kolo",
+      opponent: "Brno",
+      playedOnLabel: "16.08.2026",
+      events: [ev("dostali", 10, "p1", "Ada"), ev("dostali", 20, "p1", "Ada"), ev("chyceni", 30, "p1", "Ada")],
+    },
+  ];
+  const s = souhrnRozboru(rozbory, typy);
+
+  check("zápasů v souhrnu", s.pocetZapasu, 2);
+  check("bilance prvního zápasu", [s.zapasy[0]!.forCount, s.zapasy[0]!.againstCount], [2, 1]);
+  check("bilance druhého zápasu", [s.zapasy[1]!.forCount, s.zapasy[1]!.againstCount], [1, 2]);
+  // Souhrn se počítá stejnou funkcí jako jednotlivý rozbor, takže
+  // musí sedět na součet — jinak by se čísla rozešla.
+  check("celkem pro", s.celkem.balance.forCount, 3);
+  check("celkem proti", s.celkem.balance.againstCount, 3);
+  check(
+    "součet zápasů = celek",
+    s.zapasy.reduce((n, z) => n + z.total, 0),
+    s.celkem.balance.total,
+  );
+
+  const ada = mujSouhrn(s, "p1");
+  check("hráč vidí svoje zápisy napříč zápasy", [ada!.zapisu, ada!.forCount, ada!.againstCount], [4, 2, 2]);
+  check("a jen akce, které měl", ada!.akce.map((a) => a.count), [1, 2, 1]);
+  check("kdo nehrál, souhrn nemá", mujSouhrn(s, "p9"), null);
+}
+
 console.log("\nVýřez časové osy (živé přenosy mají hodiny záznamu):");
 {
   check("délka z přehrávače má přednost", celkovaDelka(9000, [120, 300], 150), 9000);
@@ -264,6 +346,19 @@ console.log("\nKterá akce platí v daném čase (sledování bez scrollování)
   check("mezi akcemi ukazuje tu blížící se", indexBoduVCase(body, 150), 2);
   check("po poslední akci zůstane poslední", indexBoduVCase(body, 900), 2);
   check("delší prodleva drží akci déle", indexBoduVCase(body, 45, 30), 0);
+}
+
+console.log("\nPřehrávání bodů za sebou:");
+{
+  // Náběh je potřeba: kdo kouká na hit, chce vidět, co mu předcházelo.
+  check("úsek kolem bodu", usekBodu(100, 6, 8), { od: 94, do: 108 });
+  check("na začátku záznamu se nepodleze nula", usekBodu(3, 6, 8), { od: 0, do: 11 });
+  check("úsek nedoběhl", usekDobehl(100, { od: 94, do: 108 }), false);
+  check("úsek doběhl", usekDobehl(108, { od: 94, do: 108 }), true);
+  // Když si divák sám přetočí jinam, přehrávání bodů se nemá prát
+  // s ním — pozná se to podle času mimo úsek.
+  check("ruční přetočení zpět úsek ukončí", usekDobehl(50, { od: 94, do: 108 }), true);
+  check("drobná nepřesnost přehrávače ne", usekDobehl(93.5, { od: 94, do: 108 }), false);
 }
 
 console.log("\nPoslední zápis, na který se věší poznámka:");
