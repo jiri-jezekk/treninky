@@ -4,7 +4,11 @@
 -- Slouží k odladění migrace 20260828170000 proti reálnému stavu.
 
 CREATE TYPE "DuelStatus" AS ENUM ('PENDING', 'ACCEPTED', 'REPORTED', 'CONFIRMED', 'DECLINED');
-CREATE TYPE "RatingSource" AS ENUM ('DUEL', 'MATCH', 'CHALLENGE', 'COACH');
+-- POZOR: bez 'MATCH'. Starý návrh zápasy týmů neznal, takže hodnota
+-- ve výčtu není. Původně jsem ji sem napsal podle nového schématu
+-- a právě proto testy pád při vyhodnocení zápasu neodhalily —
+-- produkce hlásila 22P02 „invalid input value for enum RatingSource“.
+CREATE TYPE "RatingSource" AS ENUM ('DUEL', 'CHALLENGE', 'COACH');
 
 ALTER TABLE "Player" ADD COLUMN "ratingPoints" INTEGER NOT NULL DEFAULT 1000;
 

@@ -12,7 +12,7 @@ import {
   revertRatingChanges,
 } from "@/lib/rating";
 import type { ActionResult } from "@/lib/action-result";
-import { checkboxOn } from "@/lib/form-values";
+import { parseMeasured, parseScoreMode } from "@/lib/duration";
 
 function revalidateRating(payToken?: string) {
   revalidatePath("/rating");
@@ -46,13 +46,6 @@ async function resolveActor(payToken: string | null): Promise<Actor | null> {
     };
   }
   return { kind: "coach", userId: await requireUserId() };
-}
-
-function parseValue(raw: unknown): number | null {
-  const value = String(raw ?? "").trim().replace(",", ".");
-  if (value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
 }
 
 /** Hráč vyzve jiného hráče. Zakládá to i trenér za někoho. */
@@ -107,7 +100,7 @@ export async function createDuel(formData: FormData) {
       seasonId: season.id,
       name,
       description: String(formData.get("description") ?? "").trim() || null,
-      higherWins: checkboxOn(formData.get("higherWins")),
+      ...parseScoreMode(formData.get("mode")),
       challengerId,
       opponentId,
       note: String(formData.get("note") ?? "").trim() || null,
@@ -150,7 +143,12 @@ export async function reportDuelResult(duelId: string, formData: FormData) {
       userId: actor.userId,
       status: { in: ["ACCEPTED", "PENDING", "REPORTED"] },
     },
-    select: { id: true, challengerId: true, opponentId: true },
+    select: {
+      id: true,
+      challengerId: true,
+      opponentId: true,
+      measure: true,
+    },
   });
   if (!duel) return;
 
@@ -160,8 +158,12 @@ export async function reportDuelResult(duelId: string, formData: FormData) {
     String(duel.opponentId) === actor.playerId;
   if (!isParticipant) return;
 
-  const challengerValue = parseValue(formData.get("challengerValue"));
-  const opponentValue = parseValue(formData.get("opponentValue"));
+  // Čte se podle druhu měření — na čas projde i „1:23,45“.
+  const challengerValue = parseMeasured(
+    formData.get("challengerValue"),
+    duel.measure,
+  );
+  const opponentValue = parseMeasured(formData.get("opponentValue"), duel.measure);
   if (challengerValue == null || opponentValue == null) return;
 
   await prisma.duel.update({

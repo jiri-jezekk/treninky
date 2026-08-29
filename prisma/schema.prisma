@@ -129,6 +129,17 @@ model Player {
   @@index([userId])
 }
 
+/**
+ * Jak se výsledek měří. Rozhoduje o zadávání i o zobrazení: na body
+ * je to holé číslo, na čas se píše „1:23,45“ a ukládá v sekundách.
+ * Dřív se čas zadával jedním číslem sekund, takže se psaly celé
+ * vteřiny a desetiny se ztrácely.
+ */
+enum Measure {
+  POINTS
+  TIME
+}
+
 enum DuelStatus {
   PENDING
   ACCEPTED
@@ -153,6 +164,8 @@ model Duel {
   description    String?
   /** false, když vyhrává nižší hodnota (čas). */
   higherWins     Boolean    @default(true)
+  /** Na body, nebo na čas. Kdo vyhrává, říká higherWins. */
+  measure        Measure    @default(POINTS)
   /** Duel je nejlehčí ze tří vah. */
   weightPercent  Int        @default(100)
   challengerId   String
@@ -187,6 +200,8 @@ model Challenge {
   description  String?
   unit         String?
   higherWins   Boolean     @default(true)
+  /** Na body, nebo na čas. Kdo vyhrává, říká higherWins. */
+  measure      Measure     @default(POINTS)
   /** Měsíční výzva je z trojice nejtěžší. */
   weightPercent Int        @default(200)
   startsOn     DateTime    @db.Date

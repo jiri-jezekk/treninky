@@ -28,12 +28,15 @@ import { ActionButton } from "./ActionButton";
 import { czPlural, initials } from "@/lib/czech";
 import { deleteSoloSession } from "@/actions/solo-sessions";
 import type { RatingRow } from "@/lib/rating";
+import { formatMeasured, SCORE_MODE_LABELS, type Measure, type ScoreMode } from "@/lib/duration";
+const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type DuelRow = {
   id: string;
   name: string;
   description: string | null;
   higherWins: boolean;
+  measure: Measure;
   weightPercent: number;
   challengerName: string;
   opponentName: string;
@@ -66,9 +69,8 @@ export type MatchRow = {
     /** Průměrný rating týmu — z něj se počítá. */
     rating: number | null;
     rank: number | null;
-    /** Kolik dostane každý člen po vyhodnocení. Null u uzavřeného. */
-    previewDelta: number | null;
-    playerNames: string[];
+    /** Hráči i s tím, kolik po vyhodnocení dostanou. */
+    players: { playerId: string; name: string; previewDelta: number | null }[];
   }[];
 };
 
@@ -88,6 +90,7 @@ export type ChallengeRow = {
   description: string | null;
   unit: string | null;
   higherWins: boolean;
+  measure: Measure;
   weightPercent: number;
   startsOn: string;
   endsOn: string;
@@ -437,9 +440,18 @@ function Duels({
               className={field}
             />
           </label>
-          <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
-            <input type="checkbox" name="higherWins" defaultChecked />
-            Vyhrává vyšší hodnota (odškrtni u disciplín na čas)
+          <label className="mt-3 block">
+            <span className={label}>Jak se měří</span>
+            <select name="mode" defaultValue="points-high" className={field}>
+              {SCORE_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {SCORE_MODE_LABELS[m]}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs italic text-slate-500">
+              Na čas se zapisuje „1:23,45“ — desetiny se nezahodí.
+            </span>
           </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="submit" className={btnPrimary}>
@@ -499,6 +511,7 @@ function Duels({
                               : d.challengerDelta > 0
                       }
                       pending={d.status === "REPORTED"}
+                      measure={d.measure}
                     />
                   )}
                 </div>
@@ -832,29 +845,50 @@ function Matches({
                           />
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {t.playerNames.join(", ")}
-                      </p>
-                      {/* Co vyhodnocení udělá — vidět dřív, než se na něj klikne. */}
-                      {!m.closed && t.previewDelta != null && (
-                        <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-xs text-slate-600">
-                          <b className="font-heading text-slate-700">{t.rank}. místo</b>
-                          {" · rating týmu "}
-                          {t.rating}
-                          {" · po vyhodnocení "}
-                          <b
-                            className={
-                              t.previewDelta > 0
-                                ? "text-emerald-800"
-                                : t.previewDelta < 0
-                                  ? "text-red-800"
-                                  : "text-slate-600"
-                            }
-                          >
-                            {delta(t.previewDelta) || "±0"}
-                          </b>
-                          {" každému"}
+                      {m.closed ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          {t.players.map((p) => p.name).join(", ")}
                         </p>
+                      ) : (
+                        <>
+                          {/* Co vyhodnocení udělá — vidět dřív, než se na
+                              tlačítko klikne. Každý hráč má svou změnu:
+                              počítá se proti soupeřům podle jeho ratingu. */}
+                          {t.rank != null && (
+                            <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-xs text-slate-600">
+                              <b className="font-heading text-slate-700">
+                                {t.rank}. místo
+                              </b>
+                              {" · průměr týmu "}
+                              {t.rating}
+                            </p>
+                          )}
+                          <ul className="mt-1 space-y-0.5">
+                            {t.players.map((p) => (
+                              <li
+                                key={p.playerId}
+                                className="flex items-center justify-between gap-2 text-xs"
+                              >
+                                <span className="min-w-0 truncate text-slate-600">
+                                  {p.name}
+                                </span>
+                                {p.previewDelta != null && (
+                                  <b
+                                    className={`shrink-0 tabular-nums ${
+                                      p.previewDelta > 0
+                                        ? "text-emerald-800"
+                                        : p.previewDelta < 0
+                                          ? "text-red-800"
+                                          : "text-slate-500"
+                                    }`}
+                                  >
+                                    {delta(p.previewDelta) || "±0"}
+                                  </b>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
                       )}
                     </div>
                   ))}
@@ -939,9 +973,15 @@ function Challenges({
                   className={`${field} tabular-nums`}
                 />
               </label>
-              <label className="flex cursor-pointer items-end gap-2.5 pb-2 text-sm text-slate-700">
-                <input type="checkbox" name="higherWins" defaultChecked />
-                Vyhrává vyšší hodnota
+              <label className="block">
+                <span className={label}>Jak se měří</span>
+                <select name="mode" defaultValue="points-high" className={field}>
+                  {SCORE_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {SCORE_MODE_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             <label className="mt-3 block">
@@ -1042,14 +1082,15 @@ function Challenges({
                           {r.playerName}
                         </span>
                         <span className="shrink-0 font-heading font-bold tabular-nums text-slate-800">
-                          {fmt(r.best, c.unit)}
+                          {formatMeasured(r.best, c.measure, c.unit)}
                         </span>
                       </div>
                       {/* Na vlastním řádku: na mobilu by jinak ukrojilo
                           půlku jména. */}
                       {r.improvement > 0 && (
                         <p className="mt-0.5 pl-8 font-heading text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                          zlepšení o {fmt(r.improvement, c.unit)} od prvního pokusu
+                          zlepšení o {formatMeasured(r.improvement, c.measure, c.unit)}{" "}
+                          od prvního pokusu
                         </p>
                       )}
 
@@ -1066,7 +1107,7 @@ function Challenges({
                             </span>
                             {c.closed ? (
                               <span className="tabular-nums text-slate-700">
-                                {fmt(a.value, c.unit)}
+                                {formatMeasured(a.value, c.measure, c.unit)}
                               </span>
                             ) : (
                               <form
@@ -1265,6 +1306,7 @@ function Scoreboard({
   rightDelta,
   leftWins,
   pending,
+  measure,
 }: {
   leftName: string;
   rightName: string;
@@ -1274,6 +1316,7 @@ function Scoreboard({
   rightDelta: number | null;
   leftWins: boolean | null;
   pending: boolean;
+  measure: Measure;
 }) {
   const rows: {
     name: string;
@@ -1305,7 +1348,7 @@ function Scoreboard({
             )}
           </span>
           <span className="w-16 shrink-0 text-right text-sm tabular-nums text-slate-700">
-            {fmt(r.value)}
+            {formatMeasured(r.value, measure)}
           </span>
           <span
             className={`w-14 shrink-0 text-right font-heading text-sm font-bold tabular-nums ${

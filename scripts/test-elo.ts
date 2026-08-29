@@ -18,7 +18,8 @@ import {
   ratingBand,
   scoreFromValues,
   STARTING_RATING,
-  teamDeltas,
+  matchPlayerDeltas,
+  roundKeepingZeroSum,
   WEIGHT_CHALLENGE_DEFAULT,
   WEIGHT_DUEL_DEFAULT,
   WEIGHT_MATCH_DEFAULT,
@@ -395,92 +396,171 @@ console.log("\nPrůměr týmu:");
 eq("prázdný tým je začátečnický", averageRating([]), 1000);
 eq("průměr se zaokrouhlí", averageRating([1000, 1100, 1201]), 1100);
 
-console.log("\nZápas dvou týmů:");
+console.log("\nZápas dvou týmů — každý hráč zvlášť:");
+
+/** Zkratka: tým stejně silných hráčů. */
+function tym(id: string, score: number, ratings: number[]) {
+  return {
+    teamId: id,
+    score,
+    players: ratings.map((rating, i) => ({ playerId: `${id}${i}`, rating })),
+  };
+}
+const soucet = (out: ReturnType<typeof matchPlayerDeltas>) =>
+  out.reduce((s, t) => s + t.players.reduce((x, p) => x + p.delta, 0), 0);
+
 {
-  const d = teamDeltas([
-    { teamId: "a", rating: 1000, score: 20 },
-    { teamId: "b", rating: 1000, score: 0 },
+  const d = matchPlayerDeltas([
+    tym("a", 20, [1000, 1000, 1000]),
+    tym("b", 0, [1000, 1000, 1000]),
   ]);
   const a = d.find((x) => x.teamId === "a")!;
   const b = d.find((x) => x.teamId === "b")!;
   eq("vítěz je první", a.rank, 1);
   eq("poražený druhý", b.rank, 2);
-  ok("vítěz získává", a.delta > 0, `(${a.delta})`);
-  eq("součet je nula", a.delta + b.delta, 0);
+  ok("vítěz získává", a.players[0]!.delta > 0, `(${a.players[0]!.delta})`);
+  eq("součet je nula", soucet(d), 0);
+  eq(
+    "stejně silní v týmu dostanou stejně",
+    new Set(a.players.map((p) => p.delta)).size,
+    1,
+  );
 }
 {
-  const tesny = teamDeltas([
-    { teamId: "a", rating: 1000, score: 11 },
-    { teamId: "b", rating: 1000, score: 9 },
-  ]).find((x) => x.teamId === "a")!.delta;
-  const drtivy = teamDeltas([
-    { teamId: "a", rating: 1000, score: 20 },
-    { teamId: "b", rating: 1000, score: 0 },
-  ]).find((x) => x.teamId === "a")!.delta;
-  ok("drtivá výhra týmu vynese víc", drtivy > tesny, `(${drtivy} vs ${tesny})`);
+  const tesny = matchPlayerDeltas([
+    tym("a", 11, [1000, 1000]),
+    tym("b", 9, [1000, 1000]),
+  ]).find((x) => x.teamId === "a")!.players[0]!.delta;
+  const drtivy = matchPlayerDeltas([
+    tym("a", 20, [1000, 1000]),
+    tym("b", 0, [1000, 1000]),
+  ]).find((x) => x.teamId === "a")!.players[0]!.delta;
+  ok("drtivá výhra vynese víc", drtivy > tesny, `(${drtivy} vs ${tesny})`);
 }
 {
-  const zapas = teamDeltas([
-    { teamId: "a", rating: 1000, score: 11 },
-    { teamId: "b", rating: 1000, score: 9 },
-  ]).find((x) => x.teamId === "a")!.delta;
+  const zapas = matchPlayerDeltas([
+    tym("a", 11, [1000, 1000]),
+    tym("b", 9, [1000, 1000]),
+  ]).find((x) => x.teamId === "a")!.players[0]!.delta;
   const duel = duelDeltas(1000, 1000, 1, { valueA: 11, valueB: 9 }).deltaA;
   ok("zápas váží víc než stejný duel", zapas > duel, `(${zapas} vs ${duel})`);
 }
 {
-  const d = teamDeltas([
-    { teamId: "a", rating: 1000, score: 10 },
-    { teamId: "b", rating: 1000, score: 10 },
+  const d = matchPlayerDeltas([
+    tym("a", 10, [1000, 1000]),
+    tym("b", 10, [1000, 1000]),
   ]);
-  eq("remíza nikoho nepohne", d.map((x) => x.delta), [0, 0]);
+  eq("remíza nikoho nepohne", d.flatMap((t) => t.players.map((p) => p.delta)), [0, 0, 0, 0]);
   eq("a oba jsou první", d.map((x) => x.rank), [1, 1]);
 }
+
+console.log("\nTOHLE JE TO NOVÉ — v týmu nedostanou všichni stejně:");
 {
-  // Slabý tým, co porazí silný, má získat výrazně.
-  const d = teamDeltas([
-    { teamId: "slabsi", rating: 900, score: 15 },
-    { teamId: "silnejsi", rating: 1300, score: 10 },
+  // Smíšený tým porazí silného soupeře. Slabší v něm má získat víc
+  // než jeho silnější spoluhráč — pro toho je výhra očekávaná.
+  const d = matchPlayerDeltas([
+    { teamId: "a", score: 15, players: [
+      { playerId: "slaby", rating: 900 },
+      { playerId: "silny", rating: 1300 },
+    ] },
+    tym("b", 10, [1200, 1200]),
   ]);
-  const slabsi = d.find((x) => x.teamId === "slabsi")!;
-  ok("překvapení se vyplatí", slabsi.delta >= 30, `(${slabsi.delta})`);
+  const a = d.find((x) => x.teamId === "a")!;
+  const slaby = a.players.find((p) => p.playerId === "slaby")!.delta;
+  const silny = a.players.find((p) => p.playerId === "silny")!.delta;
+  ok("slabší v týmu získá víc", slaby > silny, `(${slaby} vs ${silny})`);
+  ok("oba ale získají", slaby > 0 && silny > 0, `(${slaby}, ${silny})`);
+  eq("součet je pořád nula", soucet(d), 0);
+}
+{
+  // A při prohře naopak: silný ztrácí víc, slabý skoro nic.
+  const d = matchPlayerDeltas([
+    { teamId: "a", score: 5, players: [
+      { playerId: "slaby", rating: 900 },
+      { playerId: "silny", rating: 1300 },
+    ] },
+    tym("b", 15, [1100, 1100]),
+  ]);
+  const a = d.find((x) => x.teamId === "a")!;
+  const slaby = a.players.find((p) => p.playerId === "slaby")!.delta;
+  const silny = a.players.find((p) => p.playerId === "silny")!.delta;
+  ok("silnější ztratí víc", silny < slaby, `(${silny} vs ${slaby})`);
+  ok("prohra se slabším soupeřem slabého moc nesrazí", slaby > -20, `(${slaby})`);
+}
+{
+  // Přesně to, co si JJ přál: hrát proti mnohem lepším nesmí bolet.
+  const d = matchPlayerDeltas([
+    tym("slabsi", 5, [850, 850, 850]),
+    tym("silnejsi", 20, [1400, 1400, 1400]),
+  ]);
+  const ztrata = d.find((x) => x.teamId === "slabsi")!.players[0]!.delta;
+  ok("prohra s mnohem lepšími stojí málo", ztrata > -8, `(${ztrata})`);
+}
+{
+  const d = matchPlayerDeltas([
+    tym("slabsi", 15, [900, 900, 900]),
+    tym("silnejsi", 10, [1300, 1300, 1300]),
+  ]);
+  const zisk = d.find((x) => x.teamId === "slabsi")!.players[0]!.delta;
+  ok("překvapení se vyplatí", zisk >= 30, `(${zisk})`);
+}
+{
+  // Nestejně velké týmy se stávají — někdo přijde pozdě.
+  const d = matchPlayerDeltas([
+    tym("a", 15, [1000, 1000, 1000, 1000, 1000]),
+    tym("b", 10, [1000, 1000, 1000, 1000]),
+  ]);
+  eq("nestejné týmy: součet je nula", soucet(d), 0);
 }
 
 console.log("\nTurnájek čtyř týmů:");
 {
-  const d = teamDeltas([
-    { teamId: "a", rating: 1000, score: 9 },
-    { teamId: "b", rating: 1000, score: 6 },
-    { teamId: "c", rating: 1000, score: 3 },
-    { teamId: "d", rating: 1000, score: 0 },
+  const d = matchPlayerDeltas([
+    tym("a", 9, [1000, 1000]),
+    tym("b", 6, [1000, 1000]),
+    tym("c", 3, [1000, 1000]),
+    tym("d", 0, [1000, 1000]),
   ]);
   eq(
     "pořadí podle skóre",
-    d.sort((x, y) => x.rank - y.rank).map((x) => x.teamId),
+    [...d].sort((x, y) => x.rank - y.rank).map((x) => x.teamId),
     ["a", "b", "c", "d"],
   );
-  ok("první získává", d.find((x) => x.teamId === "a")!.delta > 0);
-  ok("poslední ztrácí", d.find((x) => x.teamId === "d")!.delta < 0);
-  ok(
-    "součet kolem nuly",
-    Math.abs(d.reduce((s, x) => s + x.delta, 0)) <= 2,
-    `(${d.reduce((s, x) => s + x.delta, 0)})`,
-  );
+  ok("první získává", d.find((x) => x.teamId === "a")!.players[0]!.delta > 0);
+  ok("poslední ztrácí", d.find((x) => x.teamId === "d")!.players[0]!.delta < 0);
+  eq("součet je nula", soucet(d), 0);
 }
 {
-  const d = teamDeltas([
-    { teamId: "a", rating: 1000, score: 5 },
-    { teamId: "b", rating: 1000, score: 5 },
-    { teamId: "c", rating: 1000, score: 1 },
+  const d = matchPlayerDeltas([
+    tym("a", 5, [1000]),
+    tym("b", 5, [1000]),
+    tym("c", 1, [1000]),
   ]);
-  eq(
-    "shodné skóre, shodné pořadí",
-    d.filter((x) => x.rank === 1).length,
-    2,
-  );
+  eq("shodné skóre, shodné pořadí", d.filter((x) => x.rank === 1).length, 2);
 }
 {
-  eq("jeden tým nemá s kým", teamDeltas([{ teamId: "a", rating: 1000, score: 5 }])[0]!.delta, 0);
-  eq("žádný tým nespadne", teamDeltas([]).length, 0);
+  const d = matchPlayerDeltas([tym("a", 5, [1000, 1000])]);
+  eq("jeden tým nemá s kým", d[0]!.players[0]!.delta, 0);
+  eq("žádný tým nespadne", matchPlayerDeltas([]).length, 0);
+  eq("tým bez hráčů nespadne", matchPlayerDeltas([tym("a", 5, []), tym("b", 3, [1000])]).length, 2);
+}
+
+console.log("\nZaokrouhlení nesmí nafouknout rating:");
+eq("beze zbytku", roundKeepingZeroSum([2, -2]), [2, -2]);
+eq("zbytek se rozdá", roundKeepingZeroSum([1.5, -1.5]).reduce((a, b) => a + b, 0), 0);
+{
+  // Náhodné rozpady, které dávají dohromady nulu — po zaokrouhlení
+  // to musí platit pořád.
+  let nejhorsi = 0;
+  for (let i = 0; i < 500; i++) {
+    const n = 2 + (i % 9);
+    const vals: number[] = [];
+    for (let j = 0; j < n - 1; j++) vals.push((Math.sin(i * 7 + j) * 37) % 20);
+    vals.push(-vals.reduce((a, b) => a + b, 0));
+    const out = roundKeepingZeroSum(vals);
+    nejhorsi = Math.max(nejhorsi, Math.abs(out.reduce((a, b) => a + b, 0)));
+  }
+  eq("500 náhodných rozpadů má součet nula", nejhorsi, 0);
 }
 
 console.log("\nZařazení:");

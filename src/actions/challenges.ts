@@ -13,7 +13,7 @@ import {
   revertRatingChanges,
 } from "@/lib/rating";
 import { STARTING_RATING } from "@/lib/elo";
-import { checkboxOn } from "@/lib/form-values";
+import { parseMeasured, parseScoreMode } from "@/lib/duration";
 import { MAX_ATTEMPTS_PER_CHALLENGE } from "@/lib/rating-limits";
 import { standings, type Attempt } from "@/lib/challenge-attempts";
 import type { ActionResult } from "@/lib/action-result";
@@ -29,13 +29,6 @@ function parseWeight(raw: unknown, fallback: number): number {
   const n = Number(String(raw ?? "").trim());
   if (!Number.isFinite(n) || n < 10 || n > 500) return fallback;
   return Math.round(n);
-}
-
-function parseValue(raw: unknown): number | null {
-  const value = String(raw ?? "").trim().replace(",", ".");
-  if (value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
 }
 
 export async function createChallenge(formData: FormData) {
@@ -57,7 +50,7 @@ export async function createChallenge(formData: FormData) {
       name,
       description: String(formData.get("description") ?? "").trim() || null,
       unit: String(formData.get("unit") ?? "").trim() || null,
-      higherWins: checkboxOn(formData.get("higherWins")),
+      ...parseScoreMode(formData.get("mode")),
       startsOn,
       endsOn,
     },
@@ -95,12 +88,13 @@ export async function submitChallengeEntry(challengeId: string, formData: FormDa
 
   const challenge = await prisma.challenge.findFirst({
     where: { id: challengeId, userId },
-    select: { id: true, closedAt: true },
+    select: { id: true, closedAt: true, measure: true },
   });
   // Do uzavřené výzvy se dopisovat nedá — pořadí i rating už platí.
   if (!challenge || challenge.closedAt) return;
 
-  const value = parseValue(formData.get("value"));
+  // Na čas projde i „38:24“ — dřív se muselo psát 2304.
+  const value = parseMeasured(formData.get("value"), challenge.measure);
   if (value == null) return;
 
   const note = String(formData.get("note") ?? "").trim() || null;
@@ -130,7 +124,13 @@ export async function submitChallengeEntry(challengeId: string, formData: FormDa
  */
 export async function updateChallengeEntry(entryId: string, formData: FormData) {
   const payToken = String(formData.get("payToken") ?? "") || null;
-  const value = parseValue(formData.get("value"));
+  // Druh měření se bere z výzvy, ne z formuláře — hráč ho neurčuje.
+  const entry = await prisma.challengeEntry.findUnique({
+    where: { id: entryId },
+    select: { challenge: { select: { measure: true } } },
+  });
+  if (!entry) return;
+  const value = parseMeasured(formData.get("value"), entry.challenge.measure);
   if (value == null) return;
   const note = String(formData.get("note") ?? "").trim() || null;
 

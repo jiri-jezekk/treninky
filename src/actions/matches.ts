@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
-import { averageRating, teamDeltas } from "@/lib/elo";
+import { matchPlayerDeltas } from "@/lib/elo";
 import { parseDateInput } from "@/lib/prepaid";
 import { parseDecimal } from "@/lib/form-values";
 import type { ActionResult, MatchPreviewTeam } from "@/lib/action-result";
@@ -157,32 +157,36 @@ export async function previewMatch(
     match.season,
   );
 
-  const deltas = teamDeltas(
+  const outcome = matchPlayerDeltas(
     match.teams.map((t) => ({
       teamId: String(t.id),
-      rating: averageRating(
-        t.members.map((m) => ratings.get(String(m.playerId)) ?? 1000),
-      ),
       score: t.score,
+      players: t.members.map((m) => ({
+        playerId: String(m.playerId),
+        rating: ratings.get(String(m.playerId)) ?? 1000,
+      })),
     })),
     match.weightPercent,
   );
-  const byTeam = new Map(deltas.map((d) => [d.teamId, d]));
+  const byTeam = new Map(outcome.map((o) => [o.teamId, o]));
+  const nameById = new Map(
+    match.teams.flatMap((t) =>
+      t.members.map((m) => [String(m.playerId), m.player.name] as const),
+    ),
+  );
 
   return match.teams.map((t) => {
-    const d = byTeam.get(String(t.id));
+    const o = byTeam.get(String(t.id));
     return {
       teamId: String(t.id),
       teamName: t.name,
-      rank: d?.rank ?? 1,
-      rating: averageRating(
-        t.members.map((m) => ratings.get(String(m.playerId)) ?? 1000),
-      ),
-      delta: d?.delta ?? 0,
-      members: t.members.map((m) => ({
-        playerId: String(m.playerId),
-        playerName: m.player.name,
-        rating: ratings.get(String(m.playerId)) ?? 1000,
+      rank: o?.rank ?? 1,
+      rating: o?.rating ?? 1000,
+      members: (o?.players ?? []).map((p) => ({
+        playerId: p.playerId,
+        playerName: nameById.get(p.playerId) ?? "?",
+        rating: p.rating,
+        delta: p.delta,
       })),
     };
   });
@@ -244,17 +248,19 @@ export async function closeMatch(matchId: string): Promise<ActionResult> {
       match.season,
     );
 
-    const deltas = teamDeltas(
+    // Každý hráč zvlášť podle svého ratingu, ne celý tým stejně.
+    const outcome = matchPlayerDeltas(
       match.teams.map((t) => ({
         teamId: String(t.id),
-        rating: averageRating(
-          t.members.map((m) => ratings.get(String(m.playerId)) ?? 1000),
-        ),
         score: t.score,
+        players: t.members.map((m) => ({
+          playerId: String(m.playerId),
+          rating: ratings.get(String(m.playerId)) ?? 1000,
+        })),
       })),
       match.weightPercent,
     );
-    const deltaByTeam = new Map(deltas.map((d) => [d.teamId, d]));
+    const byTeam = new Map(outcome.map((o) => [o.teamId, o]));
 
     await prisma.$transaction(
       async (tx) => {
@@ -265,23 +271,30 @@ export async function closeMatch(matchId: string): Promise<ActionResult> {
         if (claimed.count === 0) return;
 
         for (const team of match.teams) {
-          const d = deltaByTeam.get(String(team.id));
-          if (!d) continue;
+          const o = byTeam.get(String(team.id));
+          if (!o) continue;
 
+          // U týmu se drží průměr — jednotlivé změny jsou v historii.
+          const prumer =
+            o.players.length === 0
+              ? 0
+              : Math.round(
+                  o.players.reduce((sum, p) => sum + p.delta, 0) / o.players.length,
+                );
           await tx.matchTeam.update({
             where: { id: team.id },
-            data: { delta: d.delta },
+            data: { delta: prumer },
           });
-          if (d.delta === 0) continue;
 
-          for (const m of team.members) {
+          for (const p of o.players) {
+            if (p.delta === 0) continue;
             await applyRatingChange(tx, {
               userId,
               seasonId: match.seasonId,
-              playerId: String(m.playerId),
-              delta: d.delta,
+              playerId: p.playerId,
+              delta: p.delta,
               source: "MATCH",
-              label: `${match.name} — ${team.name}, ${d.rank}. místo`,
+              label: `${match.name} — ${team.name}, ${o.rank}. místo`,
               matchId,
             });
           }

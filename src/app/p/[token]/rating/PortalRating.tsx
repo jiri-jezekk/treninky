@@ -14,6 +14,14 @@ import {
 } from "@/actions/challenges";
 import { deleteSoloSession, logSoloSession } from "@/actions/solo-sessions";
 import { initials } from "@/lib/czech";
+import {
+  formatMeasured,
+  measureHint,
+  SCORE_MODE_LABELS,
+  type Measure,
+  type ScoreMode,
+} from "@/lib/duration";
+const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type PortalDuel = {
   id: string;
@@ -26,6 +34,7 @@ export type PortalDuel = {
   theirValue: number | null;
   myDelta: number | null;
   iReported: boolean;
+  measure: Measure;
   note: string | null;
   higherWins: boolean;
   /** Co se stane po potvrzení. Null, dokud se výsledek nezapsal. */
@@ -78,6 +87,7 @@ type ChallengeRow = {
   /** Moje pokusy. Zapsat jich můžu víc, počítá se nejlepší. */
   myAttempts: { id: string; value: number; when: string; isBest: boolean }[];
   higherWins: boolean;
+  measure: Measure;
 };
 
 const label =
@@ -90,12 +100,6 @@ const btnPrimary =
 const btnOutline =
   "inline-flex items-center justify-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft";
 const btnSm = "px-3 py-1.5 text-xs";
-
-function fmt(value: number | null, unit?: string | null): string {
-  if (value == null) return "—";
-  const n = Number.isInteger(value) ? String(value) : value.toFixed(2);
-  return unit ? `${n} ${unit}` : n;
-}
 
 export function PortalRating({
   payToken,
@@ -212,9 +216,18 @@ export function PortalRating({
                 className={field}
               />
             </label>
-            <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
-              <input type="checkbox" name="higherWins" defaultChecked />
-              Vyhrává vyšší číslo
+            <label className="mt-3 block">
+              <span className={label}>Jak se měří</span>
+              <select name="mode" defaultValue="points-high" className={field}>
+                {SCORE_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {SCORE_MODE_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-xs italic text-slate-500">
+                Na čas piš „1:23,45“ — desetiny se nezahodí.
+              </span>
             </label>
             <label className="mt-3 block">
               <span className={label}>Vzkaz</span>
@@ -300,9 +313,12 @@ export function PortalRating({
                         />
                       </div>
                       <p className="mt-2 text-xs text-slate-500">
-                        {d.higherWins
-                          ? "Vyhrává vyšší číslo."
-                          : "Vyhrává nižší číslo (čas)."}
+                        {measureHint(d.measure)}
+                        {d.measure === "TIME"
+                          ? " · vyhrává kratší čas"
+                          : d.higherWins
+                            ? " · vyhrává vyšší"
+                            : " · vyhrává nižší"}
                       </p>
                       <button type="submit" className={`${btnPrimary} ${btnSm} mt-3`}>
                         Zapsat
@@ -335,6 +351,7 @@ export function PortalRating({
                     theirDelta={d.preview?.theirDelta ?? null}
                     iWin={d.preview?.iWin ?? null}
                     pending
+                    measure={d.measure}
                   />
                   {d.iReported ? (
                     <p className="mt-2 text-xs italic text-slate-500">
@@ -404,7 +421,11 @@ export function PortalRating({
                 <p className="mt-1 text-xs text-slate-500">
                   do {c.endsOn}
                   {c.unit ? ` · ${c.unit}` : ""}
-                  {!c.higherWins && " · vyhrává nižší"}
+                  {c.measure === "TIME"
+                    ? " · vyhrává kratší čas"
+                    : !c.higherWins
+                      ? " · vyhrává nižší"
+                      : ""}
                 </p>
 
                 <form action={submitChallengeEntry.bind(null, c.id)} className="mt-3">
@@ -412,7 +433,7 @@ export function PortalRating({
                   <div className="flex items-end gap-2">
                     <label className="block flex-1">
                       <span className={label}>
-                        Nový pokus{c.unit ? ` (${c.unit})` : ""}
+                        Nový pokus{c.measure === "TIME" ? " (čas)" : c.unit ? ` (${c.unit})` : ""}
                       </span>
                       <input
                         name="value"
@@ -426,8 +447,9 @@ export function PortalRating({
                     </button>
                   </div>
                   <p className="mt-1.5 text-xs italic text-slate-500">
-                    Pokusů můžeš mít kolik chceš — do pořadí se počítá ten
-                    nejlepší, takže horší pokus tě nesrazí.
+                    {measureHint(c.measure, c.unit)}. Pokusů můžeš mít kolik
+                    chceš — do pořadí se počítá ten nejlepší, takže horší pokus
+                    tě nesrazí.
                   </p>
                 </form>
 
@@ -496,12 +518,11 @@ export function PortalRating({
                         </span>
                         {r.improvement > 0 && (
                           <span className="shrink-0 whitespace-nowrap text-emerald-800">
-                            ↑ {r.improvement}
+                            ↑ {formatMeasured(r.improvement, c.measure, c.unit)}
                           </span>
                         )}
                         <span className="shrink-0 tabular-nums text-slate-800">
-                          {r.best}
-                          {c.unit ? ` ${c.unit}` : ""}
+                          {formatMeasured(r.best, c.measure, c.unit)}
                         </span>
                       </li>
                     ))}
@@ -722,6 +743,7 @@ function DuelResult({
   theirDelta,
   iWin,
   pending,
+  measure,
 }: {
   myName: string;
   theirName: string;
@@ -731,6 +753,7 @@ function DuelResult({
   theirDelta: number | null;
   iWin: boolean | null;
   pending?: boolean;
+  measure: Measure;
 }) {
   const rows = [
     { name: myName, value: myValue, delta: myDelta, wins: iWin === true },
@@ -755,7 +778,7 @@ function DuelResult({
             )}
           </span>
           <span className="w-14 shrink-0 text-right text-sm tabular-nums text-slate-700">
-            {fmt(r.value)}
+            {formatMeasured(r.value, measure)}
           </span>
           <span
             className={`w-12 shrink-0 text-right font-heading text-sm font-bold tabular-nums ${

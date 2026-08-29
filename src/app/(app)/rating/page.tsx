@@ -11,7 +11,7 @@ import {
   getRatingHistory,
   getSoloSessions,
 } from "@/lib/rating";
-import { averageRating, duelOutcome, teamDeltas } from "@/lib/elo";
+import { duelOutcome, matchPlayerDeltas } from "@/lib/elo";
 import { standings, type Attempt } from "@/lib/challenge-attempts";
 import { toDateInputValue } from "@/lib/prepaid";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
@@ -102,6 +102,7 @@ export default async function RatingPage() {
       name: d.name,
       description: d.description,
       higherWins: d.higherWins,
+      measure: d.measure,
       weightPercent: d.weightPercent,
       challengerName: d.challenger.name,
       opponentName: d.opponent.name,
@@ -127,30 +128,24 @@ export default async function RatingPage() {
   );
 
   const matchRows: MatchRow[] = matches.map((m) => {
-    const teamRating = new Map(
-      m.teams.map((t) => [
-        String(t.id),
-        averageRating(
-          t.members.map((mm) => matchRatings.get(String(mm.playerId)) ?? 1000),
-        ),
-      ]),
-    );
-
     // Stejná funkce jako při vyhodnocení, aby náhled a skutečnost
-    // nemohly říct každý něco jiného.
-    const previewByTeam =
+    // nemohly říct každý něco jiného. Každý hráč má svou změnu —
+    // slabší v týmu získá za výhru víc než jeho silnější spoluhráč.
+    const outcome =
       m.closedAt == null && m.teams.length >= 2
-        ? new Map(
-            teamDeltas(
-              m.teams.map((t) => ({
-                teamId: String(t.id),
-                rating: teamRating.get(String(t.id)) ?? 1000,
-                score: t.score,
+        ? matchPlayerDeltas(
+            m.teams.map((t) => ({
+              teamId: String(t.id),
+              score: t.score,
+              players: t.members.map((mm) => ({
+                playerId: String(mm.playerId),
+                rating: matchRatings.get(String(mm.playerId)) ?? 1000,
               })),
-              m.weightPercent,
-            ).map((d) => [d.teamId, d]),
+            })),
+            m.weightPercent,
           )
         : null;
+    const byTeam = outcome ? new Map(outcome.map((o) => [o.teamId, o])) : null;
 
     return {
       id: m.id,
@@ -160,16 +155,22 @@ export default async function RatingPage() {
       playedOn: toDateInputValue(m.playedOn),
       closed: m.closedAt != null,
       teams: m.teams.map((t) => {
-        const p = previewByTeam?.get(String(t.id)) ?? null;
+        const o = byTeam?.get(String(t.id)) ?? null;
+        const deltaByPlayer = new Map(
+          (o?.players ?? []).map((p) => [p.playerId, p.delta]),
+        );
         return {
           id: t.id,
           name: t.name,
           score: t.score,
           delta: t.delta,
-          rating: p ? (teamRating.get(String(t.id)) ?? null) : null,
-          rank: p?.rank ?? null,
-          previewDelta: p?.delta ?? null,
-          playerNames: t.members.map((mm) => mm.player.name),
+          rating: o?.rating ?? null,
+          rank: o?.rank ?? null,
+          players: t.members.map((mm) => ({
+            playerId: String(mm.playerId),
+            name: mm.player.name,
+            previewDelta: deltaByPlayer.get(String(mm.playerId)) ?? null,
+          })),
         };
       }),
     };
@@ -198,6 +199,7 @@ export default async function RatingPage() {
       description: c.description,
       unit: c.unit,
       higherWins: c.higherWins,
+      measure: c.measure,
       weightPercent: c.weightPercent,
       startsOn: toDateInputValue(c.startsOn),
       endsOn: toDateInputValue(c.endsOn),

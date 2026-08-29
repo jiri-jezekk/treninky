@@ -229,64 +229,132 @@ export function ratingBand(rating: number): string {
   return "Začátečník";
 }
 
-export type TeamResult = {
+export type MatchTeamInput = {
   teamId: string;
-  /** Průměrný rating členů — tým vystupuje jako jeden „hráč“. */
-  rating: number;
   score: number;
+  players: { playerId: string; rating: number }[];
 };
 
-export type TeamDelta = {
+export type MatchTeamOutcome = {
   teamId: string;
   rank: number;
-  /** Změna, kterou dostane každý člen týmu. */
-  delta: number;
+  /** Průměrný rating týmu — jen pro výpis, nepočítá se z něj. */
+  rating: number;
+  players: { playerId: string; rating: number; delta: number }[];
 };
 
+/** Pořadí týmů podle skóre. Shodné skóre = shodné pořadí (1, 2, 2, 4). */
+function rankTeams(teams: { teamId: string; score: number }[]): Map<string, number> {
+  const sorted = [...teams].sort((a, b) => b.score - a.score);
+  const out = new Map<string, number>();
+  sorted.forEach((t, i) => {
+    const prev = sorted[i - 1];
+    out.set(t.teamId, prev && prev.score === t.score ? out.get(prev.teamId)! : i + 1);
+  });
+  return out;
+}
+
 /**
- * Rating po zápase týmů.
+ * Zaokrouhlení, které nerozbije nulový součet.
  *
- * Tým se počítá jako jeden hráč s průměrným ratingem svých členů a
- * změna pak platí pro každého z nich. Slabší hráč v silném týmu tak
- * získá míň, než kdyby vyhrál sám — a naopak.
- *
- * Dva týmy se počítají jako duel, takže se uplatní i rozdíl skóre
- * (20:0 hne ratingem víc než 11:9). U tří a víc týmů rozhoduje pořadí,
- * stejně jako u měsíční výzvy.
+ * Kdyby se každá změna zaokrouhlila zvlášť, součet by po zaokrouhlení
+ * skoro nikdy nevyšel na nulu a rating by se v čase pomalu nafukoval
+ * nebo scvrkával. Zbytek se proto rozdá tam, kde bylo zaokrouhlení
+ * nejnespravedlivější.
  */
-export function teamDeltas(
-  teams: TeamResult[],
+export function roundKeepingZeroSum(values: number[]): number[] {
+  const rounded = values.map((v) => Math.round(v));
+  let residual = -rounded.reduce((sum, v) => sum + v, 0);
+  if (residual === 0) return rounded;
+
+  const step = residual > 0 ? 1 : -1;
+  // Nejdřív ti, komu zaokrouhlení ubralo (resp. přidalo) nejvíc.
+  const order = values
+    .map((v, i) => ({ i, err: v - rounded[i]! }))
+    .sort((a, b) => (step > 0 ? b.err - a.err : a.err - b.err));
+
+  let k = 0;
+  while (residual !== 0 && order.length > 0) {
+    rounded[order[k % order.length]!.i] += step;
+    residual -= step;
+    k++;
+  }
+  return rounded;
+}
+
+/**
+ * Rating po zápase týmů — pro každého hráče zvlášť.
+ *
+ * Dřív dostal celý tým totéž: tým se počítal jako jeden hráč s průměrným
+ * ratingem. To ale znamenalo, že slabší hráč nasazený k silným jen vezl
+ * a silný hráč mezi slabšími bral plnou odměnu za výhru, kterou nikdo
+ * nečekal jinak. Teď se každý počítá proti soupeřům podle **svého**
+ * ratingu: kdo porazí výrazně lepší, získá hodně; kdo s nimi prohraje,
+ * ztratí skoro nic. To je celý smysl Ela a u zápasů to platit má stejně
+ * jako u duelů.
+ *
+ * Počítá se po dvojicích hráč proti hráči přes všechny soupeřící týmy.
+ * Obě strany každé dvojice dostávají tutéž váhu, takže součet všech změn
+ * je přesně nula — rating se nenafukuje. Dělí se průměrnou velikostí
+ * dvojice týmů a počtem soupeřů, aby se pohyb nezvětšoval s tím, kolik
+ * lidí zrovna přišlo.
+ *
+ * Dva týmy se počítají i s rozdílem skóre (20:0 hne ratingem víc než
+ * 11:9). U tří a víc týmů se sečtou všechny dvojice.
+ */
+export function matchPlayerDeltas(
+  teams: MatchTeamInput[],
   weightPercent: number = WEIGHT_MATCH_DEFAULT,
-): TeamDelta[] {
-  if (teams.length < 2) {
-    return teams.map((t) => ({ teamId: t.teamId, rank: 1, delta: 0 }));
+): MatchTeamOutcome[] {
+  const ranks = rankTeams(teams);
+  const withRating = teams.map((t) => ({
+    ...t,
+    rating: averageRating(t.players.map((p) => p.rating)),
+  }));
+
+  const raw = new Map<string, number>();
+  for (const t of teams) for (const p of t.players) raw.set(p.playerId, 0);
+
+  const opponents = Math.max(1, teams.length - 1);
+  const k = K_DUEL * (weightPercent / 100);
+
+  for (let a = 0; a < teams.length; a++) {
+    for (let b = a + 1; b < teams.length; b++) {
+      const A = teams[a]!;
+      const B = teams[b]!;
+      if (A.players.length === 0 || B.players.length === 0) continue;
+
+      const scoreA: Score = A.score === B.score ? 0.5 : A.score > B.score ? 1 : 0;
+      // U remízy nemá rozdíl skóre co násobit.
+      const margin = scoreA === 0.5 ? 1 : marginMultiplier(A.score, B.score);
+      const size = (A.players.length + B.players.length) / 2;
+      const scale = (k * margin) / (size * opponents);
+
+      for (const pi of A.players) {
+        for (const pj of B.players) {
+          const d = scale * (scoreA - expectedScore(pi.rating, pj.rating));
+          raw.set(pi.playerId, raw.get(pi.playerId)! + d);
+          // Přesný opak, takže dvojice dá dohromady nulu.
+          raw.set(pj.playerId, raw.get(pj.playerId)! - d);
+        }
+      }
+    }
   }
 
-  if (teams.length === 2) {
-    const [a, b] = teams as [TeamResult, TeamResult];
-    const score: Score = a.score === b.score ? 0.5 : a.score > b.score ? 1 : 0;
-    const { deltaA, deltaB } = duelDeltas(a.rating, b.rating, score, {
-      weightPercent,
-      valueA: a.score,
-      valueB: b.score,
-    });
-    const aWins = a.score > b.score;
-    const bWins = b.score > a.score;
-    return [
-      { teamId: a.teamId, rank: aWins ? 1 : bWins ? 2 : 1, delta: deltaA },
-      { teamId: b.teamId, rank: bWins ? 1 : aWins ? 2 : 1, delta: deltaB },
-    ];
-  }
+  // Zaokrouhluje se až na konci a najednou, aby nulový součet přežil.
+  const ids = [...raw.keys()];
+  const rounded = roundKeepingZeroSum(ids.map((id) => raw.get(id)!));
+  const deltaById = new Map(ids.map((id, i) => [id, rounded[i]!]));
 
-  const asChallenge = challengeDeltas(
-    teams.map((t) => ({ playerId: t.teamId, rating: t.rating, value: t.score })),
-    true,
-    { weightPercent },
-  );
-  return asChallenge.map((d) => ({
-    teamId: d.playerId,
-    rank: d.rank,
-    delta: d.delta,
+  return withRating.map((t) => ({
+    teamId: t.teamId,
+    rank: ranks.get(t.teamId) ?? 1,
+    rating: t.rating,
+    players: t.players.map((p) => ({
+      playerId: p.playerId,
+      rating: p.rating,
+      delta: deltaById.get(p.playerId) ?? 0,
+    })),
   }));
 }
 

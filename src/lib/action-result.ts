@@ -24,9 +24,13 @@ export type MatchPreviewTeam = {
   teamId: string;
   teamName: string;
   rank: number;
-  /** Průměrný rating týmu — z něj se počítá. */
+  /** Průměrný rating týmu — jen pro výpis. */
   rating: number;
-  /** Kolik dostane každý člen. */
-  delta: number;
-  members: { playerId: string; playerName: string; rating: number }[];
+  members: {
+    playerId: string;
+    playerName: string;
+    rating: number;
+    /** Kolik dostane tenhle hráč — každý podle svého ratingu. */
+    delta: number;
+  }[];
 };

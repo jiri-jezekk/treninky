@@ -155,6 +155,7 @@ export default async function PortalRatingPage({
       myDelta: iAmChallenger ? d.challengerDelta : d.opponentDelta,
       // Kdo výsledek zapsal, ten ho nemůže sám potvrdit.
       iReported: d.reportedById != null && String(d.reportedById) === me,
+      measure: d.measure,
       note: d.note,
       higherWins: d.higherWins,
       preview,
@@ -214,6 +215,7 @@ export default async function PortalRatingPage({
               description: c.description,
               unit: c.unit,
               higherWins: c.higherWins,
+              measure: c.measure,
               endsOn: toDateInputValue(c.endsOn),
               standings: poradi.map((r) => ({
                 playerId: r.playerId,
