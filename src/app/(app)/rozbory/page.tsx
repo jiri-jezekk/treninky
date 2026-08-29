@@ -44,6 +44,7 @@ export default async function RozboryPage() {
     color: t.color,
     side: t.side,
     groupLabel: t.groupLabel,
+    subLabel: t.subLabel,
     sortOrder: t.sortOrder,
     archived: t.archived,
   }));

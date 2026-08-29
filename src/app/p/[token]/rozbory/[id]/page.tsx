@@ -84,6 +84,9 @@ export default async function PortalRozborDetailPage({
             }}
             types={data.types}
             events={data.events}
+            comments={data.comments}
+            reviewId={id}
+            payToken={token}
             viewerId={String(viewer.id)}
           />
         </div>

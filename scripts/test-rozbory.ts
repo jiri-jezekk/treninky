@@ -228,6 +228,47 @@ console.log("\nSkupiny tlačítek a podíly (kvůli vyhodnocení):");
   check("nepoužité tlačítko má nulu", s.balance.byType.find((t) => t.typeId === "chyceni")!.share, 0);
 }
 
+console.log("\nPodskupiny — kolik z hitů padlo z counteru:");
+{
+  // Přesně jeho případ: counter zahraný rychle i pomalu je tentýž
+  // herní moment. Sečíst se musí, jinak z čísel nic nevyčte.
+  const t: StatType[] = [
+    { id: "cf", label: "Hit counter fast", color: "#0ea5e9", side: "FOR", sortOrder: 0, archived: false, groupLabel: "HIT", subLabel: "counter" },
+    { id: "cs", label: "Hit counter slow", color: "#059669", side: "FOR", sortOrder: 1, archived: false, groupLabel: "HIT", subLabel: "counter" },
+    { id: "ut", label: "Hit z útoku", color: "#7c3aed", side: "FOR", sortOrder: 2, archived: false, groupLabel: "HIT", subLabel: "útok" },
+    { id: "dc", label: "Dead counter", color: "#dc2626", side: "AGAINST", sortOrder: 3, archived: false, groupLabel: "DEAD", subLabel: "counter" },
+  ];
+  const s = computeStats(
+    [
+      ev("cf", 10, null), ev("cf", 20, null), ev("cf", 30, null),
+      ev("cs", 40, null), ev("cs", 50, null),
+      ev("ut", 60, null), ev("ut", 70, null), ev("ut", 80, null),
+      ev("dc", 90, null),
+    ],
+    t,
+  );
+
+  const hit = s.balance.byGroup.find((g) => g.name === "HIT")!;
+  check("skupina HIT má osm zápisů", hit.total, 8);
+  check("podskupiny v pořadí tlačítek", hit.subs.map((x) => x.name), ["counter", "útok"]);
+  check("counter sečten přes obě tlačítka", hit.subs[0]!.total, 5);
+  // Tohle je ta věta, kvůli které podskupiny vznikly.
+  check("podíl counteru na hitech", Math.round(hit.subs[0]!.share * 100), 63);
+  check("útok zbytek", Math.round(hit.subs[1]!.share * 100), 38);
+  check("součet podskupin = skupina", hit.subs.reduce((n, x) => n + x.total, 0), hit.total);
+
+  // Stejně pojmenovaná podskupina v jiné skupině je jiná věc.
+  const dead = s.balance.byGroup.find((g) => g.name === "DEAD")!;
+  check("counter v DEAD se nemíchá s HIT", dead.subs[0]!.total, 1);
+  check("a má celou svou skupinu", dead.subs[0]!.share, 1);
+}
+{
+  // Bez podskupin zůstane jedna bezejmenná — UI podle toho pozná,
+  // že nemá co rozpadat.
+  const s = computeStats([ev("hit", 10, null), ev("dostali", 20, null)], typy);
+  check("bez podskupin jedna bezejmenná", s.balance.byGroup[0]!.subs.map((x) => x.name), [null]);
+}
+
 console.log("\nSouhrn napříč zápasy:");
 {
   const rozbory = [

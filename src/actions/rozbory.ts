@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import { hasPortalSession } from "@/lib/player-portal-session";
 import { parseDateInput } from "@/lib/prepaid";
 import { parseYouTubeId } from "@/lib/youtube";
 import { DEFAULT_EVENT_TYPES, REVIEW_COLORS } from "@/lib/review-defaults";
@@ -333,6 +334,131 @@ export async function setShares(
   }
 }
 
+/* -------------------------------------------------- komentáře */
+
+const komentarSchema = z.string().trim().min(1, "Napiš něco.").max(1000);
+
+/**
+ * Komentář k rozboru — od trenéra i od hráče.
+ *
+ * Hráč se hlásí odkazem a heslem, ne účtem, takže se ověřuje token:
+ * musí mít platnou session **a** rozbor musí být nasdílený jemu. Bez
+ * druhé podmínky by stačilo tipnout id rozboru a napsat do cizího.
+ */
+export async function addComment(
+  reviewId: string,
+  text: unknown,
+  payToken?: string,
+): Promise<ActionResult> {
+  try {
+    const parsed = komentarSchema.safeParse(text);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? "Neplatný komentář." };
+    }
+
+    if (payToken) {
+      if (!(await hasPortalSession(payToken))) {
+        return { ok: false, error: "Přihlas se prosím znovu." };
+      }
+      const player = await prisma.player.findUnique({
+        where: { payToken },
+        select: { id: true, name: true, userId: true },
+      });
+      if (!player) return { ok: false, error: "Neznámý hráč." };
+
+      const smi = await prisma.videoReview.findFirst({
+        where: {
+          id: reviewId,
+          userId: String(player.userId),
+          OR: [{ sharedAll: true }, { shares: { some: { playerId: String(player.id) } } }],
+        },
+        select: { id: true },
+      });
+      if (!smi) return { ok: false, error: "Rozbor nenalezen." };
+
+      await prisma.reviewComment.create({
+        data: {
+          reviewId,
+          playerId: String(player.id),
+          authorName: player.name,
+          body: parsed.data,
+        },
+      });
+
+      revalidatePath(`/p/${payToken}/rozbory/${reviewId}`);
+      revalidateReviews(reviewId);
+      return { ok: true, message: "Přidáno." };
+    }
+
+    const userId = await requireUserId();
+    if (!(await ownsReview(userId, reviewId))) {
+      return { ok: false, error: "Rozbor nenalezen." };
+    }
+    const trener = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    await prisma.reviewComment.create({
+      data: {
+        reviewId,
+        playerId: null,
+        authorName: trener?.name?.trim() || "Trenér",
+        body: parsed.data,
+      },
+    });
+
+    revalidateReviews(reviewId);
+    return { ok: true, message: "Přidáno." };
+  } catch (e) {
+    console.error("[addComment]", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Komentář se neuložil." };
+  }
+}
+
+/** Hráč smaže svůj komentář, trenér kterýkoli u svého rozboru. */
+export async function deleteComment(
+  commentId: string,
+  payToken?: string,
+): Promise<ActionResult> {
+  try {
+    const komentar = await prisma.reviewComment.findUnique({
+      where: { id: commentId },
+      select: { id: true, playerId: true, reviewId: true },
+    });
+    if (!komentar) return { ok: true };
+
+    if (payToken) {
+      if (!(await hasPortalSession(payToken))) {
+        return { ok: false, error: "Přihlas se prosím znovu." };
+      }
+      const player = await prisma.player.findUnique({
+        where: { payToken },
+        select: { id: true },
+      });
+      // Cizí komentář hráč nesmaže, ani ten trenérův.
+      if (!player || komentar.playerId !== String(player.id)) {
+        return { ok: false, error: "Smazat jde jen vlastní komentář." };
+      }
+      await prisma.reviewComment.delete({ where: { id: commentId } });
+      revalidatePath(`/p/${payToken}/rozbory/${String(komentar.reviewId)}`);
+      revalidateReviews(String(komentar.reviewId));
+      return { ok: true };
+    }
+
+    const userId = await requireUserId();
+    if (!(await ownsReview(userId, String(komentar.reviewId)))) {
+      return { ok: false, error: "Rozbor nenalezen." };
+    }
+    await prisma.reviewComment.delete({ where: { id: commentId } });
+    revalidateReviews(String(komentar.reviewId));
+    return { ok: true };
+  } catch (e) {
+    console.error("[deleteComment]", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Smazání se nepovedlo." };
+  }
+}
+
 /* ---------------------------------------------------- soupiska */
 
 /**
@@ -394,6 +520,8 @@ const typesSchema = z.array(
     side: z.enum(["FOR", "AGAINST", "NEUTRAL"]),
     /** Nadřazená skupina (HIT, DEAD…); prázdné = tlačítko stojí samo. */
     groupLabel: z.string().trim().max(24).optional(),
+    /** Podskupina uvnitř skupiny (counter, z útoku…). */
+    subLabel: z.string().trim().max(24).optional(),
   }),
 ).max(30);
 
@@ -445,6 +573,7 @@ export async function saveEventTypes(types: unknown): Promise<ActionResult> {
               color,
               side: t.side,
               groupLabel: skupina(t.groupLabel),
+              subLabel: skupina(t.subLabel),
               sortOrder: i,
               archived: false,
             },
@@ -457,6 +586,7 @@ export async function saveEventTypes(types: unknown): Promise<ActionResult> {
               color,
               side: t.side,
               groupLabel: skupina(t.groupLabel),
+              subLabel: skupina(t.subLabel),
               sortOrder: i,
             },
           });

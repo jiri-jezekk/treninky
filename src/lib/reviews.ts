@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import type { StatEvent, StatType } from "@/lib/review-stats";
 import { mujSouhrn, souhrnRozboru, type MujSouhrn } from "@/lib/review-summary";
-import { formatDateDdMmYyyy } from "@/lib/date-display";
+import { formatDateDdMmYyyy, formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
+import type { Komentar } from "@/components/ReviewKomentare";
 
 /**
  * Čtení rozborů pro hráčský portál.
@@ -69,6 +70,7 @@ export async function getSharedReview(
   };
   types: StatType[];
   events: (StatEvent & { note: string | null })[];
+  comments: Komentar[];
 } | null> {
   const review = await prisma.videoReview.findFirst({
     where: { id: reviewId, userId, ...sdilenoS(playerId) },
@@ -77,6 +79,7 @@ export async function getSharedReview(
         orderBy: { atSeconds: "asc" },
         include: { player: { select: { name: true } } },
       },
+      comments: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!review) return null;
@@ -100,6 +103,7 @@ export async function getSharedReview(
       color: t.color,
       side: t.side,
       groupLabel: t.groupLabel,
+      subLabel: t.subLabel,
       sortOrder: t.sortOrder,
       archived: t.archived,
     })),
@@ -110,6 +114,13 @@ export async function getSharedReview(
       playerId: e.playerId == null ? null : String(e.playerId),
       playerName: e.player?.name ?? null,
       note: e.note,
+    })),
+    comments: review.comments.map((k) => ({
+      id: String(k.id),
+      authorName: k.authorName,
+      body: k.body,
+      createdLabel: formatDateTimeDdMmYyyy24h(k.createdAt),
+      playerId: k.playerId == null ? null : String(k.playerId),
     })),
   };
 }
@@ -151,6 +162,7 @@ export async function getSharedSummary(
     color: t.color,
     side: t.side,
     groupLabel: t.groupLabel,
+      subLabel: t.subLabel,
     sortOrder: t.sortOrder,
     archived: t.archived,
   }));

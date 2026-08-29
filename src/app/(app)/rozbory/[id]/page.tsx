@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ReviewTracker } from "./ReviewTracker";
 import { ensureDefaultEventTypes } from "@/actions/rozbory";
-import { formatDateDdMmYyyy } from "@/lib/date-display";
+import { formatDateDdMmYyyy, formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
 import { toDateInputValue } from "@/lib/prepaid";
 import type { StatType } from "@/lib/review-stats";
 import { prisma } from "@/lib/prisma";
@@ -27,6 +27,7 @@ export default async function RozborDetailPage({
         },
         shares: { select: { playerId: true } },
         roster: { select: { playerId: true } },
+        comments: { orderBy: { createdAt: "asc" } },
       },
     }),
     prisma.reviewEventType.findMany({
@@ -47,6 +48,7 @@ export default async function RozborDetailPage({
     color: t.color,
     side: t.side,
     groupLabel: t.groupLabel,
+    subLabel: t.subLabel,
     sortOrder: t.sortOrder,
     archived: t.archived,
   }));
@@ -77,6 +79,13 @@ export default async function RozborDetailPage({
         }}
         types={statTypes}
         players={players.map((p) => ({ id: String(p.id), name: p.name }))}
+        comments={review.comments.map((k) => ({
+          id: String(k.id),
+          authorName: k.authorName,
+          body: k.body,
+          createdLabel: formatDateTimeDdMmYyyy24h(k.createdAt),
+          playerId: k.playerId == null ? null : String(k.playerId),
+        }))}
         events={review.events.map((e) => ({
           id: String(e.id),
           typeId: String(e.typeId),

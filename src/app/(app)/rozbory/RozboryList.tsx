@@ -162,6 +162,8 @@ type Radek = {
   side: ReviewSideValue;
   /** Nadřazená skupina (HIT, DEAD…); prázdné = tlačítko stojí samo. */
   groupLabel: string;
+  /** Podskupina uvnitř skupiny (counter, z útoku…). */
+  subLabel: string;
 };
 
 function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => void }) {
@@ -173,6 +175,7 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
       color: t.color,
       side: t.side,
       groupLabel: t.groupLabel ?? "",
+      subLabel: t.subLabel ?? "",
     })),
   );
   const [chyba, setChyba] = useState<string | null>(null);
@@ -193,10 +196,21 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
         pak vedle počtu vyjde i podíl uvnitř skupiny — teprve ten řekne, co
         z toho funguje. Prázdná skupina znamená, že tlačítko stojí samo.
       </p>
+      <p className="mb-4 text-xs text-slate-500">
+        Podskupina spojí tlačítka, která jsou tentýž herní moment zahraný
+        jinak — „Hit counter fast“ a „Hit counter slow“ dej obojí do
+        podskupiny <em>counter</em> a ve statistice uvidíš, kolik z hitů
+        padlo z counteru dohromady.
+      </p>
 
       {/* Nabídka už použitých skupin: ať se HIT nezapíše třikrát jinak. */}
       <datalist id="skupiny-tlacitek">
         {[...new Set(rows.map((r) => r.groupLabel.trim()).filter((g) => g !== ""))].map((g) => (
+          <option key={g} value={g} />
+        ))}
+      </datalist>
+      <datalist id="podskupiny-tlacitek">
+        {[...new Set(rows.map((r) => r.subLabel.trim()).filter((g) => g !== ""))].map((g) => (
           <option key={g} value={g} />
         ))}
       </datalist>
@@ -230,6 +244,14 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
                 placeholder="skupina"
                 aria-label="Skupina"
                 className="w-24 shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-club"
+              />
+              <input
+                value={t.subLabel}
+                onChange={(e) => uprav(i, { subLabel: e.target.value })}
+                list="podskupiny-tlacitek"
+                placeholder="podskupina"
+                aria-label="Podskupina"
+                className="w-28 shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-club"
               />
               <button
                 type="button"
@@ -265,7 +287,13 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
         onClick={() =>
           setRows((r) => [
             ...r,
-            { label: "Nová akce", color: REVIEW_COLORS[0]!, side: "NEUTRAL", groupLabel: "" },
+            {
+              label: "Nová akce",
+              color: REVIEW_COLORS[0]!,
+              side: "NEUTRAL",
+              groupLabel: "",
+              subLabel: "",
+            },
           ])
         }
       >
@@ -296,6 +324,7 @@ function SpravaTlacitek({ types, onDone }: { types: StatType[]; onDone: () => vo
                   color: r.color,
                   side: r.side,
                   groupLabel: r.groupLabel.trim(),
+                  subLabel: r.subLabel.trim(),
                 })),
               );
               if (!res.ok) {

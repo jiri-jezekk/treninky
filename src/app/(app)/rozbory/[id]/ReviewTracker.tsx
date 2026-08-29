@@ -14,6 +14,7 @@ import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
 import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
 import { VideoOvladani } from "@/components/VideoOvladani";
 import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
+import { ReviewKomentare, type Komentar } from "@/components/ReviewKomentare";
 import {
   deleteEvent,
   deleteReview,
@@ -138,11 +139,13 @@ export function ReviewTracker({
   types,
   players,
   events: serverEvents,
+  comments,
 }: {
   review: Review;
   types: StatType[];
   players: Hrac[];
   events: Ev[];
+  comments: Komentar[];
 }) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -989,6 +992,13 @@ export function ReviewTracker({
             )}
           </Panel>
         </div>
+      </div>
+
+      {/* Debata k rozboru. Hráči píšou ze svého odkazu, trenér odsud. */}
+      <div className="mt-4">
+        <Panel>
+          <ReviewKomentare reviewId={review.id} komentare={comments} trener />
+        </Panel>
       </div>
 
       {modal === "soupiska" && (

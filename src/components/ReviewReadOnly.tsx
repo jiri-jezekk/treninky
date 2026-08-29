@@ -5,6 +5,7 @@ import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
 import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
 import { VideoOvladani } from "@/components/VideoOvladani";
 import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
+import { ReviewKomentare, type Komentar } from "@/components/ReviewKomentare";
 import { computeStats, type StatEvent, type StatType } from "@/lib/review-stats";
 import { indexBoduVCase } from "@/lib/review-tracker";
 import { formatVideoTime } from "@/lib/youtube";
@@ -38,6 +39,9 @@ export function ReviewReadOnly({
   review,
   types,
   events,
+  comments,
+  reviewId,
+  payToken,
   viewerId,
 }: {
   review: {
@@ -49,6 +53,10 @@ export function ReviewReadOnly({
   };
   types: StatType[];
   events: Zapis[];
+  comments: Komentar[];
+  /** Id rozboru a token hráče — kvůli komentářům. */
+  reviewId: string;
+  payToken: string;
   /** Kdo se dívá — kvůli filtru „jen moje“ a zvýraznění v tabulce. */
   viewerId: string;
 }) {
@@ -271,6 +279,16 @@ export function ReviewReadOnly({
         <div className="mt-3">
           <HraciPodleAkci stats={stats} zvyraznit={viewerId} />
         </div>
+      </section>
+
+      {/* Debata na konec: nejdřív se rozbor projde, pak se o něm mluví. */}
+      <section className={`${card} mt-4`}>
+        <ReviewKomentare
+          reviewId={reviewId}
+          komentare={comments}
+          payToken={payToken}
+          viewerId={viewerId}
+        />
       </section>
     </>
   );

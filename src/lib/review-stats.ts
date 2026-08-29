@@ -33,6 +33,12 @@ export type StatType = {
    * Kvůli vyhodnocení: podíl uvnitř skupiny říká víc než holý počet.
    */
   groupLabel?: string | null;
+  /**
+   * Podskupina uvnitř skupiny (counter, z útoku…). „Hit counter fast“
+   * a „Hit counter slow“ je tentýž herní moment zahraný jinak; teprve
+   * jejich součet řekne, kolik hitů padlo z counteru.
+   */
+  subLabel?: string | null;
 };
 
 export type TypeCount = {
@@ -45,11 +51,22 @@ export type TypeCount = {
   share: number;
 };
 
+/** Podskupina uvnitř skupiny. `name === null` = tlačítka bez podskupiny. */
+export type SubCount = {
+  name: string | null;
+  total: number;
+  /** Podíl na skupině, 0–1 — „z hitů bylo 61 % z counteru“. */
+  share: number;
+  types: TypeCount[];
+};
+
 /** Skupina tlačítek. `name === null` jsou tlačítka bez skupiny. */
 export type GroupCount = {
   name: string | null;
   total: number;
   types: TypeCount[];
+  /** Totéž po podskupinách; bez podskupiny je jediná s name === null. */
+  subs: SubCount[];
 };
 
 export type Balance = {
@@ -186,16 +203,39 @@ export function computeStats(
   // Skupiny v pořadí prvního výskytu, tlačítka bez skupiny na konci —
   // jinak by se pořadí přehazovalo podle toho, co kdo naklikal.
   const skupiny = new Map<string | null, GroupCount>();
+  const podskupiny = new Map<string, SubCount>();
   for (let i = 0; i < vPrehledu.length; i++) {
     const klic = klicSkupiny(vPrehledu[i]!.groupLabel);
     let g = skupiny.get(klic);
     if (!g) {
-      g = { name: klic, total: 0, types: [] };
+      g = { name: klic, total: 0, types: [], subs: [] };
       skupiny.set(klic, g);
     }
     const radek = byType[i]!;
     g.types.push(radek);
     g.total += radek.count;
+
+    // Podskupina žije uvnitř skupiny: „counter“ v HIT a „counter“
+    // v DEAD jsou dvě různé věci a sečíst se nesmí.
+    const podKlic = klicSkupiny(vPrehledu[i]!.subLabel);
+    const mapaKlic = `${klic ?? ""}\u0000${podKlic ?? ""}`;
+    let sub = podskupiny.get(mapaKlic);
+    if (!sub) {
+      sub = { name: podKlic, total: 0, share: 0, types: [] };
+      podskupiny.set(mapaKlic, sub);
+      g.subs.push(sub);
+    }
+    sub.types.push(radek);
+    sub.total += radek.count;
+  }
+
+  // Podíly podskupin až nakonec, když jsou známé součty skupin.
+  // Podskupina bez názvu jde na konec, jako tlačítka bez skupiny.
+  for (const g of skupiny.values()) {
+    for (const sub of g.subs) {
+      sub.share = g.total > 0 ? sub.total / g.total : 0;
+    }
+    g.subs.sort((a, b) => Number(a.name == null) - Number(b.name == null));
   }
   const byGroup = [...skupiny.values()].sort(
     (a, b) => Number(a.name == null) - Number(b.name == null),

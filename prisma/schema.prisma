@@ -127,6 +127,7 @@ model Player {
   reviewEvents ReviewEvent[]
   reviewShares ReviewShare[]
   reviewRoster ReviewRoster[]
+  reviewComments ReviewComment[]
   /** Vypnuté = hráč se do ratingu nepočítá a v žebříčku není. */
   inRating     Boolean                   @default(true)
 
@@ -684,6 +685,7 @@ model VideoReview {
   events    ReviewEvent[]
   shares    ReviewShare[]
   roster    ReviewRoster[]
+  comments  ReviewComment[]
 
   @@index([userId, playedOn])
 }
@@ -696,6 +698,30 @@ model VideoReview {
  * nebyla. Prázdná soupiska znamená „všichni“: staré rozbory fungují
  * dál a nový jde začít bez vyplňování.
  */
+/**
+ * Komentář k rozboru.
+ *
+ * Rozbor je debata, ne vývěska: hráč, co u toho byl, ví věci, které
+ * trenér z videa nepozná. Komentář patří celému rozboru, ne
+ * jednotlivému zápisu — u zápisu je poznámka trenéra a míchat obojí
+ * by znamenalo, že se v tom nikdo nevyzná.
+ */
+model ReviewComment {
+  id        String      @id @default(cuid())
+  reviewId  String
+  review    VideoReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  /** Kdo napsal. Prázdné = trenér, ten hráčský záznam nemá. */
+  playerId  String?
+  player    Player?     @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  /** Jméno v době napsání — komentář zůstane čitelný i po smazání hráče. */
+  authorName String
+  body      String
+  createdAt DateTime    @default(now())
+
+  @@index([reviewId, createdAt])
+  @@index([playerId])
+}
+
 model ReviewRoster {
   reviewId String
   review   VideoReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
@@ -725,6 +751,13 @@ model ReviewEventType {
    * ukáže, co funguje. Prázdné = tlačítko stojí samo.
    */
   groupLabel String?
+  /**
+   * Podskupina uvnitř skupiny, třeba „counter“ nebo „z útoku“.
+   * „Hit counter fast“ a „Hit counter slow“ je tentýž herní moment
+   * zahraný jinak — bez podskupiny by se nedalo spočítat, kolik
+   * z hitů padlo z counteru dohromady.
+   */
+  subLabel   String?
   sortOrder Int        @default(0)
   /**
    * Smazané tlačítko se jen archivuje. Kdyby se mazalo doopravdy,
