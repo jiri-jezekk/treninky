@@ -94,13 +94,13 @@ export default async function PortalRozboryPage({
   const [reviews, souhrn, nabidka] = await Promise.all([
     listReviewsForPlayer(String(player.user.id), filtr),
     getSummaryForPlayer(String(player.user.id), String(player.id), filtr),
-    filtryRozboru(String(player.user.id)),
+    filtryRozboru(String(player.user.id), true),
   ]);
 
   return (
     <PortalShell clubName={clubName} token={token}>
       <SessionRefresh payToken={token} />
-      <div className="mx-auto w-full min-w-0 max-w-md">
+      <div className="mx-auto w-full min-w-0 max-w-md lg:max-w-3xl">
         <Link
           href={`/p/${token}`}
           className="text-sm text-slate-500 underline decoration-slate-300 underline-offset-4"

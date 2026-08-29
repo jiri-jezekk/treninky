@@ -94,6 +94,7 @@ export default async function RozboryPage({
       eventCount: r.events.length,
       forCount: s.balance.forCount,
       againstCount: s.balance.againstCount,
+      visibleToPlayers: r.visibleToPlayers,
       groupName: r.group?.name ?? null,
       groupColor: r.group?.color ?? null,
       seasonName: r.season?.name ?? null,
@@ -175,6 +176,11 @@ export default async function RozboryPage({
                         {r.hasVideo ? "" : " · bez videa"}
                       </span>
                     </span>
+                    {!r.visibleToPlayers && (
+                      <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-500">
+                        skrytý
+                      </span>
+                    )}
                     {r.groupName && (
                       <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 sm:inline-flex">
                         {r.groupColor && (

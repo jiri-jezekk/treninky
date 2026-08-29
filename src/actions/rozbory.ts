@@ -108,6 +108,8 @@ export async function createReview(formData: FormData): Promise<ActionResult> {
         videoId,
         groupId,
         seasonId,
+        // Zaškrtávátko: nezaškrtnuté pole se v formuláři vůbec neposílá.
+        visibleToPlayers: formData.get("visibleToPlayers") === "on",
       },
       select: { id: true },
     });
@@ -165,6 +167,7 @@ export async function updateReview(
         videoId,
         groupId,
         seasonId,
+        visibleToPlayers: formData.get("visibleToPlayers") === "on",
         ...(datum && { playedOn: datum }),
       },
     });
@@ -378,7 +381,7 @@ export async function addComment(
       if (!player.seesReviews) return { ok: false, error: "Rozbor nenalezen." };
 
       const smi = await prisma.videoReview.findFirst({
-        where: { id: reviewId, userId: String(player.userId) },
+        where: { id: reviewId, userId: String(player.userId), visibleToPlayers: true },
         select: { id: true },
       });
       if (!smi) return { ok: false, error: "Rozbor nenalezen." };

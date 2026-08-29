@@ -702,6 +702,12 @@ model VideoReview {
    * klubu, tenhle příznak už nic neřídí.
    */
   sharedAll Boolean  @default(false)
+  /**
+   * Vidí rozbor hráči? Vypíná se u rozborů cizích týmů — ty se dělají
+   * kvůli přípravě a soupeřova čísla nemají viset klubu na očích.
+   * Zapnuté, protože drtivá většina rozborů je vlastní zápas.
+   */
+  visibleToPlayers Boolean @default(true)
   createdAt DateTime @default(now())
   events    ReviewEvent[]
   shares    ReviewShare[]

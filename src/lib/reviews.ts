@@ -24,9 +24,15 @@ export type FiltrRozboru = {
   seasonId?: string | null;
 };
 
+/**
+ * Podmínka pro hráčskou stranu. `visibleToPlayers` je tu vždycky:
+ * rozbory cizích týmů si trenér dělá kvůli přípravě a hráčům do nich
+ * nic není.
+ */
 function kde(userId: string, filtr?: FiltrRozboru) {
   return {
     userId,
+    visibleToPlayers: true,
     ...(filtr?.groupId ? { groupId: filtr.groupId } : {}),
     ...(filtr?.seasonId ? { seasonId: filtr.seasonId } : {}),
   };
@@ -71,16 +77,21 @@ export async function listReviewsForPlayer(
 
 /** Kolik rozborů klub má — podle toho se v portálu ukáže odkaz. */
 export async function countReviewsForPlayer(userId: string): Promise<number> {
-  return prisma.videoReview.count({ where: { userId } });
+  return prisma.videoReview.count({ where: { userId, visibleToPlayers: true } });
 }
 
 /** Nabídka do filtru — jen to, co je u nějakého rozboru opravdu použité. */
-export async function filtryRozboru(userId: string): Promise<{
+export async function filtryRozboru(
+  userId: string,
+  /** Hráčská strana vidí jen zveřejněné rozbory — a jen z nich se má
+   *  skládat i nabídka filtru, jinak by kategorie svítila naprázdno. */
+  jenViditelne = false,
+): Promise<{
   kategorie: { id: string; name: string; color: string }[];
   sezony: { id: string; name: string }[];
 }> {
   const rows = await prisma.videoReview.findMany({
-    where: { userId },
+    where: { userId, ...(jenViditelne ? { visibleToPlayers: true } : {}) },
     select: {
       group: { select: { id: true, name: true, color: true, sortOrder: true } },
       season: { select: { id: true, name: true, startsOn: true } },
@@ -140,7 +151,7 @@ export async function getReviewForPlayer(
   comments: Komentar[];
 } | null> {
   const review = await prisma.videoReview.findFirst({
-    where: { id: reviewId, userId },
+    where: { id: reviewId, userId, visibleToPlayers: true },
     include: {
       events: { orderBy: { atSeconds: "asc" } },
       comments: { orderBy: { createdAt: "asc" } },

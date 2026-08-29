@@ -82,6 +82,7 @@ export default async function RozborDetailPage({
           playedOnValue: toDateInputValue(review.playedOn),
           videoId: review.videoId,
           notes: review.notes,
+          visibleToPlayers: review.visibleToPlayers,
           groupId: review.group ? String(review.group.id) : null,
           groupName: review.group?.name ?? null,
           seasonId: review.season ? String(review.season.id) : null,

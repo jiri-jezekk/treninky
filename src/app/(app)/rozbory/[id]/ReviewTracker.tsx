@@ -12,6 +12,7 @@ import {
 import { Panel } from "@/components/ui";
 import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
 import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
+import { Osa } from "@/components/ReviewOsa";
 import { VideoOvladani } from "@/components/VideoOvladani";
 import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
 import { ReviewKomentare, type Komentar } from "@/components/ReviewKomentare";
@@ -28,10 +29,8 @@ import {
   celkovaDelka,
   OKNA,
   POPIS_OKNA,
-  polohaVeVyrezu,
   rozsahOsy,
   vychoziOkno,
-  type Rozsah,
 } from "@/lib/review-timeline";
 import {
   indexBoduVCase,
@@ -65,6 +64,8 @@ type Review = {
   playedOnValue: string;
   videoId: string | null;
   notes: string | null;
+  /** Vidí rozbor hráči? U cizích týmů se vypíná. */
+  visibleToPlayers: boolean;
   /** Za koho se hrálo a v jaké sezóně — kvůli filtrování v seznamu. */
   groupId: string | null;
   groupName: string | null;
@@ -565,8 +566,13 @@ export function ReviewTracker({
     <>
       <div className="mb-5 mt-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-800">
+          <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight text-slate-800">
             {review.name}
+            {!review.visibleToPlayers && (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-normal text-slate-500">
+                skrytý pro hráče
+              </span>
+            )}
           </h1>
           <p className="mt-1 text-sm text-slate-600">
             {review.opponent ? `${review.opponent} · ` : ""}
@@ -1429,72 +1435,6 @@ function PlovouciPanel({
   );
 }
 
-/**
- * Časová osa se značkami. Pro nás nahoře, proti nám dole.
- *
- * Kreslí se jen výřez `rozsah`, ne celý záznam — u tříhodinového
- * streamu je celek k ničemu.
- */
-function Osa({
-  rozsah,
-  cas,
-  events,
-  typById,
-  onSeek,
-}: {
-  rozsah: Rozsah;
-  cas: number;
-  events: Ev[];
-  typById: Map<string, StatType>;
-  onSeek: (s: number) => void;
-}) {
-  const sirka = Math.max(1, rozsah.do - rozsah.od);
-  const pct = polohaVeVyrezu(cas, rozsah);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label="Časová osa"
-      onClick={(e) => {
-        const b = e.currentTarget.getBoundingClientRect();
-        onSeek(rozsah.od + ((e.clientX - b.left) / b.width) * sirka);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") onSeek(Math.max(0, cas - 5));
-        if (e.key === "ArrowRight") onSeek(cas + 5);
-      }}
-      className="relative h-11 cursor-pointer overflow-hidden rounded-md border border-slate-200 bg-slate-50"
-    >
-      <div className="absolute inset-x-0 top-1/2 h-px bg-slate-200" />
-      {pct != null && (
-        <div className="absolute inset-y-0 left-0 bg-club-soft" style={{ width: `${pct}%` }} />
-      )}
-      {events.map((e) => {
-        const kde = polohaVeVyrezu(e.atSeconds, rozsah);
-        if (kde == null) return null;
-        const t = typById.get(e.typeId);
-        const top = t?.side === "FOR" ? 28 : t?.side === "AGAINST" ? 72 : 50;
-        return (
-          <span
-            key={e.id}
-            aria-hidden
-            style={{
-              left: `${kde}%`,
-              top: `${top}%`,
-              background: t?.color ?? "#64748b",
-            }}
-            className="absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[2px]"
-          />
-        );
-      })}
-      {pct != null && (
-        <div className="absolute inset-y-0 w-0.5 bg-club" style={{ left: `${pct}%` }} />
-      )}
-    </div>
-  );
-}
-
 function Zapis({
   ev,
   typ,
@@ -1808,6 +1748,20 @@ function Uprava({
               placeholder="https://youtu.be/…"
               className={field}
             />
+          </label>
+          <label className="flex items-center gap-2.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 sm:col-span-2">
+            <input
+              type="checkbox"
+              name="visibleToPlayers"
+              defaultChecked={review.visibleToPlayers}
+              className="h-4 w-4"
+            />
+            <span className="text-[13.5px] text-slate-800">
+              Vidí hráči
+              <span className="ml-1.5 text-xs text-slate-500">
+                (u rozborů cizích týmů vypni)
+              </span>
+            </span>
           </label>
           <label className="block sm:col-span-2">
             <span className={sec}>Poznámky k zápasu</span>

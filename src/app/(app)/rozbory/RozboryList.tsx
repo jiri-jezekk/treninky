@@ -176,6 +176,22 @@ function NovyRozbor({
             Nepovinné. Bez videa běží stopky a zapisovat jde stejně.
           </span>
         </label>
+        {/* Rozbor cizího týmu se dělá kvůli přípravě a hráčům do něj
+            nic není — proto se dá zveřejnění vypnout hned při zakládání. */}
+        <label className="flex items-center gap-2.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 sm:col-span-2">
+          <input
+            type="checkbox"
+            name="visibleToPlayers"
+            defaultChecked
+            className="h-4 w-4"
+          />
+          <span className="text-[13.5px] text-slate-800">
+            Vidí hráči
+            <span className="ml-1.5 text-xs text-slate-500">
+              (u rozborů cizích týmů vypni)
+            </span>
+          </span>
+        </label>
       </div>
 
       {chyba && (

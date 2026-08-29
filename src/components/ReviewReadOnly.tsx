@@ -5,6 +5,14 @@ import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
 import { RozpadAkci } from "@/components/ReviewBreakdown";
 import { VideoOvladani } from "@/components/VideoOvladani";
 import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
+import { Osa } from "@/components/ReviewOsa";
+import {
+  celkovaDelka,
+  OKNA,
+  POPIS_OKNA,
+  rozsahOsy,
+  vychoziOkno,
+} from "@/lib/review-timeline";
 import { ReviewKomentare, type Komentar } from "@/components/ReviewKomentare";
 import { computeStats, type StatEvent, type StatType } from "@/lib/review-stats";
 import { indexBoduVCase } from "@/lib/review-tracker";
@@ -69,6 +77,10 @@ export function ReviewReadOnly({
   const [cas, setCas] = useState(0);
   const [bezi, setBezi] = useState(false);
   const [rychlost, setRychlost] = useState(1);
+  // Délka záznamu z přehrávače: u živého přenosu má video hodiny
+  // a osa se podle toho musí zúžit, jinak splynou všechny značky.
+  const [delkaVidea, setDelkaVidea] = useState(0);
+  const [rucniOkno, setRucniOkno] = useState<number | null | undefined>(undefined);
   const [jenMoje, setJenMoje] = useState(false);
 
   const onReady = useCallback((h: PlayerHandle) => {
@@ -104,6 +116,10 @@ export function ReviewReadOnly({
       setCas(ted);
       setBezi(p.isPlaying());
       setRychlost(p.getRate());
+      setDelkaVidea((d) => {
+        const nova = p.getDuration();
+        return nova > 0 && nova !== d ? nova : d;
+      });
       // Posun playlistu patří sem, do tiku přehrávače: čas videa je
       // vnější zdroj, na který se dá jen dívat.
       tikRef.current(ted);
@@ -126,6 +142,14 @@ export function ReviewReadOnly({
   // u videa má být to, co se právě děje, ne to, co prošlo filtrem.
   const indexTed = bezVidea ? null : indexBoduVCase(zaznam, cas);
   const ted = indexTed == null ? null : zaznam[indexTed]!;
+
+  const delka = celkovaDelka(
+    delkaVidea,
+    zaznam.map((e) => e.atSeconds),
+    cas,
+  );
+  const okno = rucniOkno === undefined ? vychoziOkno(delka) : rucniOkno;
+  const rozsah = rozsahOsy(delka, cas, okno);
 
   const moje = stats.players.find((p) => p.playerId === viewerId) ?? null;
   const videt = jenMoje ? zaznam.filter((e) => e.playerId === viewerId) : zaznam;
@@ -162,12 +186,24 @@ export function ReviewReadOnly({
         )}
       </section>
 
+      {/* Na širokém displeji video vlevo a záznam vedle něj. Video je
+          přilepené, takže při projíždění bodů zůstává na očích — přesně
+          proto se rozbor na počítači otevírá. Na telefonu se nic z toho
+          neuplatní a bloky jdou pod sebou v pořadí, v jakém se čtou. */}
+      <div className="lg:mt-4 lg:grid lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] lg:items-start lg:gap-4">
       {review.videoId && !bezVidea && (
         <section
           ref={videoRef}
-          className="mt-4 scroll-mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+          className="mt-4 scroll-mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white lg:sticky lg:top-4 lg:mt-0"
         >
-          <YouTubePlayer videoId={review.videoId} onReady={onReady} onFail={onFail} />
+          {/* Strop výšky: na širokém monitoru by video vytlačilo lištu
+              s akcí pod okraj obrazovky. */}
+          <div
+            className="mx-auto w-full"
+            style={{ width: "min(100%, calc(46vh * 16 / 9))" }}
+          >
+            <YouTubePlayer videoId={review.videoId} onReady={onReady} onFail={onFail} />
+          </div>
           <PraveTed ev={ted} typ={ted ? typById.get(ted.typeId) : undefined} cas={cas} />
           <div className="border-t border-slate-100 px-4 py-2.5 sm:px-5">
             <VideoOvladani
@@ -181,11 +217,45 @@ export function ReviewReadOnly({
               }}
             />
           </div>
+
+          {/* Osa se značkami: na myši se mezi body proklikává rychleji
+              než seznamem a je hned vidět, kde v zápase se co dělo. */}
+          <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+            <Osa
+              rozsah={rozsah}
+              cas={cas}
+              events={zaznam}
+              typById={typById}
+              onSeek={(x) => playerRef.current?.seekTo(x)}
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs tabular-nums text-slate-500">
+                {formatVideoTime(rozsah.od)} – {formatVideoTime(rozsah.do)}
+              </span>
+              <span className="flex-1" />
+              {OKNA.filter((o) => o == null || o < delka).map((o) => (
+                <button
+                  key={String(o)}
+                  type="button"
+                  aria-pressed={okno === o}
+                  onClick={() => setRucniOkno(o)}
+                  className={`rounded-full border px-2 py-0.5 text-[11.5px] transition ${
+                    okno === o
+                      ? "border-club-line bg-club-soft font-medium text-club"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  }`}
+                >
+                  {POPIS_OKNA.get(o) ?? `${o} s`}
+                </button>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
+      <div className="mt-4 flex min-w-0 flex-col gap-4 lg:mt-0">
       {review.notes && (
-        <section className={`${card} mt-4`}>
+        <section className={card}>
           <h2 className={label}>Poznámky trenéra</h2>
           <p className="mt-2 whitespace-pre-line text-sm text-slate-700">
             {review.notes}
@@ -193,7 +263,7 @@ export function ReviewReadOnly({
         </section>
       )}
 
-      <section className={`${card} mt-4`}>
+      <section className={card}>
         <div className="flex flex-wrap items-center gap-2">
           <h2 className={label}>Záznam</h2>
           <span className="flex-1" />
@@ -270,6 +340,8 @@ export function ReviewReadOnly({
           </p>
         )}
       </section>
+      </div>
+      </div>
 
       <section className={`${card} mt-4`}>
         <h2 className={label}>Co se v zápase dělo</h2>
