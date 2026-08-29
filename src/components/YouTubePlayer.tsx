@@ -87,6 +87,8 @@ function loadApi(): Promise<YTNamespace> {
 
 export type PlayerHandle = {
   getTime(): number;
+  /** Délka záznamu v sekundách; 0, dokud ji přehrávač nezná. */
+  getDuration(): number;
   seekTo(seconds: number): void;
   toggle(): void;
   isPlaying(): boolean;
@@ -96,11 +98,19 @@ export function YouTubePlayer({
   videoId,
   onReady,
   onFail,
+  hideFullscreen = false,
 }: {
   videoId: string;
   /** Ovládání ven — rodič si sáhne na čas a umí skočit. */
   onReady: (handle: PlayerHandle) => void;
   onFail: () => void;
+  /**
+   * Schová tlačítko celé obrazovky uvnitř YouTube. Používá to rozbor:
+   * přes nativní fullscreen iframu se nedá nic vykreslit, takže by
+   * tudy trenér přišel o počítadla. Rozbor má vlastní tlačítko, které
+   * roztáhne celý box i s panelem.
+   */
+  hideFullscreen?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [chyba, setChyba] = useState(false);
@@ -119,7 +129,12 @@ export function YouTubePlayer({
         if (zruseno || !boxRef.current) return;
         player = new YT.Player(boxRef.current, {
           videoId,
-          playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
+          playerVars: {
+            playsinline: 1,
+            rel: 0,
+            modestbranding: 1,
+            ...(hideFullscreen ? { fs: 0 } : {}),
+          },
           events: {
             onReady: () => {
               if (zruseno || !player) return;
@@ -128,6 +143,14 @@ export function YouTubePlayer({
                 getTime: () => {
                   try {
                     return p.getCurrentTime();
+                  } catch {
+                    return 0;
+                  }
+                },
+                getDuration: () => {
+                  try {
+                    const d = p.getDuration();
+                    return Number.isFinite(d) && d > 0 ? d : 0;
                   } catch {
                     return 0;
                   }
@@ -173,7 +196,7 @@ export function YouTubePlayer({
         /* už je pryč */
       }
     };
-  }, [videoId, onReady, ohlasChybu]);
+  }, [videoId, onReady, ohlasChybu, hideFullscreen]);
 
   if (chyba) return null;
 

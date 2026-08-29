@@ -12,6 +12,12 @@ import {
   type StatEvent,
   type StatType,
 } from "../src/lib/review-stats.ts";
+import {
+  celkovaDelka,
+  polohaVeVyrezu,
+  rozsahOsy,
+  vychoziOkno,
+} from "../src/lib/review-timeline.ts";
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -170,6 +176,32 @@ console.log("\nŘazení podle času:");
   const c = { id: "c", atSeconds: 10 };
   check("podle času, při shodě podle pořadí zápisu", sortByTime([a, c, b]).map((x) => x.id), ["b", "c", "a"]);
   check("původní pole se nemění", [a, c, b].map((x) => x.id), ["a", "c", "b"]);
+}
+
+console.log("\nVýřez časové osy (živé přenosy mají hodiny záznamu):");
+{
+  check("délka z přehrávače má přednost", celkovaDelka(9000, [120, 300], 150), 9000);
+  check("bez videa se odvodí ze zápisů", celkovaDelka(0, [120, 300], 150), 330);
+  check("prázdný rozbor má minimum", celkovaDelka(0, [], 0), 60);
+  check("běžící čas se vejde", celkovaDelka(0, [], 600), 630);
+
+  check("krátký záznam se ukáže celý", vychoziOkno(900), null);
+  check("hodinový se zúží na půl hodiny", vychoziOkno(3000), 1800);
+  check("tříhodinový stream na deset minut", vychoziOkno(10800), 600);
+
+  check("celé video", rozsahOsy(10800, 5000, null), { od: 0, do: 10800 });
+  check("okno delší než video se nezúží", rozsahOsy(400, 100, 600), { od: 0, do: 400 });
+  check("okno kolem přehrávaného času", rozsahOsy(10800, 5000, 600), { od: 4700, do: 5300 });
+  // Na začátku a na konci se výřez přichytí, jinak by ukazatel
+  // vyjel mimo osu.
+  check("na začátku se přichytí", rozsahOsy(10800, 60, 600), { od: 0, do: 600 });
+  check("na konci se přichytí", rozsahOsy(10800, 10790, 600), { od: 10200, do: 10800 });
+
+  const r = rozsahOsy(10800, 5000, 600);
+  check("značka uprostřed výřezu", polohaVeVyrezu(5000, r), 50);
+  check("značka na začátku výřezu", polohaVeVyrezu(4700, r), 0);
+  check("značka mimo výřez se nekreslí", polohaVeVyrezu(120, r), null);
+  check("ani zápis po výřezu", polohaVeVyrezu(9000, r), null);
 }
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\nNEPROŠLO: ${failures}`);
