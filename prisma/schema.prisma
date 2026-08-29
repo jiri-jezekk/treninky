@@ -131,6 +131,12 @@ model Player {
   reviewComments ReviewComment[]
   /** Vypnuté = hráč se do ratingu nepočítá a v žebříčku není. */
   inRating     Boolean                   @default(true)
+  /**
+   * Vidí hráč rozbory zápasů? Zapnuté pro všechny, protože rozbor je
+   * učební materiál; vypnout se dá tomu, kdo k němu mít přístup nemá —
+   * host na jeden turnaj, hráč jiné kategorie.
+   */
+  seesReviews  Boolean                   @default(true)
 
   @@unique([userId, number])
   @@index([userId])

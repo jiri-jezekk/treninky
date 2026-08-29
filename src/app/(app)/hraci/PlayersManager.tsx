@@ -18,6 +18,7 @@ export type PlayerRow = {
   number: number;
   active: boolean;
   inRating: boolean;
+  seesReviews: boolean;
   payToken: string;
   hasPassword: boolean;
   groupIds: string[];
@@ -336,6 +337,7 @@ export function PlayersManager({
                     <Badge tone="warn">Předplaceno</Badge>
                   )}
                   {!p.inRating && <Badge tone="off">Bez ratingu</Badge>}
+                  {!p.seesReviews && <Badge tone="off">Bez rozborů</Badge>}
                 </span>
               </span>
             </button>
@@ -374,6 +376,8 @@ export function PlayersManager({
             <BulkButton value="deactivate">Deaktivovat</BulkButton>
             <BulkButton value="rating-off">Bez ratingu</BulkButton>
             <BulkButton value="rating-on">Do ratingu</BulkButton>
+            <BulkButton value="rozbory-off">Bez rozborů</BulkButton>
+            <BulkButton value="rozbory-on">S rozbory</BulkButton>
             <BulkButton value="delete" danger>
               Smazat
             </BulkButton>
@@ -474,6 +478,12 @@ export function PlayersManager({
                     defaultChecked={editing.inRating}
                     title="Počítat do ratingu"
                     note="Vypnuté = v žebříčku není a duely ani výzvy se mu nezobrazí. Platby chodí dál."
+                  />
+                  <Switch
+                    name="seesReviews"
+                    defaultChecked={editing.seesReviews}
+                    title="Vidí rozbory zápasů"
+                    note="Vypnuté = rozbory ve svém odkazu vůbec nenajde. Hodí se u hostů a hráčů jiné kategorie."
                   />
                 </div>
 

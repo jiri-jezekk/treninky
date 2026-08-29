@@ -31,6 +31,7 @@ export default async function PortalPage({
       id: true,
       name: true,
       passwordHash: true,
+      seesReviews: true,
       user: {
         select: {
           id: true,
@@ -71,7 +72,10 @@ export default async function PortalPage({
   );
   if (!balance) notFound();
 
-  const rozboru = await countReviewsForPlayer(String(player.user.id));
+  // Komu je trenér vypnul, ten se o nich ani nedozví.
+  const rozboru = player.seesReviews
+    ? await countReviewsForPlayer(String(player.user.id))
+    : 0;
 
   const firstName = player.name.split(" ")[0];
 

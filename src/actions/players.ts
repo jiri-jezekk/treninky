@@ -98,6 +98,7 @@ export async function savePlayer(playerId: string, formData: FormData) {
     data: {
       active: formData.get("active") === "on",
       inRating: formData.get("inRating") === "on",
+      seesReviews: formData.get("seesReviews") === "on",
     },
   });
 
@@ -149,6 +150,11 @@ export async function bulkPlayerAction(formData: FormData) {
     await prisma.player.updateMany({
       where: { id: { in: ownedIds }, userId },
       data: { inRating: action === "rating-on" },
+    });
+  } else if (action === "rozbory-on" || action === "rozbory-off") {
+    await prisma.player.updateMany({
+      where: { id: { in: ownedIds }, userId },
+      data: { seesReviews: action === "rozbory-on" },
     });
   } else if (action === "delete") {
     await prisma.player.deleteMany({ where: { id: { in: ownedIds }, userId } });

@@ -37,39 +37,64 @@ export default async function PortalRozboryPage({
   const { token } = await params;
   const { kategorie: groupId, sezona: seasonId } = await searchParams;
 
-  const viewer = await prisma.player.findUnique({
+  const player = await prisma.player.findUnique({
     where: { payToken: token },
     select: {
       id: true,
       name: true,
       passwordHash: true,
+      seesReviews: true,
       user: { select: { id: true, clubName: true } },
     },
   });
-  if (!viewer) notFound();
+  if (!player) notFound();
 
-  const clubName = viewer.user.clubName?.trim() || "DC Liberec";
+  const clubName = player.user.clubName?.trim() || "DC Liberec";
 
-  if (!viewer.passwordHash) {
+  if (!player.passwordHash) {
     return (
       <PortalShell clubName={clubName} token={token}>
-        <PortalGate payToken={token} mode="set" playerName={viewer.name} />
+        <PortalGate payToken={token} mode="set" playerName={player.name} />
       </PortalShell>
     );
   }
   if (!(await hasPortalSession(token))) {
     return (
       <PortalShell clubName={clubName} token={token}>
-        <PortalGate payToken={token} mode="enter" playerName={viewer.name} />
+        <PortalGate payToken={token} mode="enter" playerName={player.name} />
+      </PortalShell>
+    );
+  }
+
+  // Přístup se ověřuje po přihlášení, ne před ním — jinak by hráč
+  // nepoznal, jestli má špatné heslo, nebo mu to trenér zavřel.
+  if (!player.seesReviews) {
+    return (
+      <PortalShell clubName={clubName} token={token}>
+        <SessionRefresh payToken={token} />
+        <div className="mx-auto w-full min-w-0 max-w-md">
+          <Link
+            href={`/p/${token}`}
+            className="text-sm text-slate-500 underline decoration-slate-300 underline-offset-4"
+          >
+            ← Můj profil
+          </Link>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center">
+            <p className="text-sm text-slate-600">
+              Rozbory zápasů zatím nemáš zpřístupněné. Kdybys je chtěl vidět,
+              řekni trenérovi — zapne ti to.
+            </p>
+          </div>
+        </div>
       </PortalShell>
     );
   }
 
   const filtr = { groupId, seasonId };
   const [reviews, souhrn, nabidka] = await Promise.all([
-    listReviewsForPlayer(String(viewer.user.id), filtr),
-    getSummaryForPlayer(String(viewer.user.id), String(viewer.id), filtr),
-    filtryRozboru(String(viewer.user.id)),
+    listReviewsForPlayer(String(player.user.id), filtr),
+    getSummaryForPlayer(String(player.user.id), String(player.id), filtr),
+    filtryRozboru(String(player.user.id)),
   ]);
 
   return (

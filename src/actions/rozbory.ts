@@ -371,9 +371,11 @@ export async function addComment(
       }
       const player = await prisma.player.findUnique({
         where: { payToken },
-        select: { id: true, name: true, userId: true },
+        select: { id: true, name: true, userId: true, seesReviews: true },
       });
       if (!player) return { ok: false, error: "Neznámý hráč." };
+      // Komu trenér rozbory zavřel, ten do nich nemá ani psát.
+      if (!player.seesReviews) return { ok: false, error: "Rozbor nenalezen." };
 
       const smi = await prisma.videoReview.findFirst({
         where: { id: reviewId, userId: String(player.userId) },

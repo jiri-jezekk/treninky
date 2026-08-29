@@ -34,6 +34,7 @@ export default async function PortalRozborDetailPage({
       id: true,
       name: true,
       passwordHash: true,
+      seesReviews: true,
       user: { select: { id: true, clubName: true } },
     },
   });
@@ -55,6 +56,9 @@ export default async function PortalRozborDetailPage({
       </PortalShell>
     );
   }
+
+  // Komu trenér rozbory zavřel, ten se do nich nedostane ani odkazem.
+  if (!viewer.seesReviews) notFound();
 
   const data = await getReviewForPlayer(
     String(viewer.user.id),
