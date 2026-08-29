@@ -217,6 +217,46 @@ if (modelsWithJson.length > 0) {
   }
 }
 
+/**
+ * Ručně psaný tvar Prisma klienta.
+ *
+ * Když funkce bere transakci jako parametr, je svůdné napsat si tvar
+ * ručně („stačí mi playerRating.upsert“) a typovat argumenty jako
+ * Record<string, unknown>. Místní náhradní typy to spolknou, protože
+ * jsou volnější — skutečný klient je přísnější a build spadne až na
+ * Vercelu. Stalo se to dvakrát. Správně je Prisma.TransactionClient.
+ */
+const DELEGATE_METHODS = [
+  "findMany",
+  "findFirst",
+  "findUnique",
+  "create",
+  "createMany",
+  "update",
+  "updateMany",
+  "upsert",
+  "delete",
+  "deleteMany",
+];
+
+let handWritten = 0;
+for (const file of walk(SRC)) {
+  const source = readFileSync(file, "utf8");
+  // Vlastnost, jejíž hodnota je objekt s Prisma metodou přijímající
+  // Record<string, unknown> — to je ten ručně psaný tvar.
+  for (const m of DELEGATE_METHODS) {
+    const re = new RegExp(`\\b${m}\\s*\\(\\s*args\\s*:\\s*Record<string,\\s*unknown>`, "g");
+    let hit: RegExpExecArray | null;
+    while ((hit = re.exec(source)) !== null) {
+      handWritten++;
+      const line = source.slice(0, hit.index).split("\n").length;
+      console.log(
+        `  TVAR   ${file}:${line}  ručně psaný tvar Prisma klienta (${m}) — použij Prisma.TransactionClient`,
+      );
+    }
+  }
+}
+
 console.log(`\nProkontrolováno ${checked} volání create().`);
 console.log(
   problems === 0
@@ -230,4 +270,9 @@ if (modelsWithJson.length > 0) {
       : `${jsonProblems} zápisů null do Json sloupce.`,
   );
 }
-process.exit(problems === 0 && jsonProblems === 0 ? 0 : 1);
+console.log(
+  handWritten === 0
+    ? "Tvar Prisma klienta se nikde nepíše ručně."
+    : `${handWritten} ručně psaných tvarů Prisma klienta.`,
+);
+process.exit(problems === 0 && jsonProblems === 0 && handWritten === 0 ? 0 : 1);

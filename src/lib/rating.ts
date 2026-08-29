@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ratingBand, STARTING_RATING } from "@/lib/elo";
 
@@ -266,12 +267,10 @@ export async function getEffectiveRatings(
  * Volá se uvnitř transakce, aby se rating a záznam nemohly rozejít.
  */
 export async function applyRatingChange(
-  tx: {
-    playerRating: {
-      upsert(args: Record<string, unknown>): Promise<{ points: number }>;
-    };
-    ratingEntry: { create(args: Record<string, unknown>): Promise<unknown> };
-  },
+  // Typ dodává sama Prisma. Ručně psaný tvar `tx` sem prošel, protože
+  // náhradní typy pro místní kontrolu jsou volnější — skutečný klient
+  // je přísnější a build spadl až na Vercelu. Nevymýšlet ho znovu.
+  tx: Prisma.TransactionClient,
   params: {
     userId: string;
     seasonId: string;
@@ -327,17 +326,7 @@ export async function applyRatingChange(
  * Vrací počet vrácených záznamů. Volá se uvnitř transakce.
  */
 export async function revertRatingChanges(
-  tx: {
-    ratingEntry: {
-      findMany(args: Record<string, unknown>): Promise<
-        { id: string; playerId: string; seasonId: string; delta: number }[]
-      >;
-      deleteMany(args: Record<string, unknown>): Promise<{ count: number }>;
-    };
-    playerRating: {
-      updateMany(args: Record<string, unknown>): Promise<{ count: number }>;
-    };
-  },
+  tx: Prisma.TransactionClient,
   where: { duelId?: string; matchId?: string; challengeId?: string },
 ): Promise<number> {
   const entries = await tx.ratingEntry.findMany({

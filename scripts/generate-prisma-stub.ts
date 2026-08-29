@@ -204,10 +204,19 @@ lines.push("  };");
 lines.push("");
 // Prisma.DbNull / JsonNull — prázdná hodnota v nullable Json sloupci.
 // Obyčejné null tam znamená „neměnit“, ne „vyprázdnit“.
-lines.push("  export const Prisma: {");
-lines.push('    DbNull: { readonly __brand: "DbNull" };');
-lines.push('    JsonNull: { readonly __brand: "JsonNull" };');
-lines.push("  };");
+//
+// TransactionClient je tu proto, aby se tvar `tx` nemusel psát ručně.
+// Ručně psaný tvar sem prošel, ale skutečný klient je přísnější
+// (`args` má u sebe indexy typu never, ne Record<string, unknown>),
+// takže build spadl až na Vercelu. Kdo bere tx jako parametr, ať
+// použije tenhle typ.
+lines.push("  export namespace Prisma {");
+lines.push('    const DbNull: { readonly __brand: "DbNull" };');
+lines.push('    const JsonNull: { readonly __brand: "JsonNull" };');
+lines.push(
+  '    type TransactionClient = Omit<PrismaClientLike, "$transaction" | "$connect" | "$disconnect">;',
+);
+lines.push("  }");
 lines.push("");
 lines.push("  export const PrismaClient: {");
 lines.push("    new (args?: Args): PrismaClientLike;");
