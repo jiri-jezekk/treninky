@@ -115,16 +115,35 @@ check("body", readMeasuredValue(form({ v: "12" }), "v", "POINTS"), 12);
 // U bodů se dvojice polí ignoruje — minuty tam nedávají smysl.
 check("u bodů se dvojice neuplatní", readMeasuredValue(form({ vMin: "1", vSec: "23", v: "12" }), "v", "POINTS"), 12);
 
-console.log("\nRozpad na dvě pole:");
-check("83,45 s", splitDuration(83.45), { min: "1", sec: "23,45" });
-check("pod minutu", splitDuration(43), { min: "0", sec: "43" });
-check("celé minuty", splitDuration(120), { min: "2", sec: "0" });
-check("nic", splitDuration(null), { min: "", sec: "" });
+console.log("\nSetiny mají vlastní políčko:");
+// Na telefonu není jistá ani čárka, takže setiny musí jít napsat
+// jako samostatné číslo — jinak je slibovat nemá smysl.
+check("setiny dvojciferné", readMeasuredValue(form({ vMin: "1", vSec: "23", vCent: "45" }), "v", "TIME"), 83.45);
+// Kdo napíše „5“, myslí půl sekundy — stejně jako když píše 12,5.
+check("jedna číslice = desetina", readMeasuredValue(form({ vSec: "12", vCent: "5" }), "v", "TIME"), 12.5);
+check("dvě číslice = setiny", readMeasuredValue(form({ vSec: "12", vCent: "05" }), "v", "TIME"), 12.05);
+check("bez setin", readMeasuredValue(form({ vMin: "38", vSec: "24" }), "v", "TIME"), 2304);
+check("prázdné setiny", readMeasuredValue(form({ vMin: "38", vSec: "24", vCent: "" }), "v", "TIME"), 2304);
+check("samotné setiny", readMeasuredValue(form({ vCent: "50" }), "v", "TIME"), 0.5);
+check("nesmysl v setinách neprojde", readMeasuredValue(form({ vSec: "12", vCent: "abc" }), "v", "TIME"), null);
+check("tři číslice v setinách neprojdou", readMeasuredValue(form({ vSec: "12", vCent: "123" }), "v", "TIME"), null);
+
+console.log("\nRozpad na tři pole:");
+check("83,45 s", splitDuration(83.45), { min: "1", sec: "23", cent: "45" });
+check("pod minutu", splitDuration(43), { min: "0", sec: "43", cent: "" });
+check("celé minuty", splitDuration(120), { min: "2", sec: "0", cent: "" });
+check("desetina", splitDuration(12.5), { min: "0", sec: "12", cent: "50" });
+check("setina se nuluje zleva", splitDuration(12.05), { min: "0", sec: "12", cent: "05" });
+check("nic", splitDuration(null), { min: "", sec: "", cent: "" });
 {
   // Načíst, rozpadnout, poslat zpátky — musí vyjít totéž.
-  for (const s of [83.45, 43, 120, 2304, 0]) {
-    const { min, sec } = splitDuration(s);
-    check(`${s} s přežije kolečko`, readMeasuredValue(form({ vMin: min, vSec: sec }), "v", "TIME"), s);
+  for (const s of [83.45, 43, 120, 2304, 0, 12.5, 12.05, 3723.99]) {
+    const { min, sec, cent } = splitDuration(s);
+    check(
+      `${s} s přežije kolečko`,
+      readMeasuredValue(form({ vMin: min, vSec: sec, vCent: cent }), "v", "TIME"),
+      s,
+    );
   }
 }
 

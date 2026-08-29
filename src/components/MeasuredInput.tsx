@@ -5,10 +5,11 @@ import { splitDuration, type Measure } from "@/lib/duration";
 /**
  * Pole na výsledek — podle toho, jestli se hraje na body, nebo na čas.
  *
- * Na čas jsou to dvě políčka, minuty a sekundy. Jedno pole s dvojtečkou
- * na mobilu nešlo vyplnit: číselná klávesnice nabízí jen čárku, takže
- * „1:23,45“ se nedalo napsat. Dvě čísla vedle sebe se navíc píšou
- * rychleji než jedno s oddělovačem.
+ * Na čas jsou to tři políčka: minuty, sekundy a setiny. Jedno pole
+ * s dvojtečkou na mobilu vyplnit nešlo — číselná klávesnice dvojtečku
+ * nenabízí — a ani čárka na ní není spolehlivě, takže i setiny musí mít
+ * vlastní políčko. Tři čísla vedle sebe se navíc píšou rychleji než
+ * jedno s oddělovači.
  *
  * Skládá se to až na serveru (readMeasuredValue), takže tohle nepotřebuje
  * žádný stav a funguje i bez javascriptu.
@@ -46,29 +47,40 @@ export function MeasuredInput({
     );
   }
 
-  const { min, sec } = splitDuration(defaultValue);
+  const { min, sec, cent } = splitDuration(defaultValue);
 
   return (
-    <span className="inline-flex shrink-0 items-center gap-1">
+    <span className="inline-flex shrink-0 items-center gap-0.5">
       <input
         name={`${name}Min`}
         inputMode="numeric"
         placeholder="min"
         aria-label="Minuty"
         defaultValue={min}
-        className={`${box} ${compact ? "w-12" : "w-14"}`}
+        className={`${box} ${compact ? "w-11" : "w-14"}`}
       />
-      <span aria-hidden className="text-sm text-slate-400">
+      <span aria-hidden className="px-0.5 text-sm text-slate-400">
         :
       </span>
       <input
         name={`${name}Sec`}
         required={required}
-        inputMode="decimal"
+        inputMode="numeric"
         placeholder="s"
         aria-label="Sekundy"
         defaultValue={sec}
-        className={`${box} ${compact ? "w-14" : "w-16"}`}
+        className={`${box} ${compact ? "w-11" : "w-14"}`}
+      />
+      <span aria-hidden className="px-0.5 text-sm text-slate-400">
+        ,
+      </span>
+      <input
+        name={`${name}Cent`}
+        inputMode="numeric"
+        placeholder="00"
+        aria-label="Setiny sekundy"
+        defaultValue={cent}
+        className={`${box} ${compact ? "w-11" : "w-14"}`}
       />
     </span>
   );

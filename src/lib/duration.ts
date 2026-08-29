@@ -97,13 +97,14 @@ export function formatMeasured(
 /**
  * Nápověda pod polem, ať je jasné, co se čeká.
  *
- * Musí sedět s tím, jak pole doopravdy vypadá. Dřív tu stálo
- * „např. 1:23,45“, jenže čas se zadává do dvou políček a dvojtečka se
- * nepíše — návod tak radil něco jiného, než co šlo vyplnit.
+ * Musí sedět s tím, jak pole doopravdy vypadá. Slibovat setiny za
+ * čárkou nemělo smysl, dokud se nedaly napsat — číselná klávesnice
+ * na telefonu čárku nenabídne. Proto mají setiny vlastní políčko
+ * a návod mluví o políčkách, ne o oddělovačích.
  */
 export function measureHint(measure: Measure, unit?: string | null): string {
   if (measure === "TIME") {
-    return "minuty a sekundy zvlášť; setiny za čárkou, třeba 38 : 24,50";
+    return "minuty, sekundy a setiny — každé do svého políčka";
   }
   return unit ? `číslo v jednotkách: ${unit}` : "číslo";
 }
@@ -160,25 +161,54 @@ export function readMeasuredValue(
   if (measure === "TIME") {
     const min = String(form.get(`${base}Min`) ?? "").trim();
     const sec = String(form.get(`${base}Sec`) ?? "").trim();
-    if (min !== "" || sec !== "") {
-      // Prázdná půlka znamená nulu, ne chybu — kdo běžel 43 vteřin,
+    const cent = String(form.get(`${base}Cent`) ?? "").trim();
+    if (min !== "" || sec !== "" || cent !== "") {
+      // Prázdná část znamená nulu, ne chybu — kdo běžel 43 vteřin,
       // nemá do minut psát nulu.
-      return parseDuration(`${min === "" ? "0" : min}:${sec === "" ? "0" : sec}`);
+      const zlomek = parseHundredths(cent);
+      if (zlomek == null) return null;
+      const zaklad = parseDuration(
+        `${min === "" ? "0" : min}:${sec === "" ? "0" : sec}`,
+      );
+      if (zaklad == null) return null;
+      return Math.round((zaklad + zlomek) * 100) / 100;
     }
   }
   return parseMeasured(form.get(base), measure);
 }
 
-/** Minuty a sekundy zvlášť — pro předvyplnění dvou polí. */
+/**
+ * Setiny z vlastního políčka.
+ *
+ * Jedna číslice se čte jako desetina, ne jako setina — kdo napíše
+ * „5“, myslí půl sekundy, stejně jako když píše 12,5. Vrací zlomek
+ * sekundy, nebo null u nesmyslu.
+ */
+function parseHundredths(raw: string): number | null {
+  if (raw === "") return 0;
+  if (!/^\d{1,2}$/.test(raw)) return null;
+  const n = Number(raw);
+  return (raw.length === 1 ? n * 10 : n) / 100;
+}
+
+/** Minuty, sekundy a setiny zvlášť — pro předvyplnění tří polí. */
 export function splitDuration(seconds: number | null | undefined): {
   min: string;
   sec: string;
+  cent: string;
 } {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) {
-    return { min: "", sec: "" };
+    return { min: "", sec: "", cent: "" };
   }
   const celkem = Math.round(seconds * 100) / 100;
   const min = Math.floor(celkem / 60);
-  const sec = Math.round((celkem - min * 60) * 100) / 100;
-  return { min: String(min), sec: String(sec).replace(".", ",") };
+  const zbytek = Math.round((celkem - min * 60) * 100);
+  const sec = Math.floor(zbytek / 100);
+  const cent = zbytek - sec * 100;
+  return {
+    min: String(min),
+    sec: String(sec),
+    // Prázdné, když žádné nejsou — ať tam nesvítí nula, kterou nikdo nepsal.
+    cent: cent === 0 ? "" : String(cent).padStart(2, "0"),
+  };
 }

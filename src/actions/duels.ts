@@ -158,7 +158,7 @@ export async function reportDuelResult(duelId: string, formData: FormData) {
     String(duel.opponentId) === actor.playerId;
   if (!isParticipant) return;
 
-  // Čte se podle druhu měření — na čas projde i „1:23,45“.
+  // Čte se podle druhu měření — na čas se skládá z minut, sekund a setin.
   const challengerValue = readMeasuredValue(formData, "challengerValue", duel.measure);
   const opponentValue = readMeasuredValue(formData, "opponentValue", duel.measure);
   if (challengerValue == null || opponentValue == null) return;

@@ -210,7 +210,7 @@ export function PortalRating({
                 ))}
               </select>
               <span className="mt-1 block text-xs italic text-slate-500">
-                Na čas piš „1:23,45“ — desetiny se nezahodí.
+                Na čas se výsledek píše po částech: minuty, sekundy, setiny.
               </span>
             </label>
             <label className="mt-3 block">
@@ -466,8 +466,8 @@ export function PortalRating({
                   </div>
                   <p className="mt-1.5 text-xs italic text-slate-500">
                     {measureHint(c.measure, c.unit)}. Pokusů můžeš mít kolik
-                    chceš — do pořadí se počítá ten nejlepší, takže horší pokus
-                    tě nesrazí.
+                    chceš — do pořadí se počítá ten nejlepší, takže horší
+                    pokus tě nesrazí.
                   </p>
                 </form>
 
@@ -710,10 +710,8 @@ export function PortalRating({
       </section>
 
       <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
-        Za každou účast je +1 — klubový trénink, posilovna i to, co si
-        zapíšeš sám. Zbytek si vybojuješ v duelech
-        a výzvách — porazit silnějšího vynese nejvíc, prohrát s ním skoro nic
-        nestojí.
+        Za každý trénink je +1 (klubový, individuální). Zbytek si vybojuješ
+        v duelech a výzvách.
       </p>
     </>
   );

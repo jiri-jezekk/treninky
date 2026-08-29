@@ -173,7 +173,7 @@ export default async function PortalPage({
         <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
           Naskenuj QR v bankovní aplikaci.
           <br />
-          Sedí něco jinak? Napiš trenérovi.
+          Něco nesedí? Napiš trenérovi.
         </p>
       </div>
     </Shell>

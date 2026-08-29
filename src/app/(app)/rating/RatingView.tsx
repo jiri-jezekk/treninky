@@ -468,7 +468,7 @@ function Duels({
               ))}
             </select>
             <span className="mt-1 block text-xs italic text-slate-500">
-              Na čas se zapisuje „1:23,45“ — desetiny se nezahodí.
+              Na čas se výsledek píše po částech: minuty, sekundy, setiny.
             </span>
           </label>
           <div className="mt-3 flex flex-wrap gap-2">

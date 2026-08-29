@@ -251,8 +251,8 @@ export default async function RatingPage() {
           silnějšího, získá hodně; kdo s ním prohraje, ztratí skoro nic. Váhy
           jdou po sobě: <b className="text-slate-700">duel 100 %</b>,{" "}
           <b className="text-slate-700">zápas 150 %</b>,{" "}
-          <b className="text-slate-700">měsíční výzva 200 %</b>. Za každou účast —
-          trénink i posilovnu — přibývá 1 bod.
+          <b className="text-slate-700">měsíční výzva 200 %</b>. Za každý trénink
+          je +1 (klubový, individuální).
         </p>
       </div>
 
