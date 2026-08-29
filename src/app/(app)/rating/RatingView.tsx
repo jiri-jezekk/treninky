@@ -1127,7 +1127,23 @@ function Challenges({
                             {/* Křížek musí zůstat na obrazovce i u času, kde
                                 je pole dvojité. Odznak „nejlepší“ i poznámka
                                 proto stojí pod řádkem, ne v něm. */}
-                            <div className="flex items-center gap-2">
+                            <div
+                              className={`flex items-center gap-2 rounded-lg px-1 py-0.5 ${
+                                a.id === r.bestAttemptId ? "bg-club-soft" : ""
+                              }`}
+                            >
+                              {/* Hvězdička má vlastní pevný sloupeček, takže
+                                  se řádek podle ní neposouvá. */}
+                              <span
+                                className="w-3 shrink-0 text-center text-club"
+                                title={
+                                  a.id === r.bestAttemptId
+                                    ? "Nejlepší pokus"
+                                    : undefined
+                                }
+                              >
+                                {a.id === r.bestAttemptId ? "★" : ""}
+                              </span>
                               <span className="w-16 shrink-0 tabular-nums text-slate-500">
                                 {a.when}
                               </span>
@@ -1170,13 +1186,9 @@ function Challenges({
                                 </form>
                               )}
                             </div>
-                            {a.id === r.bestAttemptId && (
-                              <p className="pl-[4.5rem] font-heading text-[10px] font-bold uppercase tracking-wider text-club">
-                                nejlepší pokus
-                              </p>
-                            )}
+
                             {a.note && (
-                              <p className="pl-[4.5rem] text-slate-500">{a.note}</p>
+                              <p className="pl-[5.25rem] text-slate-500">{a.note}</p>
                             )}
                           </li>
                         ))}

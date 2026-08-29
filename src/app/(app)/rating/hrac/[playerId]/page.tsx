@@ -36,6 +36,7 @@ export default async function PlayerProfilePage({
             entries: profile.entries.map((e) => ({
               ...e,
               when: formatDateDdMmYyyy(e.createdAt).slice(0, 5),
+              duelHref: e.duelId ? `/rating/duel/${e.duelId}` : null,
             })),
             solos: profile.solos.map((s) => ({
               id: s.id,

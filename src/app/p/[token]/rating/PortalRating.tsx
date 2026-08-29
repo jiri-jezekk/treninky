@@ -364,7 +364,7 @@ export function PortalRating({
                         className={`${btnOutline} ${btnSm} mt-2`}
                         onClick={() => setReporting(d.id)}
                       >
-                        Přepsat se? Opravit
+                        Opravit
                       </button>
                     </>
                   ) : (
@@ -396,7 +396,7 @@ export function PortalRating({
 
         {done.length > 0 && (
           <ul className="mt-4 flex flex-col gap-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            {done.slice(0, 6).map((d) => (
+            {done.slice(0, 3).map((d) => (
               <li key={d.id} className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate">
                   {(d.myDelta ?? 0) > 0
@@ -478,7 +478,20 @@ export function PortalRating({
                         {/* Křížek musí zůstat na obrazovce i u času, kde je
                             pole dvojité. Odznak „nejlepší“ ho dřív odstrčil
                             mimo — proto je teď pod řádkem, ne v něm. */}
-                        <div className="flex items-center gap-2">
+                        <div
+                          className={`flex items-center gap-2 rounded-lg px-1 py-0.5 ${
+                            a.isBest ? "bg-club-soft" : ""
+                          }`}
+                        >
+                          {/* Hvězdička má vlastní pevný sloupeček, takže
+                              se řádek podle ní neposouvá — odznak vedle
+                              pole dřív vytlačil křížek mimo obrazovku. */}
+                          <span
+                            className="w-3 shrink-0 text-center text-club"
+                            title={a.isBest ? "Nejlepší pokus" : undefined}
+                          >
+                            {a.isBest ? "★" : ""}
+                          </span>
                           <span className="w-12 shrink-0 tabular-nums text-slate-500">
                             {a.when}
                           </span>
@@ -513,11 +526,7 @@ export function PortalRating({
                             </button>
                           </form>
                         </div>
-                        {a.isBest && (
-                          <p className="pl-14 font-heading text-[10px] font-bold uppercase tracking-wider text-club">
-                            nejlepší pokus
-                          </p>
-                        )}
+
                       </li>
                     ))}
                   </ul>

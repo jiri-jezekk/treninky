@@ -437,11 +437,16 @@ export type PlayerActivity = {
   rating: number;
   rank: number | null;
   band: string;
-  /** Rozpad: kolik z duelů a zápasů, kolik z docházky. */
-  fromEvents: number;
+  /**
+   * Rozpad ratingu podle toho, odkud se vzal. Bez něj je rating jen
+   * číslo, o kterém se dá leda hádat.
+   */
+  fromDuelsAndMatches: number;
+  fromChallenges: number;
+  fromCoach: number;
   fromAttendance: number;
+  fromSolo: number;
   attendanceCount: number;
-  gymCount: number;
   soloCount: number;
   duelsWon: number;
   duelsLost: number;
@@ -452,6 +457,10 @@ export type PlayerActivity = {
     ratingAfter: number;
     label: string;
     createdAt: Date;
+    /** Na co se dá prokliknout. */
+    duelId: string | null;
+    matchId: string | null;
+    challengeId: string | null;
   }[];
   solos: { id: string; name: string; performedOn: Date }[];
 };
@@ -483,10 +492,12 @@ export async function getPlayerActivity(
       rating: STARTING_RATING,
       rank: null,
       band: ratingBand(STARTING_RATING),
-      fromEvents: 0,
+      fromDuelsAndMatches: 0,
+      fromChallenges: 0,
+      fromCoach: 0,
       fromAttendance: 0,
+      fromSolo: 0,
       attendanceCount: 0,
-      gymCount: 0,
       soloCount: 0,
       duelsWon: 0,
       duelsLost: 0,
@@ -517,6 +528,22 @@ export async function getPlayerActivity(
 
   const row = board.find((r) => r.playerId === String(player.id));
 
+  // Rozpad podle zdroje. Docházková část se nikam neukládá — dopočítává
+  // se z počtu účastí, aby se sama srovnala, když trenér účast opraví.
+  let fromDuelsAndMatches = 0;
+  let fromChallenges = 0;
+  let fromCoach = 0;
+  for (const e of entries) {
+    if (e.source === "CHALLENGE") fromChallenges += e.delta;
+    else if (e.source === "COACH") fromCoach += e.delta;
+    else fromDuelsAndMatches += e.delta;
+  }
+
+  const soloCount = row?.soloCount ?? 0;
+  // attendanceCount ze žebříčku už individuální tréninky obsahuje —
+  // tady je chceme zvlášť.
+  const klubovych = Math.max(0, (row?.attendanceCount ?? 0) - soloCount);
+
   return {
     playerId: String(player.id),
     playerName: player.name,
@@ -525,11 +552,13 @@ export async function getPlayerActivity(
     rating: row?.rating ?? STARTING_RATING,
     rank: row?.rank ?? null,
     band: row?.band ?? ratingBand(STARTING_RATING),
-    fromEvents: row?.fromDuels ?? 0,
-    fromAttendance: row?.fromAttendance ?? 0,
-    attendanceCount: row?.attendanceCount ?? 0,
-    gymCount: row?.gymCount ?? 0,
-    soloCount: row?.soloCount ?? 0,
+    fromDuelsAndMatches,
+    fromChallenges,
+    fromCoach,
+    fromAttendance: klubovych * RATING_PER_ATTENDANCE,
+    fromSolo: soloCount * RATING_PER_ATTENDANCE,
+    attendanceCount: klubovych,
+    soloCount,
     duelsWon: row?.duelsWon ?? 0,
     duelsLost: row?.duelsLost ?? 0,
     entries: entries.map((e) => ({
@@ -539,11 +568,68 @@ export async function getPlayerActivity(
       ratingAfter: e.ratingAfter,
       label: e.label,
       createdAt: e.createdAt,
+      duelId: e.duelId == null ? null : String(e.duelId),
+      matchId: e.matchId == null ? null : String(e.matchId),
+      challengeId: e.challengeId == null ? null : String(e.challengeId),
     })),
     solos: solos.map((s) => ({
       id: String(s.id),
       name: s.name,
       performedOn: s.performedOn,
     })),
+  };
+}
+
+/**
+ * Jeden duel se vším, co je o něm vidět — kdo, kolik, o kolik se hnul
+ * rating. Slouží stránce s detailem, na kterou se dá prokliknout
+ * z profilu hráče.
+ */
+export async function getDuelDetail(userId: string, duelId: string) {
+  const duel = await prisma.duel.findFirst({
+    where: { id: duelId, userId },
+    include: {
+      challenger: { select: { id: true, name: true } },
+      opponent: { select: { id: true, name: true } },
+    },
+  });
+  if (!duel) return null;
+
+  const a = duel.challengerValue;
+  const b = duel.opponentValue;
+  const rozhodnuto = a != null && b != null && a !== b;
+  const vyhraviVyzyvatel = rozhodnuto
+    ? duel.higherWins
+      ? a > b
+      : a < b
+    : false;
+
+  return {
+    id: String(duel.id),
+    name: duel.name,
+    description: duel.description,
+    note: duel.note,
+    measure: duel.measure,
+    higherWins: duel.higherWins,
+    weightPercent: duel.weightPercent,
+    status: String(duel.status),
+    createdAt: duel.createdAt,
+    confirmedAt: duel.confirmedAt,
+    players: [
+      {
+        playerId: String(duel.challengerId),
+        name: duel.challenger.name,
+        value: a,
+        delta: duel.challengerDelta,
+        wins: rozhodnuto && vyhraviVyzyvatel,
+      },
+      {
+        playerId: String(duel.opponentId),
+        name: duel.opponent.name,
+        value: b,
+        delta: duel.opponentDelta,
+        wins: rozhodnuto && !vyhraviVyzyvatel,
+      },
+    ],
   };
 }

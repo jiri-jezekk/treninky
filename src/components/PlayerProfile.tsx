@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { czPlural, initials } from "@/lib/czech";
 
 /**
@@ -18,10 +19,12 @@ export type ProfileRow = {
   rating: number;
   rank: number | null;
   band: string;
-  fromEvents: number;
+  fromDuelsAndMatches: number;
+  fromChallenges: number;
+  fromCoach: number;
   fromAttendance: number;
+  fromSolo: number;
   attendanceCount: number;
-  gymCount: number;
   soloCount: number;
   duelsWon: number;
   duelsLost: number;
@@ -32,6 +35,8 @@ export type ProfileRow = {
     ratingAfter: number;
     label: string;
     when: string;
+    /** Vyplněné = řádek se dá prokliknout na detail duelu. */
+    duelHref: string | null;
   }[];
   solos: { id: string; name: string; when: string }[];
 };
@@ -94,25 +99,35 @@ export function PlayerProfile({ profile }: { profile: ProfileRow }) {
         <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Box
             title="Z duelů a zápasů"
-            value={znamenko(profile.fromEvents)}
-            tone={tonDelta(profile.fromEvents)}
+            value={znamenko(profile.fromDuelsAndMatches)}
+            tone={tonDelta(profile.fromDuelsAndMatches)}
           />
           <Box
             title="Z docházky"
             value={znamenko(profile.fromAttendance)}
-            note={`${profile.attendanceCount}× účast`}
+            note={`${profile.attendanceCount}× trénink`}
             tone={tonDelta(profile.fromAttendance)}
           />
           <Box
-            title="Posilovna"
-            value={String(profile.gymCount)}
-            note="v klubu"
+            title="Z měsíčních výzev"
+            value={znamenko(profile.fromChallenges)}
+            tone={tonDelta(profile.fromChallenges)}
           />
           <Box
-            title="Sám"
-            value={String(profile.soloCount)}
-            note="individuálně"
+            title="Individuálně"
+            value={znamenko(profile.fromSolo)}
+            note={`${profile.soloCount}× vlastní trénink`}
+            tone={tonDelta(profile.fromSolo)}
           />
+          {/* Ruční úprava trenérem se ukazuje, jen když nějaká je —
+              jinak by tam visela nula, kterou nikdo nečeká. */}
+          {profile.fromCoach !== 0 && (
+            <Box
+              title="Od trenéra"
+              value={znamenko(profile.fromCoach)}
+              tone={tonDelta(profile.fromCoach)}
+            />
+          )}
         </dl>
 
         {zapasu > 0 && (
@@ -134,32 +149,51 @@ export function PlayerProfile({ profile }: { profile: ProfileRow }) {
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-slate-100">
-            {profile.entries.map((e) => (
-              <li key={e.id} className="flex items-center gap-2 py-2">
-                <span className="w-16 shrink-0 text-xs tabular-nums text-slate-500">
-                  {e.when}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-slate-800">
-                    {e.label}
+            {profile.entries.map((e) => {
+              const obsah = (
+                <>
+                  <span className="w-16 shrink-0 text-xs tabular-nums text-slate-500">
+                    {e.when}
                   </span>
-                  <span className="block text-xs text-slate-500">
-                    {SOURCE_LABEL[e.source] ?? e.source} · nový rating{" "}
-                    {e.ratingAfter}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-slate-800">
+                      {e.label}
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      {SOURCE_LABEL[e.source] ?? e.source} · nový rating{" "}
+                      {e.ratingAfter}
+                    </span>
                   </span>
-                </span>
-                <span
-                  className={`shrink-0 font-heading text-sm font-bold tabular-nums ${tonDelta(e.delta)}`}
-                >
-                  {znamenko(e.delta)}
-                </span>
-              </li>
-            ))}
+                  <span
+                    className={`shrink-0 font-heading text-sm font-bold tabular-nums ${tonDelta(e.delta)}`}
+                  >
+                    {znamenko(e.delta)}
+                  </span>
+                </>
+              );
+
+              return (
+                <li key={e.id}>
+                  {e.duelHref ? (
+                    <Link
+                      href={e.duelHref}
+                      className="flex items-center gap-2 py-2 transition hover:bg-club-soft"
+                    >
+                      {obsah}
+                      <span aria-hidden className="shrink-0 text-slate-400">
+                        ›
+                      </span>
+                    </Link>
+                  ) : (
+                    <span className="flex items-center gap-2 py-2">{obsah}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
         <p className="mt-3 text-xs italic text-slate-500">
-          Body za docházku se sem nepíšou — dopočítávají se, aby se samy
-          srovnaly, když trenér účast dodatečně opraví.
+          Body za docházku se zde nezobrazují.
         </p>
       </section>
 
