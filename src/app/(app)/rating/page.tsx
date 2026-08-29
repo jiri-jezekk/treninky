@@ -37,7 +37,12 @@ export default async function RatingPage() {
       }),
       prisma.match.findMany({
         where: { userId, ...inSeason },
-        orderBy: [{ closedAt: "asc" }, { playedOn: "desc" }],
+        // Nevyhodnocené nahoru. Bez `nulls: "first"` je Postgres při
+        // vzestupném řazení strká nakonec a hotové zápasy je zakryly.
+        orderBy: [
+          { closedAt: { sort: "asc", nulls: "first" } },
+          { playedOn: "desc" },
+        ],
         take: 40,
         include: {
           teams: {
@@ -48,7 +53,11 @@ export default async function RatingPage() {
       }),
       prisma.challenge.findMany({
         where: { userId, ...inSeason },
-        orderBy: [{ closedAt: "asc" }, { endsOn: "desc" }],
+        // Totéž u výzev — běžící patří nad uzavřené.
+        orderBy: [
+          { closedAt: { sort: "asc", nulls: "first" } },
+          { endsOn: "desc" },
+        ],
         include: { entries: { include: { player: { select: { name: true } } } } },
       }),
       prisma.player.findMany({

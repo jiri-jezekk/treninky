@@ -274,59 +274,73 @@ export function PortalRating({
                 </p>
               )}
 
-              {/* domluveno — zapsat výsledek */}
-              {d.status === "ACCEPTED" && (
-                <>
-                  {reporting === d.id ? (
-                    <form
-                      action={reportDuelResult.bind(null, d.id)}
-                      onSubmit={() => setReporting(null)}
-                      className="mt-3"
-                    >
-                      <input type="hidden" name="payToken" value={payToken} />
-                      {/* Řádky, ne dva sloupce — dlouhá jména se na telefon
-                          vedle sebe nevejdou a rozhodí layout. */}
-                      <div className="overflow-hidden rounded-xl border border-slate-200">
-                        <ScoreInput
-                          name="challengerValue"
-                          player={d.iAmChallenger ? myName : d.opponentName}
-                          measure={d.measure}
-                        />
-                        <ScoreInput
-                          name="opponentValue"
-                          player={d.iAmChallenger ? d.opponentName : myName}
-                          measure={d.measure}
-                        />
-                      </div>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {measureHint(d.measure)}
-                        {d.measure === "TIME"
-                          ? " · vyhrává kratší čas"
-                          : d.higherWins
-                            ? " · vyhrává vyšší"
-                            : " · vyhrává nižší"}
-                      </p>
-                      <button type="submit" className={`${btnPrimary} ${btnSm} mt-3`}>
-                        Zapsat
+              {/* Formulář na zápis i na opravu už zapsaného. Kdo výsledek
+                  upraví, ten ho pak nemůže sám potvrdit — odklepnout ho
+                  musí ten druhý. Díky tomu jde chybu opravit, aniž by ji
+                  někdo musel nejdřív potvrdit. */}
+              {(d.status === "ACCEPTED" || d.status === "REPORTED") &&
+                reporting === d.id && (
+                  <form
+                    action={reportDuelResult.bind(null, d.id)}
+                    onSubmit={() => setReporting(null)}
+                    className="mt-3"
+                  >
+                    <input type="hidden" name="payToken" value={payToken} />
+                    {/* Řádky, ne dva sloupce — dlouhá jména se na telefon
+                        vedle sebe nevejdou a rozhodí layout. */}
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <ScoreInput
+                        name="challengerValue"
+                        player={d.iAmChallenger ? myName : d.opponentName}
+                        measure={d.measure}
+                        defaultValue={d.iAmChallenger ? d.myValue : d.theirValue}
+                      />
+                      <ScoreInput
+                        name="opponentValue"
+                        player={d.iAmChallenger ? d.opponentName : myName}
+                        measure={d.measure}
+                        defaultValue={d.iAmChallenger ? d.theirValue : d.myValue}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {measureHint(d.measure)}
+                      {d.measure === "TIME"
+                        ? " · vyhrává kratší čas"
+                        : d.higherWins
+                          ? " · vyhrává vyšší"
+                          : " · vyhrává nižší"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="submit" className={`${btnPrimary} ${btnSm}`}>
+                        {d.status === "REPORTED" ? "Uložit opravu" : "Zapsat"}
                       </button>
-                      <p className="mt-2 text-xs italic text-slate-500">
-                        {d.opponentName} to pak odklepne a rating se propíše.
-                      </p>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      className={`${btnOutline} ${btnSm} mt-3`}
-                      onClick={() => setReporting(d.id)}
-                    >
-                      Zapsat výsledek
-                    </button>
-                  )}
-                </>
+                      <button
+                        type="button"
+                        className={`${btnOutline} ${btnSm}`}
+                        onClick={() => setReporting(null)}
+                      >
+                        Zrušit
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs italic text-slate-500">
+                      {d.opponentName} to pak odklepne a rating se propíše.
+                    </p>
+                  </form>
+                )}
+
+              {/* domluveno — zapsat výsledek */}
+              {d.status === "ACCEPTED" && reporting !== d.id && (
+                <button
+                  type="button"
+                  className={`${btnOutline} ${btnSm} mt-3`}
+                  onClick={() => setReporting(d.id)}
+                >
+                  Zapsat výsledek
+                </button>
               )}
 
               {/* zapsáno — čeká na potvrzení */}
-              {d.status === "REPORTED" && (
+              {d.status === "REPORTED" && reporting !== d.id && (
                 <>
                   <DuelResult
                     myName={myName}
@@ -340,22 +354,39 @@ export function PortalRating({
                     measure={d.measure}
                   />
                   {d.iReported ? (
-                    <p className="mt-2 text-xs italic text-slate-500">
-                      Čeká se, až to {d.opponentName} potvrdí. Sám sobě výsledek
-                      odklepnout nemůžeš.
-                    </p>
-                  ) : (
-                    <form
-                      action={confirmDuel.bind(null, d.id, payToken)}
-                      className="mt-3"
-                    >
-                      <button type="submit" className={`${btnPrimary} ${btnSm}`}>
-                        Sedí, potvrdit
-                      </button>
+                    <>
                       <p className="mt-2 text-xs italic text-slate-500">
-                        Kdyby výsledek nesouhlasil, řekni to trenérovi — opraví ho.
+                        Čeká se, až to {d.opponentName} potvrdí. Sám sobě výsledek
+                        odklepnout nemůžeš.
                       </p>
-                    </form>
+                      <button
+                        type="button"
+                        className={`${btnOutline} ${btnSm} mt-2`}
+                        onClick={() => setReporting(d.id)}
+                      >
+                        Přepsat se? Opravit
+                      </button>
+                    </>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <form action={confirmDuel.bind(null, d.id, payToken)}>
+                        <button type="submit" className={`${btnPrimary} ${btnSm}`}>
+                          Sedí, potvrdit
+                        </button>
+                      </form>
+                      {/* Bez tohohle zbývalo jen chybný výsledek potvrdit
+                          a pak shánět trenéra, aby ho vrátil. */}
+                      <button
+                        type="button"
+                        className={`${btnOutline} ${btnSm}`}
+                        onClick={() => setReporting(d.id)}
+                      >
+                        Nesedí, upravit
+                      </button>
+                      <p className="w-full text-xs italic text-slate-500">
+                        Když to upravíš, potvrzuje pak {d.opponentName}.
+                      </p>
+                    </div>
                   )}
                 </>
               )}
@@ -443,45 +474,50 @@ export function PortalRating({
                 {c.myAttempts.length > 0 && (
                   <ul className="mt-3 space-y-1 border-t border-slate-200 pt-2">
                     {c.myAttempts.map((a) => (
-                      <li key={a.id} className="flex items-center gap-2 text-xs">
-                        <span className="w-12 shrink-0 tabular-nums text-slate-500">
-                          {a.when}
-                        </span>
-                        <form
-                          action={updateChallengeEntry.bind(null, a.id)}
-                          className="flex shrink-0 items-center gap-1.5"
-                        >
-                          <input type="hidden" name="payToken" value={payToken} />
-                          <MeasuredInput
-                            name="value"
-                            measure={c.measure}
-                            defaultValue={a.value}
-                            compact
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-600"
-                          >
-                            Opravit
-                          </button>
-                        </form>
-                        {a.isBest && (
-                          <span className="shrink-0 font-heading text-[10px] font-bold uppercase tracking-wider text-club">
-                            nejlepší
+                      <li key={a.id} className="text-xs">
+                        {/* Křížek musí zůstat na obrazovce i u času, kde je
+                            pole dvojité. Odznak „nejlepší“ ho dřív odstrčil
+                            mimo — proto je teď pod řádkem, ne v něm. */}
+                        <div className="flex items-center gap-2">
+                          <span className="w-12 shrink-0 tabular-nums text-slate-500">
+                            {a.when}
                           </span>
-                        )}
-                        <form
-                          action={deleteChallengeEntry.bind(null, a.id, payToken)}
-                          className="ml-auto shrink-0"
-                        >
-                          <button
-                            type="submit"
-                            className="text-slate-400 hover:text-red-800"
-                            aria-label="Smazat pokus"
+                          <form
+                            action={updateChallengeEntry.bind(null, a.id)}
+                            className="flex min-w-0 flex-1 items-center gap-1.5"
                           >
-                            ✕
-                          </button>
-                        </form>
+                            <input type="hidden" name="payToken" value={payToken} />
+                            <MeasuredInput
+                              name="value"
+                              measure={c.measure}
+                              defaultValue={a.value}
+                              compact
+                            />
+                            <button
+                              type="submit"
+                              className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-slate-600"
+                            >
+                              Opravit
+                            </button>
+                          </form>
+                          <form
+                            action={deleteChallengeEntry.bind(null, a.id, payToken)}
+                            className="shrink-0"
+                          >
+                            <button
+                              type="submit"
+                              className="px-1 text-slate-400 hover:text-red-800"
+                              aria-label="Smazat pokus"
+                            >
+                              ✕
+                            </button>
+                          </form>
+                        </div>
+                        {a.isBest && (
+                          <p className="pl-14 font-heading text-[10px] font-bold uppercase tracking-wider text-club">
+                            nejlepší pokus
+                          </p>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -679,15 +715,24 @@ function ScoreInput({
   name,
   player,
   measure,
+  defaultValue,
 }: {
   name: string;
   player: string;
   measure: Measure;
+  /** Při opravě se předvyplní to, co je zapsané. */
+  defaultValue?: number | null;
 }) {
   return (
     <label className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0">
       <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{player}</span>
-      <MeasuredInput name={name} measure={measure} required compact />
+      <MeasuredInput
+        name={name}
+        measure={measure}
+        defaultValue={defaultValue}
+        required
+        compact
+      />
     </label>
   );
 }

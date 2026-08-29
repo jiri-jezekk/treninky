@@ -1123,58 +1123,60 @@ function Challenges({
                           za měsíc posouval. Nejnovější pokus nahoře. */}
                       <ul className="mt-1.5 space-y-1 border-t border-slate-200 pt-1.5">
                         {r.attempts.map((a) => (
-                          <li
-                            key={a.id}
-                            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-                          >
-                            <span className="w-16 shrink-0 tabular-nums text-slate-500">
-                              {a.when}
-                            </span>
-                            {c.closed ? (
-                              <span className="tabular-nums text-slate-700">
-                                {formatMeasured(a.value, c.measure, c.unit)}
+                          <li key={a.id} className="text-xs">
+                            {/* Křížek musí zůstat na obrazovce i u času, kde
+                                je pole dvojité. Odznak „nejlepší“ i poznámka
+                                proto stojí pod řádkem, ne v něm. */}
+                            <div className="flex items-center gap-2">
+                              <span className="w-16 shrink-0 tabular-nums text-slate-500">
+                                {a.when}
                               </span>
-                            ) : (
-                              <form
-                                action={updateChallengeEntry.bind(null, a.id)}
-                                className="flex shrink-0 items-center gap-1.5"
-                              >
-                                <MeasuredInput
-                                  name="value"
-                                  measure={c.measure}
-                                  defaultValue={a.value}
-                                  compact
-                                />
-                                <button type="submit" className={mini}>
-                                  Opravit
-                                </button>
-                              </form>
-                            )}
-                            {a.id === r.bestAttemptId && (
-                              <span className="shrink-0 font-heading text-[10px] font-bold uppercase tracking-wider text-club">
-                                nejlepší
-                              </span>
-                            )}
-                            {!c.closed && (
-                              <form
-                                action={deleteChallengeEntry.bind(null, a.id, undefined)}
-                                className="ml-auto shrink-0"
-                              >
-                                <button
-                                  type="submit"
-                                  className="text-slate-500 hover:text-red-800"
-                                  aria-label="Smazat pokus"
+                              {c.closed ? (
+                                <span className="flex-1 tabular-nums text-slate-700">
+                                  {formatMeasured(a.value, c.measure, c.unit)}
+                                </span>
+                              ) : (
+                                <form
+                                  action={updateChallengeEntry.bind(null, a.id)}
+                                  className="flex min-w-0 flex-1 items-center gap-1.5"
                                 >
-                                  ✕
-                                </button>
-                              </form>
+                                  <MeasuredInput
+                                    name="value"
+                                    measure={c.measure}
+                                    defaultValue={a.value}
+                                    compact
+                                  />
+                                  <button type="submit" className={`${mini} shrink-0`}>
+                                    Opravit
+                                  </button>
+                                </form>
+                              )}
+                              {!c.closed && (
+                                <form
+                                  action={deleteChallengeEntry.bind(
+                                    null,
+                                    a.id,
+                                    undefined,
+                                  )}
+                                  className="shrink-0"
+                                >
+                                  <button
+                                    type="submit"
+                                    className="px-1 text-slate-500 hover:text-red-800"
+                                    aria-label="Smazat pokus"
+                                  >
+                                    ✕
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+                            {a.id === r.bestAttemptId && (
+                              <p className="pl-[4.5rem] font-heading text-[10px] font-bold uppercase tracking-wider text-club">
+                                nejlepší pokus
+                              </p>
                             )}
-                            {/* Poznámka na celou šířku — zkrácená na „z..“
-                                by nikomu nic neřekla. */}
                             {a.note && (
-                              <span className="w-full pl-[4.5rem] text-slate-500">
-                                {a.note}
-                              </span>
+                              <p className="pl-[4.5rem] text-slate-500">{a.note}</p>
                             )}
                           </li>
                         ))}
