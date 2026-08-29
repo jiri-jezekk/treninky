@@ -19,6 +19,7 @@ import {
   vychoziOkno,
 } from "../src/lib/review-timeline.ts";
 import {
+  indexBoduVCase,
   MIN_H,
   MIN_W,
   najdiPosledniZapis,
@@ -246,6 +247,23 @@ console.log("\nPlovoucí panel ve fullscreenu:");
     { w: 184, h: 134, x: 8, y: 8 },
   );
   check("a nikdy pod minimum", [MIN_W, MIN_H], [180, 120]);
+}
+
+console.log("\nKterá akce platí v daném čase (sledování bez scrollování):");
+{
+  const body = [
+    { atSeconds: 30 },
+    { atSeconds: 90 },
+    { atSeconds: 200 },
+  ];
+  check("prázdný rozbor nemá co ukázat", indexBoduVCase([], 50), null);
+  check("před první akcí se ukazuje ta první", indexBoduVCase(body, 0), 0);
+  check("těsně po akci se drží ta proběhlá", indexBoduVCase(body, 33), 0);
+  check("na sekundu přesně taky", indexBoduVCase(body, 30), 0);
+  check("po prodlevě se přepne na další", indexBoduVCase(body, 45), 1);
+  check("mezi akcemi ukazuje tu blížící se", indexBoduVCase(body, 150), 2);
+  check("po poslední akci zůstane poslední", indexBoduVCase(body, 900), 2);
+  check("delší prodleva drží akci déle", indexBoduVCase(body, 45, 30), 0);
 }
 
 console.log("\nPoslední zápis, na který se věší poznámka:");

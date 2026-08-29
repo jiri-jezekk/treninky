@@ -28,6 +28,38 @@ export function omezRamec(r: Ramec, okno: Okno): Ramec {
   };
 }
 
+/**
+ * Který zápis „platí“ v daném čase videa.
+ *
+ * Kdo se dívá, potřebuje jednu věc: vidět u videa akci, která se právě
+ * stala nebo se blíží — bez scrollování v dlouhém seznamu. Chvíli po
+ * akci se drží ta proběhlá (to je ta, co člověk zrovna viděl), jinak
+ * ukazuje nejbližší další. Na konci záznamu zůstane poslední.
+ *
+ * Zápisy musí být seřazené podle času; vrací index, ne kopii, aby si
+ * volající mohl doplnit vlastní data.
+ */
+export function indexBoduVCase<T extends { atSeconds: number }>(
+  events: readonly T[],
+  cas: number,
+  prodleva = 8,
+): number | null {
+  if (events.length === 0) return null;
+
+  let proslyy = -1;
+  for (let i = 0; i < events.length; i++) {
+    if (events[i]!.atSeconds <= cas) proslyy = i;
+    else break;
+  }
+
+  // Čerstvě proběhlá akce má přednost — na tu se člověk zrovna dívá.
+  if (proslyy >= 0 && cas - events[proslyy]!.atSeconds <= prodleva) return proslyy;
+
+  const dalsi = proslyy + 1;
+  if (dalsi < events.length) return dalsi;
+  return proslyy >= 0 ? proslyy : null;
+}
+
 export type KlicZapisu = { typeId: string; at: number };
 
 /**

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Panel } from "@/components/ui";
 import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
+import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
 import {
   deleteEvent,
   deleteReview,
@@ -31,6 +32,7 @@ import {
   type Rozsah,
 } from "@/lib/review-timeline";
 import {
+  indexBoduVCase,
   MIN_H,
   MIN_W,
   najdiPosledniZapis,
@@ -85,6 +87,40 @@ const DEFAULT_OFFSET = 2;
 const FLUSH_MS = 3000;
 /** Kam si trenér odtáhl a jak zvětšil plovoucí panely; drží se mezi rozbory. */
 const PANEL_KEY = "rozbory:panel:";
+const PANELY_KEY = "rozbory:panely";
+
+type KlicPanelu = "hraci" | "situace" | "prubeh";
+
+const PANELY: { klic: KlicPanelu; nadpis: string }[] = [
+  { klic: "hraci", nadpis: "Hráči" },
+  { klic: "situace", nadpis: "Situace" },
+  { klic: "prubeh", nadpis: "Průběh" },
+];
+
+// Průběh je na prohlížení, ne na zapisování — kdo si ho chce otevřít,
+// klikne. Jinak by při zápase zabíral místo.
+const VYCHOZI_PANELY: Record<KlicPanelu, boolean> = {
+  hraci: true,
+  situace: true,
+  prubeh: false,
+};
+
+/** Uložené nastavení panelů; cokoliv divného spadne na výchozí. */
+function parsePanely(ulozene: string | null): Record<KlicPanelu, boolean> {
+  if (!ulozene) return VYCHOZI_PANELY;
+  try {
+    const p: unknown = JSON.parse(ulozene);
+    if (typeof p !== "object" || p === null) return VYCHOZI_PANELY;
+    const vysledek = { ...VYCHOZI_PANELY };
+    for (const { klic } of PANELY) {
+      const v = (p as Record<string, unknown>)[klic];
+      if (typeof v === "boolean") vysledek[klic] = v;
+    }
+    return vysledek;
+  } catch {
+    return VYCHOZI_PANELY;
+  }
+}
 
 const btn =
   "rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 hover:text-slate-800";
@@ -205,6 +241,33 @@ export function ReviewTracker({
     document.addEventListener("fullscreenchange", zmena);
     return () => document.removeEventListener("fullscreenchange", zmena);
   }, []);
+
+  // Které panely jsou v celé obrazovce otevřené. Uložená hodnota se
+  // čte stejně jako posun zápisu — přes useSyncExternalStore, aby se
+  // server a klient neshodly na různých věcech při hydrataci.
+  const ulozenePanely = useSyncExternalStore(
+    () => () => {},
+    () => {
+      try {
+        return window.localStorage.getItem(PANELY_KEY);
+      } catch {
+        return null;
+      }
+    },
+    () => null,
+  );
+  const [rucniPanely, setRucniPanely] = useState<Record<KlicPanelu, boolean> | null>(null);
+  const otevrene = rucniPanely ?? parsePanely(ulozenePanely);
+
+  const prepniPanel = (klic: KlicPanelu) => {
+    const novy = { ...otevrene, [klic]: !otevrene[klic] };
+    setRucniPanely(novy);
+    try {
+      window.localStorage.setItem(PANELY_KEY, JSON.stringify(novy));
+    } catch {
+      /* nevadí, příště se otevřou výchozí */
+    }
+  };
 
   /* ------------------------------------------------- posun */
 
@@ -445,6 +508,22 @@ export function ReviewTracker({
   const rozsah = rozsahOsy(delka, cas, okno);
 
   const zaznam = [...vsechny].sort((a, b) => b.atSeconds - a.atSeconds);
+  // Vzestupně: podle toho se kroká „průběhem“ a hledá aktuální bod.
+  const poCase = [...vsechny].sort((a, b) => a.atSeconds - b.atSeconds);
+  const indexBodu = indexBoduVCase(poCase, cas);
+  const bod = indexBodu == null ? null : poCase[indexBodu]!;
+
+  const skocNaBod = (posun: -1 | 1) => {
+    if (poCase.length === 0) return;
+    const zaklad = indexBodu ?? 0;
+    // Když se ukazuje blížící se bod, „další“ znamená opravdu ten,
+    // ne přeskočit o jeden.
+    const cil =
+      indexBodu != null && posun === 1 && poCase[indexBodu]!.atSeconds > cas
+        ? indexBodu
+        : Math.min(poCase.length - 1, Math.max(0, zaklad + posun));
+    skoc(poCase[cil]!.atSeconds);
+  };
 
   // Poslední naklikaný zápis — na něj se v celé obrazovce věší poznámka.
   const posledni = najdiPosledniZapis(vsechny, posledniKlic);
@@ -539,14 +618,40 @@ export function ReviewTracker({
 
               {celaObrazovka && (
                 <>
-                  {/* Dva panely, ne jeden: hráče si trenér dá k ruce,
-                      situace na druhou stranu obrazovky. Oba jdou
-                      přetáhnout i zvětšit za pravý dolní roh. */}
+                  {/* Panely jsou tři a každý jde vypnout: při zapisování
+                      je k ruce potřeba něco jiného než při prohlížení.
+                      Lišta je nahoře uprostřed, ať nepřekáží panelům. */}
+                  <div className="fixed left-1/2 top-2 z-[75] flex -translate-x-1/2 flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 px-2 py-1.5 shadow-2xl backdrop-blur">
+                    {PANELY.map((p) => (
+                      <button
+                        key={p.klic}
+                        type="button"
+                        aria-pressed={otevrene[p.klic]}
+                        onClick={() => prepniPanel(p.klic)}
+                        className={`rounded-full border px-2.5 py-1 text-[12px] transition ${
+                          otevrene[p.klic]
+                            ? "border-club-line bg-club-soft font-medium text-club"
+                            : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        {p.nadpis}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={prepniObrazovku}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[12px] text-slate-600 transition hover:bg-slate-100"
+                    >
+                      ✕ Zpět
+                    </button>
+                  </div>
+
+                  {otevrene.hraci && (
                   <PlovouciPanel
                     klic="hraci"
                     nadpis="Hráči"
                     vychozi={{ x: 12, y: 72, w: 260, h: 300 }}
-                    onZavrit={prepniObrazovku}
+                    onZavrit={() => prepniPanel("hraci")}
                   >
                     <VyberHrace
                       players={naSoupisce}
@@ -560,12 +665,14 @@ export function ReviewTracker({
                       </p>
                     )}
                   </PlovouciPanel>
+                  )}
 
+                  {otevrene.situace && (
                   <PlovouciPanel
                     klic="situace"
                     nadpis="Situace"
-                    vychozi={{ x: -1, y: 72, w: 320, h: 380 }}
-                    onZavrit={prepniObrazovku}
+                    vychozi={{ x: "vpravo", y: 72, w: 320, h: 380 }}
+                    onZavrit={() => prepniPanel("situace")}
                   >
                     <div className="mb-2 flex items-baseline gap-2">
                       <span className="font-heading text-lg font-bold tabular-nums text-slate-900">
@@ -583,9 +690,10 @@ export function ReviewTracker({
 
                     <Tlacitka tlacitka={zivaTlacitka} pocty={pocty} onZapis={zapis} husto />
 
-                    <PoznamkaKPoslednimu
+                    <PoznamkaKZapisu
                       ev={posledni}
                       typ={posledni ? typById.get(posledni.typeId) : undefined}
+                      prazdno="Po kliknutí se sem dá napsat poznámka k té situaci."
                       onZmena={(patch) => posledni && zmenZapis(posledni, patch)}
                       onSmazat={() => posledni && smazZapis(posledni)}
                       onPise={(ano) => {
@@ -593,6 +701,63 @@ export function ReviewTracker({
                       }}
                     />
                   </PlovouciPanel>
+                  )}
+
+                  {otevrene.prubeh && (
+                  <PlovouciPanel
+                    klic="prubeh"
+                    nadpis="Průběh"
+                    vychozi={{ x: 12, y: 400, w: 360, h: 300 }}
+                    onZavrit={() => prepniPanel("prubeh")}
+                  >
+                    {/* Prohlížení, ne zapisování: osa na pár minut kolem
+                        místa, kde jsem, a krokování po jednotlivých
+                        bodech i s poznámkou. */}
+                    <Osa
+                      rozsah={rozsah}
+                      cas={cas}
+                      events={vsechny}
+                      typById={typById}
+                      onSeek={skoc}
+                    />
+
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        className={btn}
+                        onClick={() => skocNaBod(-1)}
+                        disabled={poCase.length === 0}
+                        aria-label="Předchozí bod"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className={btn}
+                        onClick={() => skocNaBod(1)}
+                        disabled={poCase.length === 0}
+                        aria-label="Další bod"
+                      >
+                        ›
+                      </button>
+                      <span className="flex-1" />
+                      <span className="text-[11.5px] tabular-nums text-slate-500">
+                        {indexBodu == null ? "0" : indexBodu + 1} / {poCase.length}
+                      </span>
+                    </div>
+
+                    <PoznamkaKZapisu
+                      ev={bod}
+                      typ={bod ? typById.get(bod.typeId) : undefined}
+                      prazdno="V rozboru zatím nejsou žádné zápisy."
+                      onZmena={(patch) => bod && zmenZapis(bod, patch)}
+                      onSmazat={() => bod && smazZapis(bod)}
+                      onPise={(ano) => {
+                        pisePoznamku.current = ano;
+                      }}
+                    />
+                  </PlovouciPanel>
+                  )}
                 </>
               )}
             </div>
@@ -707,58 +872,11 @@ export function ReviewTracker({
               <Tile k="Zápisů" v={String(stats.balance.total)} />
             </dl>
 
-            {stats.players.length === 0 ? (
-              <p className="text-xs italic text-slate-500">
-                Zatím bez určených hráčů. Přepínač nad počítadly nebo pilulka
-                u zápisu.
-              </p>
-            ) : (
-              <div className="table-scroll-wrapper">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr>
-                      <th className="border-b border-slate-200 px-2 py-1.5 text-left font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                        Hráč
-                      </th>
-                      <th className="whitespace-nowrap border-b border-slate-200 px-2 py-1.5 text-right font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                        Pro
-                      </th>
-                      <th className="whitespace-nowrap border-b border-slate-200 px-2 py-1.5 text-right font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                        Proti
-                      </th>
-                      <th className="whitespace-nowrap border-b border-slate-200 px-2 py-1.5 text-right font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                        Rozdíl
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.players.map((p) => (
-                      <tr key={p.playerId} className="border-b border-slate-100 last:border-0">
-                        <td className="px-2 py-2 text-slate-800">{p.playerName}</td>
-                        <td className="px-2 py-2 text-right tabular-nums text-emerald-800">
-                          {p.forCount}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-red-800">
-                          {p.againstCount}
-                        </td>
-                        <td className="px-2 py-2 text-right font-medium tabular-nums text-slate-800">
-                          {p.diff > 0 ? `+${p.diff}` : p.diff}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <div className={`${sec} mb-2.5`}>Rozpad akcí</div>
+            <RozpadAkci stats={stats} />
 
-            {/* Bez téhle věty čísla nesedí a nikdo nepozná proč. */}
-            {stats.withoutPlayer > 0 && (
-              <p className="mt-2.5 text-xs text-slate-500">
-                Tabulka počítá jen zápisy s hráčem. {stats.withoutPlayer}{" "}
-                {czPlural(stats.withoutPlayer, "zápis ho nemá", "zápisy ho nemají", "zápisů ho nemá")}{" "}
-                — v týmové bilanci nahoře jsou.
-              </p>
-            )}
+            <div className={`${sec} mb-2.5 mt-4`}>Hráči podle akcí</div>
+            <HraciPodleAkci stats={stats} />
           </Panel>
 
           <Panel className="!p-0">
@@ -967,16 +1085,19 @@ function Tlacitka({
   );
 }
 
-/** Poznámka k poslednímu zápisu, aby se nemuselo z celé obrazovky ven. */
-function PoznamkaKPoslednimu({
+/** Poznámka k zápisu, aby se kvůli větě nemuselo z celé obrazovky ven. */
+function PoznamkaKZapisu({
   ev,
   typ,
+  prazdno,
   onZmena,
   onSmazat,
   onPise,
 }: {
   ev: Ev | null;
   typ: StatType | undefined;
+  /** Co říct, když není k čemu poznámku psát. */
+  prazdno: string;
   onZmena: (patch: { note?: string | null }) => void;
   onSmazat: () => void;
   /** Hlásí ven, že se píše — dávka zápisů zatím počká. */
@@ -993,11 +1114,7 @@ function PoznamkaKPoslednimu({
   }
 
   if (ev == null) {
-    return (
-      <p className="mt-2.5 text-[11.5px] italic text-slate-500">
-        Po kliknutí se sem dá napsat poznámka k té situaci.
-      </p>
-    );
+    return <p className="mt-2.5 text-[11.5px] italic text-slate-500">{prazdno}</p>;
   }
 
   const uloz = () => {

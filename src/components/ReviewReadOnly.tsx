@@ -1,22 +1,30 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
+import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
 import { computeStats, type StatEvent, type StatType } from "@/lib/review-stats";
+import { indexBoduVCase } from "@/lib/review-tracker";
 import { formatVideoTime } from "@/lib/youtube";
-import { czPlural } from "@/lib/czech";
 
 /**
- * Rozbor pro hráče — video, bilance, záznam a poznámky.
+ * Rozbor pro hráče — video, co se zrovna děje, bilance a záznam.
  *
  * Bez počítadel, bez přepínače hráče, bez sdílení a bez mazání.
- * Klient je to jen kvůli přetáčení videa z časů v záznamu; nic se
- * odsud neukládá.
+ * Dvě věci tady rozhodují o použitelnosti na telefonu:
+ *
+ * 1. Nad seznamem visí akce, která se právě stala nebo se blíží.
+ *    Kdo se dívá, nemá scrollovat — kouká na video a vedle vidí,
+ *    o co jde.
+ * 2. Poznámky jsou zabalené. Rozbor s padesáti zápisy by jinak byl
+ *    metr dlouhý a nedalo by se v něm nic najít.
  */
 
 const card = "rounded-2xl border border-slate-200 bg-white p-4 sm:p-5";
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
+
+type Zapis = StatEvent & { note: string | null };
 
 export function ReviewReadOnly({
   review,
@@ -31,10 +39,11 @@ export function ReviewReadOnly({
     notes: string | null;
   };
   types: StatType[];
-  events: (StatEvent & { note: string | null })[];
+  events: Zapis[];
 }) {
   const playerRef = useRef<PlayerHandle | null>(null);
   const [bezVidea, setBezVidea] = useState(review.videoId == null);
+  const [cas, setCas] = useState(0);
 
   const onReady = useCallback((h: PlayerHandle) => {
     playerRef.current = h;
@@ -44,9 +53,27 @@ export function ReviewReadOnly({
     setBezVidea(true);
   }, []);
 
+  // Čas se čte z přehrávače; bez videa se nic nesleduje a lišta
+  // „právě teď“ se neukazuje.
+  useEffect(() => {
+    if (bezVidea) return;
+    const t = setInterval(() => {
+      const p = playerRef.current;
+      if (p) setCas(p.getTime());
+    }, 500);
+    return () => clearInterval(t);
+  }, [bezVidea]);
+
+  const skoc = useCallback((s: number) => {
+    playerRef.current?.seekTo(s);
+  }, []);
+
   const stats = computeStats(events, types);
   const typById = new Map(types.map((t) => [t.id, t]));
   const zaznam = [...events].sort((a, b) => a.atSeconds - b.atSeconds);
+
+  const indexTed = bezVidea ? null : indexBoduVCase(zaznam, cas);
+  const ted = indexTed == null ? null : zaznam[indexTed]!;
 
   return (
     <>
@@ -68,6 +95,7 @@ export function ReviewReadOnly({
       {review.videoId && !bezVidea && (
         <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <YouTubePlayer videoId={review.videoId} onReady={onReady} onFail={onFail} />
+          <PraveTed ev={ted} typ={ted ? typById.get(ted.typeId) : undefined} cas={cas} />
         </section>
       )}
 
@@ -81,6 +109,20 @@ export function ReviewReadOnly({
       )}
 
       <section className={`${card} mt-4`}>
+        <h2 className={label}>Co se v zápase dělo</h2>
+        <div className="mt-3">
+          <RozpadAkci stats={stats} />
+        </div>
+      </section>
+
+      <section className={`${card} mt-4`}>
+        <h2 className={label}>Hráči podle akcí</h2>
+        <div className="mt-3">
+          <HraciPodleAkci stats={stats} />
+        </div>
+      </section>
+
+      <section className={`${card} mt-4`}>
         <h2 className={label}>Záznam</h2>
         {zaznam.length === 0 ? (
           <p className="mt-3 text-sm italic text-slate-500">
@@ -88,91 +130,149 @@ export function ReviewReadOnly({
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-slate-100">
-            {zaznam.map((e) => {
-              const t = typById.get(e.typeId);
-              return (
-                <li key={e.id} className="flex items-start gap-2.5 py-2">
-                  <button
-                    type="button"
-                    onClick={() => playerRef.current?.seekTo(e.atSeconds)}
-                    disabled={bezVidea}
-                    className="shrink-0 py-0.5 text-[13px] font-medium tabular-nums text-club disabled:text-slate-500 disabled:no-underline hover:underline"
-                  >
-                    {formatVideoTime(e.atSeconds)}
-                  </button>
-                  <span className="min-w-0 flex-1">
-                    <span
-                      style={{ color: t?.color ?? undefined }}
-                      className="flex items-center gap-1.5 text-[13.5px] font-medium"
-                    >
-                      <i
-                        aria-hidden
-                        style={{ background: t?.color ?? "#64748b" }}
-                        className="inline-block h-1.5 w-1.5 shrink-0 rotate-45 rounded-[2px]"
-                      />
-                      <span className="min-w-0 truncate">{t?.label ?? "Akce"}</span>
-                    </span>
-                    {e.playerName && (
-                      <span className="mt-0.5 block text-xs text-slate-500">
-                        {e.playerName}
-                      </span>
-                    )}
-                    {e.note && (
-                      <span className="mt-0.5 block text-[12.5px] text-slate-500">
-                        {e.note}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
+            {zaznam.map((e, i) => (
+              <RadekZaznamu
+                key={e.id}
+                ev={e}
+                typ={typById.get(e.typeId)}
+                aktivni={i === indexTed}
+                bezVidea={bezVidea}
+                onSeek={() => skoc(e.atSeconds)}
+              />
+            ))}
           </ul>
         )}
       </section>
-
-      {stats.players.length > 0 && (
-        <section className={`${card} mt-4`}>
-          <h2 className={label}>Hráči</h2>
-          <div className="table-scroll-wrapper mt-3">
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="border-b border-slate-200 px-2 py-1.5 text-left font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                    Hráč
-                  </th>
-                  <th className="border-b border-slate-200 px-2 py-1.5 text-right font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                    Pro
-                  </th>
-                  <th className="border-b border-slate-200 px-2 py-1.5 text-right font-heading text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                    Proti
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.players.map((p) => (
-                  <tr key={p.playerId} className="border-b border-slate-100 last:border-0">
-                    <td className="px-2 py-2 text-slate-800">{p.playerName}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-emerald-800">
-                      {p.forCount}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-red-800">
-                      {p.againstCount}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {stats.withoutPlayer > 0 && (
-            <p className="mt-2.5 text-xs text-slate-500">
-              Tabulka počítá jen zápisy s hráčem. {stats.withoutPlayer}{" "}
-              {czPlural(stats.withoutPlayer, "zápis ho nemá", "zápisy ho nemají", "zápisů ho nemá")}{" "}
-              — v bilanci nahoře jsou.
-            </p>
-          )}
-        </section>
-      )}
     </>
+  );
+}
+
+/** Akce, která se právě stala nebo se blíží. Drží se pod videem. */
+function PraveTed({
+  ev,
+  typ,
+  cas,
+}: {
+  ev: Zapis | null;
+  typ: StatType | undefined;
+  cas: number;
+}) {
+  if (!ev) {
+    return (
+      <div className="border-t border-slate-100 px-4 py-3 text-xs italic text-slate-500 sm:px-5">
+        V rozboru zatím nejsou žádné zápisy.
+      </div>
+    );
+  }
+
+  const probehla = ev.atSeconds <= cas;
+  const zbyva = Math.max(0, Math.round(ev.atSeconds - cas));
+
+  return (
+    <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+      <div className="flex items-center gap-2">
+        <span className={`${label} !tracking-[0.08em]`}>
+          {probehla ? "Právě teď" : "Blíží se"}
+        </span>
+        <span className="flex-1" />
+        <span className="text-[11.5px] tabular-nums text-slate-500">
+          {probehla ? formatVideoTime(ev.atSeconds) : `za ${zbyva} s`}
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <i
+          aria-hidden
+          style={{ background: typ?.color ?? "#64748b" }}
+          className="inline-block h-2 w-2 shrink-0 rotate-45 rounded-[2px]"
+        />
+        <span
+          style={{ color: typ?.color ?? undefined }}
+          className="min-w-0 truncate text-sm font-medium"
+        >
+          {typ?.label ?? "Akce"}
+        </span>
+        {ev.playerName && (
+          <span className="shrink-0 text-xs text-slate-500">· {ev.playerName}</span>
+        )}
+      </div>
+
+      {ev.note && (
+        <p className="mt-1 text-[13px] leading-snug text-slate-700">{ev.note}</p>
+      )}
+    </div>
+  );
+}
+
+/** Řádek záznamu. Poznámka je zabalená, rozbalí se šipkou. */
+function RadekZaznamu({
+  ev,
+  typ,
+  aktivni,
+  bezVidea,
+  onSeek,
+}: {
+  ev: Zapis;
+  typ: StatType | undefined;
+  aktivni: boolean;
+  bezVidea: boolean;
+  onSeek: () => void;
+}) {
+  const [otevreno, setOtevreno] = useState(false);
+
+  return (
+    <li
+      className={`py-2 ${aktivni ? "-mx-2 rounded-lg bg-club-soft px-2" : ""}`}
+      aria-current={aktivni ? "true" : undefined}
+    >
+      <div className="flex items-start gap-2.5">
+        <button
+          type="button"
+          onClick={onSeek}
+          disabled={bezVidea}
+          className="shrink-0 py-0.5 text-[13px] font-medium tabular-nums text-club disabled:text-slate-500 disabled:no-underline hover:underline"
+        >
+          {formatVideoTime(ev.atSeconds)}
+        </button>
+
+        <span className="min-w-0 flex-1">
+          <span
+            style={{ color: typ?.color ?? undefined }}
+            className="flex items-center gap-1.5 text-[13.5px] font-medium"
+          >
+            <i
+              aria-hidden
+              style={{ background: typ?.color ?? "#64748b" }}
+              className="inline-block h-1.5 w-1.5 shrink-0 rotate-45 rounded-[2px]"
+            />
+            <span className="min-w-0 truncate">{typ?.label ?? "Akce"}</span>
+          </span>
+          {ev.playerName && (
+            <span className="mt-0.5 block text-xs text-slate-500">{ev.playerName}</span>
+          )}
+        </span>
+
+        {/* Poznámka se rozbaluje: se zabalenými se dá seznam projet
+            očima, s rozbalenými by byl metr dlouhý. */}
+        {ev.note && (
+          <button
+            type="button"
+            onClick={() => setOtevreno((o) => !o)}
+            aria-expanded={otevreno}
+            aria-label={otevreno ? "Skrýt poznámku" : "Zobrazit poznámku"}
+            className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+          >
+            {otevreno ? "▴" : "▾"} <span className="text-[11px]">pozn.</span>
+          </button>
+        )}
+      </div>
+
+      {ev.note && otevreno && (
+        <p className="mt-1 pl-[3.6rem] text-[12.5px] leading-snug text-slate-600">
+          {ev.note}
+        </p>
+      )}
+    </li>
   );
 }
 
