@@ -73,7 +73,14 @@ export function RozpadAkci({ stats }: { stats: ReviewStats }) {
  * Hráči proti jednotlivým akcím. Sloupce jsou jen akce, které v zápase
  * padly — prázdné sloupce by tabulku jen rozšířily.
  */
-export function HraciPodleAkci({ stats }: { stats: ReviewStats }) {
+export function HraciPodleAkci({
+  stats,
+  zvyraznit,
+}: {
+  stats: ReviewStats;
+  /** Hráč, který se dívá — svůj řádek má najít bez hledání. */
+  zvyraznit?: string;
+}) {
   const sloupce = stats.balance.byType.filter((t) => t.count > 0);
 
   if (stats.players.length === 0) {
@@ -108,8 +115,18 @@ export function HraciPodleAkci({ stats }: { stats: ReviewStats }) {
           </thead>
           <tbody>
             {stats.players.map((p) => (
-              <tr key={p.playerId} className="border-b border-slate-100 last:border-0">
-                <td className="whitespace-nowrap px-2 py-2 text-slate-800">{p.playerName}</td>
+              <tr
+                key={p.playerId}
+                className={`border-b border-slate-100 last:border-0 ${
+                  p.playerId === zvyraznit ? "bg-club-soft" : ""
+                }`}
+              >
+                <td className="whitespace-nowrap px-2 py-2 text-slate-800">
+                  {p.playerName}
+                  {p.playerId === zvyraznit && (
+                    <span className="ml-1.5 text-[11px] text-club">ty</span>
+                  )}
+                </td>
                 {sloupce.map((t) => {
                   const n = p.counts[t.typeId] ?? 0;
                   return (

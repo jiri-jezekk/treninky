@@ -6,18 +6,24 @@ import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
 import { computeStats, type StatEvent, type StatType } from "@/lib/review-stats";
 import { indexBoduVCase } from "@/lib/review-tracker";
 import { formatVideoTime } from "@/lib/youtube";
+import { czPlural } from "@/lib/czech";
 
 /**
- * Rozbor pro hráče — video, co se zrovna děje, bilance a záznam.
+ * Rozbor pro hráče — video, co se zrovna děje, záznam a statistiky.
  *
  * Bez počítadel, bez přepínače hráče, bez sdílení a bez mazání.
- * Dvě věci tady rozhodují o použitelnosti na telefonu:
+ * Pořadí na stránce kopíruje to, jak se rozbor kouká: nejdřív výsledek,
+ * pak video s tím, co se právě děje, pak jednotlivé body — a čísla až
+ * nakonec, ta se čtou po zápase, ne při něm.
+ *
+ * Tři věci rozhodují o použitelnosti na telefonu:
  *
  * 1. Nad seznamem visí akce, která se právě stala nebo se blíží.
- *    Kdo se dívá, nemá scrollovat — kouká na video a vedle vidí,
- *    o co jde.
+ *    Kdo se dívá, nemá scrollovat.
  * 2. Poznámky jsou zabalené. Rozbor s padesáti zápisy by jinak byl
  *    metr dlouhý a nedalo by se v něm nic najít.
+ * 3. Kliknutí na čas přetočí video a vrátí ho na obrazovku — jinak by
+ *    se přetočilo někde nahoře mimo výhled.
  */
 
 const card = "rounded-2xl border border-slate-200 bg-white p-4 sm:p-5";
@@ -30,6 +36,7 @@ export function ReviewReadOnly({
   review,
   types,
   events,
+  viewerId,
 }: {
   review: {
     name: string;
@@ -40,10 +47,14 @@ export function ReviewReadOnly({
   };
   types: StatType[];
   events: Zapis[];
+  /** Kdo se dívá — kvůli filtru „jen moje“ a zvýraznění v tabulce. */
+  viewerId: string;
 }) {
   const playerRef = useRef<PlayerHandle | null>(null);
+  const videoRef = useRef<HTMLElement | null>(null);
   const [bezVidea, setBezVidea] = useState(review.videoId == null);
   const [cas, setCas] = useState(0);
+  const [jenMoje, setJenMoje] = useState(false);
 
   const onReady = useCallback((h: PlayerHandle) => {
     playerRef.current = h;
@@ -66,14 +77,22 @@ export function ReviewReadOnly({
 
   const skoc = useCallback((s: number) => {
     playerRef.current?.seekTo(s);
+    // Bez tohohle se na telefonu přetočí video, které je o půl obrazovky
+    // výš, a člověk kouká na seznam.
+    videoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   const stats = computeStats(events, types);
   const typById = new Map(types.map((t) => [t.id, t]));
   const zaznam = [...events].sort((a, b) => a.atSeconds - b.atSeconds);
 
+  // Aktuální bod se hledá vždycky ve všech zápisech, ne ve filtrovaných —
+  // u videa má být to, co se právě děje, ne to, co prošlo filtrem.
   const indexTed = bezVidea ? null : indexBoduVCase(zaznam, cas);
   const ted = indexTed == null ? null : zaznam[indexTed]!;
+
+  const moje = stats.players.find((p) => p.playerId === viewerId) ?? null;
+  const videt = jenMoje ? zaznam.filter((e) => e.playerId === viewerId) : zaznam;
 
   return (
     <>
@@ -90,10 +109,20 @@ export function ReviewReadOnly({
           <Tile k="Pro nás" v={String(stats.balance.forCount)} tone="text-emerald-800" />
           <Tile k="Proti nám" v={String(stats.balance.againstCount)} tone="text-red-800" />
         </dl>
+
+        {moje && (
+          <p className="mt-2.5 text-xs text-slate-500">
+            Tvoje akce: <span className="text-emerald-800">{moje.forCount} pro nás</span>,{" "}
+            <span className="text-red-800">{moje.againstCount} proti nám</span>.
+          </p>
+        )}
       </section>
 
       {review.videoId && !bezVidea && (
-        <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <section
+          ref={videoRef}
+          className="mt-4 scroll-mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+        >
           <YouTubePlayer videoId={review.videoId} onReady={onReady} onFail={onFail} />
           <PraveTed ev={ted} typ={ted ? typById.get(ted.typeId) : undefined} cas={cas} />
         </section>
@@ -109,6 +138,54 @@ export function ReviewReadOnly({
       )}
 
       <section className={`${card} mt-4`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className={label}>Záznam</h2>
+          <span className="flex-1" />
+          <span className="text-xs text-slate-500">
+            {zaznam.length}{" "}
+            {czPlural(zaznam.length, "zápis", "zápisy", "zápisů")}
+          </span>
+        </div>
+
+        {/* Hráč se nejčastěji ptá „co jsem tam dělal já“. */}
+        {moje && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            <Chip on={!jenMoje} onClick={() => setJenMoje(false)}>
+              Vše
+            </Chip>
+            <Chip on={jenMoje} onClick={() => setJenMoje(true)}>
+              Jen moje ({moje.total})
+            </Chip>
+          </div>
+        )}
+
+        {zaznam.length === 0 ? (
+          <p className="mt-3 text-sm italic text-slate-500">
+            V tomhle rozboru zatím není žádný zápis.
+          </p>
+        ) : (
+          <ul className="mt-2 divide-y divide-slate-100">
+            {videt.map((e) => (
+              <RadekZaznamu
+                key={e.id}
+                ev={e}
+                typ={typById.get(e.typeId)}
+                aktivni={e.id === ted?.id}
+                bezVidea={bezVidea}
+                onSeek={() => skoc(e.atSeconds)}
+              />
+            ))}
+          </ul>
+        )}
+
+        {jenMoje && videt.length > 0 && (
+          <p className="mt-2.5 text-xs text-slate-500">
+            Zobrazeny jen zápisy s tvým jménem. Zbytek zápasu je pod „Vše“.
+          </p>
+        )}
+      </section>
+
+      <section className={`${card} mt-4`}>
         <h2 className={label}>Co se v zápase dělo</h2>
         <div className="mt-3">
           <RozpadAkci stats={stats} />
@@ -118,32 +195,35 @@ export function ReviewReadOnly({
       <section className={`${card} mt-4`}>
         <h2 className={label}>Hráči podle akcí</h2>
         <div className="mt-3">
-          <HraciPodleAkci stats={stats} />
+          <HraciPodleAkci stats={stats} zvyraznit={viewerId} />
         </div>
       </section>
-
-      <section className={`${card} mt-4`}>
-        <h2 className={label}>Záznam</h2>
-        {zaznam.length === 0 ? (
-          <p className="mt-3 text-sm italic text-slate-500">
-            V tomhle rozboru zatím není žádný zápis.
-          </p>
-        ) : (
-          <ul className="mt-3 divide-y divide-slate-100">
-            {zaznam.map((e, i) => (
-              <RadekZaznamu
-                key={e.id}
-                ev={e}
-                typ={typById.get(e.typeId)}
-                aktivni={i === indexTed}
-                bezVidea={bezVidea}
-                onSeek={() => skoc(e.atSeconds)}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
     </>
+  );
+}
+
+function Chip({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={`rounded-full border px-2.5 py-1 text-[12.5px] transition ${
+        on
+          ? "border-club-line bg-club-soft font-medium text-club"
+          : "border-slate-200 bg-slate-50 text-slate-600"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
