@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { YouTubePlayer, type PlayerHandle } from "@/components/YouTubePlayer";
-import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
+import { RozpadAkci } from "@/components/ReviewBreakdown";
 import { VideoOvladani } from "@/components/VideoOvladani";
 import { usePrehravaniBodu } from "@/components/usePrehravaniBodu";
 import { ReviewKomentare, type Komentar } from "@/components/ReviewKomentare";
@@ -50,6 +50,8 @@ export function ReviewReadOnly({
     playedOnLabel: string;
     videoId: string | null;
     notes: string | null;
+    groupName: string | null;
+    seasonName: string | null;
   };
   types: StatType[];
   events: Zapis[];
@@ -127,6 +129,12 @@ export function ReviewReadOnly({
 
   const moje = stats.players.find((p) => p.playerId === viewerId) ?? null;
   const videt = jenMoje ? zaznam.filter((e) => e.playerId === viewerId) : zaznam;
+  // Vlastní rozpad se počítá jen z vlastních zápisů — cizí jména sem
+  // ze serveru vůbec nedorazí.
+  const mojeStats = computeStats(
+    events.filter((e) => e.playerId === viewerId),
+    types,
+  );
 
   return (
     <>
@@ -137,6 +145,8 @@ export function ReviewReadOnly({
         <p className="mt-0.5 text-xs text-slate-500">
           {review.opponent ? `${review.opponent} · ` : ""}
           {review.playedOnLabel}
+          {review.groupName ? ` · ${review.groupName}` : ""}
+          {review.seasonName ? ` · ${review.seasonName}` : ""}
         </p>
 
         <dl className="mt-4 grid grid-cols-2 gap-2.5">
@@ -274,11 +284,19 @@ export function ReviewReadOnly({
         </div>
       </section>
 
+      {/* Vlastní čísla, ne tabulka celého týmu. Rozbor má učit, ne
+          ukazovat prstem — kdo co pokazil, řeší trenér. */}
       <section className={`${card} mt-4`}>
-        <h2 className={label}>Hráči podle akcí</h2>
-        <div className="mt-3">
-          <HraciPodleAkci stats={stats} zvyraznit={viewerId} />
-        </div>
+        <h2 className={label}>Tvoje akce</h2>
+        {mojeStats.balance.total === 0 ? (
+          <p className="mt-3 text-sm italic text-slate-500">
+            V tomhle zápase u tebe není žádný zápis.
+          </p>
+        ) : (
+          <div className="mt-3">
+            <RozpadAkci stats={mojeStats} />
+          </div>
+        )}
       </section>
 
       {/* Debata na konec: nejdřív se rozbor projde, pak se o něm mluví. */}

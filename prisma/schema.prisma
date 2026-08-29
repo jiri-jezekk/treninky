@@ -88,6 +88,7 @@ model Group {
   discountPriceCents Int?
   createdAt DateTime @default(now())
   members   PlayerGroupMembership[]
+  videoReviews VideoReview[]
 
   @@unique([userId, name])
   @@index([userId])
@@ -405,6 +406,7 @@ model Season {
   incomeKind IncomeKind @default(TRAINING)
   createdAt DateTime @default(now())
   prepayments Prepayment[]
+  videoReviews VideoReview[]
 
   @@unique([userId, name])
   @@unique([userId, number])
@@ -679,7 +681,20 @@ model VideoReview {
   /** Nepovinná vazba, když se rozebírá zápas odehraný na tréninku. */
   matchId   String?
   match     Match?   @relation(fields: [matchId], references: [id], onDelete: SetNull)
-  /** Zkratka pro „vidí to celý tým“ — jinak rozhodují záznamy v shares. */
+  /**
+   * Za koho se hrálo — Muži, Ženy, MIX A… Bere se z kategorií hráčů,
+   * ať se nezakládá druhý číselník téhož. Kvůli filtrování: klub hraje
+   * ve víc sestavách a jejich čísla nemá smysl míchat.
+   */
+  groupId   String?
+  group     Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  /** Sezóna klubu; při založení se doplní podle data zápasu. */
+  seasonId  String?
+  season    Season?  @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  /**
+   * Zbytek po ručním sdílení. Rozbory teď vidí každý přihlášený hráč
+   * klubu, tenhle příznak už nic neřídí.
+   */
   sharedAll Boolean  @default(false)
   createdAt DateTime @default(now())
   events    ReviewEvent[]
@@ -688,6 +703,8 @@ model VideoReview {
   comments  ReviewComment[]
 
   @@index([userId, playedOn])
+  @@index([groupId])
+  @@index([seasonId])
 }
 
 /**

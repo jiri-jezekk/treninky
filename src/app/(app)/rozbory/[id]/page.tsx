@@ -17,7 +17,7 @@ export default async function RozborDetailPage({
   const userId = await requireUserId();
   await ensureDefaultEventTypes(userId);
 
-  const [review, types, players] = await Promise.all([
+  const [review, types, players, kategorie, sezony] = await Promise.all([
     prisma.videoReview.findFirst({
       where: { id, userId },
       include: {
@@ -25,8 +25,9 @@ export default async function RozborDetailPage({
           orderBy: { atSeconds: "asc" },
           include: { player: { select: { id: true, name: true } } },
         },
-        shares: { select: { playerId: true } },
         roster: { select: { playerId: true } },
+        group: { select: { id: true, name: true } },
+        season: { select: { id: true, name: true } },
         comments: { orderBy: { createdAt: "asc" } },
       },
     }),
@@ -37,6 +38,16 @@ export default async function RozborDetailPage({
     prisma.player.findMany({
       where: { userId, active: true },
       orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.group.findMany({
+      where: { userId },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.season.findMany({
+      where: { userId },
+      orderBy: { startsOn: "desc" },
       select: { id: true, name: true },
     }),
   ]);
@@ -71,14 +82,18 @@ export default async function RozborDetailPage({
           playedOnValue: toDateInputValue(review.playedOn),
           videoId: review.videoId,
           notes: review.notes,
-          sharedAll: review.sharedAll,
-          sharedWith: review.shares.map((s) => String(s.playerId)),
+          groupId: review.group ? String(review.group.id) : null,
+          groupName: review.group?.name ?? null,
+          seasonId: review.season ? String(review.season.id) : null,
+          seasonName: review.season?.name ?? null,
           // Prázdná soupiska = celý klub; rozhoduje se až v komponentě,
           // aby staré rozbory fungovaly beze změny.
           roster: review.roster.map((r) => String(r.playerId)),
         }}
         types={statTypes}
         players={players.map((p) => ({ id: String(p.id), name: p.name }))}
+        kategorie={kategorie.map((g) => ({ id: String(g.id), name: g.name }))}
+        sezony={sezony.map((x) => ({ id: String(x.id), name: x.name }))}
         comments={review.comments.map((k) => ({
           id: String(k.id),
           authorName: k.authorName,

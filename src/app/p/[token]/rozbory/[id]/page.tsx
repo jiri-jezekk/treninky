@@ -6,7 +6,7 @@ import { PortalShell } from "../../PortalShell";
 import { SessionRefresh } from "../../SessionRefresh";
 import { ReviewReadOnly } from "@/components/ReviewReadOnly";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { getSharedReview } from "@/lib/reviews";
+import { getReviewForPlayer } from "@/lib/reviews";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
 
@@ -56,7 +56,7 @@ export default async function PortalRozborDetailPage({
     );
   }
 
-  const data = await getSharedReview(
+  const data = await getReviewForPlayer(
     String(viewer.user.id),
     String(viewer.id),
     id,
@@ -81,6 +81,8 @@ export default async function PortalRozborDetailPage({
               playedOnLabel: formatDateDdMmYyyy(data.review.playedOn),
               videoId: data.review.videoId,
               notes: data.review.notes,
+              groupName: data.review.groupName,
+              seasonName: data.review.seasonName,
             }}
             types={data.types}
             events={data.events}

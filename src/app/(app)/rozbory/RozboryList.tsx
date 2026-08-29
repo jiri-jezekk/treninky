@@ -28,12 +28,18 @@ const SIDE_LABEL: Record<ReviewSideValue, string> = {
   NEUTRAL: "Neutrální",
 };
 
+export type Zarazeni = { id: string; name: string };
+
 export function RozboryActions({
   types,
   today,
+  kategorie,
+  sezony,
 }: {
   types: StatType[];
   today: string;
+  kategorie: Zarazeni[];
+  sezony: Zarazeni[];
 }) {
   const [modal, setModal] = useState<null | "novy" | "tlacitka">(null);
 
@@ -50,7 +56,12 @@ export function RozboryActions({
 
       {modal === "novy" && (
         <Modal title="Nový rozbor" onClose={() => setModal(null)}>
-          <NovyRozbor today={today} onDone={() => setModal(null)} />
+          <NovyRozbor
+            today={today}
+            kategorie={kategorie}
+            sezony={sezony}
+            onDone={() => setModal(null)}
+          />
         </Modal>
       )}
       {modal === "tlacitka" && (
@@ -90,7 +101,17 @@ function Modal({
 
 /* ------------------------------------------------- nový rozbor */
 
-function NovyRozbor({ today, onDone }: { today: string; onDone: () => void }) {
+function NovyRozbor({
+  today,
+  kategorie,
+  sezony,
+  onDone,
+}: {
+  today: string;
+  kategorie: Zarazeni[];
+  sezony: Zarazeni[];
+  onDone: () => void;
+}) {
   const router = useRouter();
   const [chyba, setChyba] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -125,6 +146,28 @@ function NovyRozbor({ today, onDone }: { today: string; onDone: () => void }) {
         <label className="block">
           <span className={label}>Datum</span>
           <input type="date" name="playedOn" defaultValue={today} className={field} />
+        </label>
+        <label className="block">
+          <span className={label}>Kategorie</span>
+          <select name="groupId" defaultValue="" className={field}>
+            <option value="">— nezařazeno —</option>
+            {kategorie.map((k) => (
+              <option key={k.id} value={k.id}>
+                {k.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className={label}>Sezóna</span>
+          <select name="seasonId" defaultValue="" className={field}>
+            <option value="">podle data zápasu</option>
+            {sezony.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block sm:col-span-2">
           <span className={label}>Odkaz na video</span>

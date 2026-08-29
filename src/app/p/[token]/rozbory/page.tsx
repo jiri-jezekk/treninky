@@ -4,8 +4,13 @@ import { notFound } from "next/navigation";
 import { PortalGate } from "../PortalGate";
 import { PortalShell } from "../PortalShell";
 import { SessionRefresh } from "../SessionRefresh";
+import { FiltrRozboruChips } from "@/components/FiltrRozboruChips";
 import { hasPortalSession } from "@/lib/player-portal-session";
-import { getSharedSummary, listSharedReviews } from "@/lib/reviews";
+import {
+  filtryRozboru,
+  getSummaryForPlayer,
+  listReviewsForPlayer,
+} from "@/lib/reviews";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { czPlural } from "@/lib/czech";
 import { prisma } from "@/lib/prisma";
@@ -15,13 +20,22 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/** Rozbory, které trenér nasdílel — jen ke čtení. */
+/**
+ * Rozbory klubu — jen ke čtení.
+ *
+ * Vidí je každý přihlášený hráč. Klub se bere z tokenu, ne z id v cestě,
+ * takže do cizího klubu se nikdo nedostane. Souhrn nahoře je vždycky
+ * jen vlastní: kdo co pokazil, řeší trenér, ne výpis pro celý tým.
+ */
 export default async function PortalRozboryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ kategorie?: string; sezona?: string }>;
 }) {
   const { token } = await params;
+  const { kategorie: groupId, sezona: seasonId } = await searchParams;
 
   const viewer = await prisma.player.findUnique({
     where: { payToken: token },
@@ -51,9 +65,11 @@ export default async function PortalRozboryPage({
     );
   }
 
-  const [reviews, souhrn] = await Promise.all([
-    listSharedReviews(String(viewer.user.id), String(viewer.id)),
-    getSharedSummary(String(viewer.user.id), String(viewer.id)),
+  const filtr = { groupId, seasonId };
+  const [reviews, souhrn, nabidka] = await Promise.all([
+    listReviewsForPlayer(String(viewer.user.id), filtr),
+    getSummaryForPlayer(String(viewer.user.id), String(viewer.id), filtr),
+    filtryRozboru(String(viewer.user.id)),
   ]);
 
   return (
@@ -68,14 +84,14 @@ export default async function PortalRozboryPage({
         </Link>
 
         {/* Napříč zápasy: jeden rozbor řekne, jak dopadl, tohle ukáže,
-            co se opakuje. */}
+            co se opakuje. Jen vlastní čísla. */}
         {souhrn && souhrn.zapisu > 0 && (
           <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
             <h2 className="font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
               Tvůj souhrn
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Počítáno z rozborů, které máš nasdílené ({souhrn.zapasu}).
+              Počítáno z rozborů ve výběru ({souhrn.zapasu}).
             </p>
 
             <dl className="mt-3 grid grid-cols-3 gap-2.5">
@@ -133,9 +149,21 @@ export default async function PortalRozboryPage({
             Co trenér nakoukal z videa. Časy otevřou záznam na správném místě.
           </p>
 
+          <div className="mt-3">
+            <FiltrRozboruChips
+              zaklad={`/p/${token}/rozbory`}
+              kategorie={nabidka.kategorie}
+              sezony={nabidka.sezony}
+              groupId={groupId}
+              seasonId={seasonId}
+            />
+          </div>
+
           {reviews.length === 0 ? (
             <p className="mt-4 text-sm italic text-slate-500">
-              Zatím ti nikdo žádný rozbor nenasdílel.
+              {groupId || seasonId
+                ? "V tomhle výběru zatím žádný rozbor není."
+                : "Zatím tu žádný rozbor není."}
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-slate-100">
@@ -153,6 +181,7 @@ export default async function PortalRozboryPage({
                         {r.opponent ? `${r.opponent} · ` : ""}
                         {formatDateDdMmYyyy(r.playedOn)} · {r.eventCount}{" "}
                         {czPlural(r.eventCount, "zápis", "zápisy", "zápisů")}
+                        {r.groupName ? ` · ${r.groupName}` : ""}
                       </span>
                     </span>
                     <span aria-hidden className="shrink-0 text-slate-400">

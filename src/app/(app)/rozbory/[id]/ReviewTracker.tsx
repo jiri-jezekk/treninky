@@ -20,7 +20,6 @@ import {
   deleteReview,
   logEvents,
   setRoster,
-  setShares,
   updateEvent,
   updateReview,
 } from "@/actions/rozbory";
@@ -66,8 +65,11 @@ type Review = {
   playedOnValue: string;
   videoId: string | null;
   notes: string | null;
-  sharedAll: boolean;
-  sharedWith: string[];
+  /** Za koho se hrálo a v jaké sezóně — kvůli filtrování v seznamu. */
+  groupId: string | null;
+  groupName: string | null;
+  seasonId: string | null;
+  seasonName: string | null;
   /** Kdo u zápasu hrál. Prázdné = nabízí se celý klub. */
   roster: string[];
 };
@@ -140,12 +142,17 @@ export function ReviewTracker({
   players,
   events: serverEvents,
   comments,
+  kategorie,
+  sezony,
 }: {
   review: Review;
   types: StatType[];
   players: Hrac[];
   events: Ev[];
   comments: Komentar[];
+  /** Nabídka do úpravy rozboru — kategorie a sezóny klubu. */
+  kategorie: { id: string; name: string }[];
+  sezony: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -552,7 +559,7 @@ export function ReviewTracker({
 
   /* --------------------------------------------------- modaly */
 
-  const [modal, setModal] = useState<null | "sdileni" | "uprava" | "soupiska">(null);
+  const [modal, setModal] = useState<null | "uprava" | "soupiska">(null);
 
   return (
     <>
@@ -564,6 +571,8 @@ export function ReviewTracker({
           <p className="mt-1 text-sm text-slate-600">
             {review.opponent ? `${review.opponent} · ` : ""}
             {review.playedOnLabel}
+            {review.groupName ? ` · ${review.groupName}` : ""}
+            {review.seasonName ? ` · ${review.seasonName}` : ""}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -572,9 +581,6 @@ export function ReviewTracker({
             {review.roster.length > 0 && (
               <span className="ml-1.5 text-xs text-slate-500">{review.roster.length}</span>
             )}
-          </button>
-          <button type="button" className={btn} onClick={() => setModal("sdileni")}>
-            Sdílet
           </button>
           <button type="button" className={btn} onClick={() => setModal("uprava")}>
             Upravit
@@ -1014,20 +1020,11 @@ export function ReviewTracker({
           }}
         />
       )}
-      {modal === "sdileni" && (
-        <Sdileni
-          review={review}
-          players={players}
-          onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            router.refresh();
-          }}
-        />
-      )}
       {modal === "uprava" && (
         <Uprava
           review={review}
+          kategorie={kategorie}
+          sezony={sezony}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);
@@ -1727,97 +1724,17 @@ function Soupiska({
   );
 }
 
-function Sdileni({
-  review,
-  players,
-  onClose,
-  onSaved,
-}: {
-  review: Review;
-  players: Hrac[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [vybrani, setVybrani] = useState<string[]>(review.sharedWith);
-  const [vsichni, setVsichni] = useState(review.sharedAll);
-  const [chyba, setChyba] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-
-  return (
-    <Obal title="Sdílet rozbor" onClose={onClose}>
-      <p className="mb-3.5 text-xs text-slate-500">
-        Vybraní hráči uvidí rozbor ve svém odkazu. Časy i poznámky jen čtou —
-        klikat, upravovat a mazat můžeš dál jen ty.
-      </p>
-
-      <label className="mb-2.5 flex items-center gap-2.5 rounded-md border border-club-line bg-club-soft px-2.5 py-2">
-        <input
-          type="checkbox"
-          checked={vsichni}
-          onChange={(e) => setVsichni(e.target.checked)}
-          className="h-4 w-4"
-        />
-        <span className="text-[13.5px] text-slate-800">Sdílet s celým týmem</span>
-      </label>
-
-      <div className={`flex flex-col gap-1.5 ${vsichni ? "opacity-50" : ""}`}>
-        {players.map((p) => (
-          <label
-            key={p.id}
-            className="flex items-center gap-2.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5"
-          >
-            <input
-              type="checkbox"
-              disabled={vsichni}
-              checked={vybrani.includes(p.id)}
-              onChange={(e) =>
-                setVybrani((v) =>
-                  e.target.checked ? [...v, p.id] : v.filter((x) => x !== p.id),
-                )
-              }
-              className="h-4 w-4"
-            />
-            <span className="min-w-0 truncate text-[13.5px] text-slate-800">{p.name}</span>
-          </label>
-        ))}
-      </div>
-
-      {chyba && (
-        <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-          {chyba}
-        </p>
-      )}
-
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
-        <button type="button" className={btn} onClick={onClose}>
-          Zrušit
-        </button>
-        <button
-          type="button"
-          className={btnPrimary}
-          disabled={pending}
-          onClick={() =>
-            start(async () => {
-              const res = await setShares(review.id, vybrani, vsichni);
-              if (!res.ok) setChyba(res.error);
-              else onSaved();
-            })
-          }
-        >
-          {pending ? "Ukládám…" : "Uložit sdílení"}
-        </button>
-      </div>
-    </Obal>
-  );
-}
-
 function Uprava({
   review,
+  kategorie,
+  sezony,
   onClose,
   onSaved,
   onDeleted,
 }: {
   review: Review;
+  kategorie: { id: string; name: string }[];
+  sezony: { id: string; name: string }[];
   onClose: () => void;
   onSaved: () => void;
   onDeleted: () => void;
@@ -1854,6 +1771,28 @@ function Uprava({
               defaultValue={review.playedOnValue}
               className={field}
             />
+          </label>
+          <label className="block">
+            <span className={sec}>Kategorie</span>
+            <select name="groupId" defaultValue={review.groupId ?? ""} className={field}>
+              <option value="">— nezařazeno —</option>
+              {kategorie.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className={sec}>Sezóna</span>
+            <select name="seasonId" defaultValue={review.seasonId ?? ""} className={field}>
+              <option value="">podle data zápasu</option>
+              {sezony.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="block sm:col-span-2">
             <span className={sec}>Odkaz na video</span>

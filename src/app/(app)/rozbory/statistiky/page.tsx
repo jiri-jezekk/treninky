@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/ui";
 import { HraciPodleAkci, RozpadAkci } from "@/components/ReviewBreakdown";
+import { FiltrRozboruChips } from "@/components/FiltrRozboruChips";
+import { filtryRozboru } from "@/lib/reviews";
 import { souhrnRozboru } from "@/lib/review-summary";
 import type { StatEvent, StatType } from "@/lib/review-stats";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
@@ -15,12 +17,21 @@ import { requireUserId } from "@/lib/session";
  * lepší — a kvůli tomu se rozbory dělají. Počítá se stejnou funkcí jako
  * jednotlivý rozbor, aby čísla nemohla říkat každé něco jiného.
  */
-export default async function RozboryStatistikyPage() {
+export default async function RozboryStatistikyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ kategorie?: string; sezona?: string }>;
+}) {
   const userId = await requireUserId();
+  const { kategorie: groupId, sezona: seasonId } = await searchParams;
 
-  const [reviews, types] = await Promise.all([
+  const [reviews, types, nabidka] = await Promise.all([
     prisma.videoReview.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(groupId ? { groupId } : {}),
+        ...(seasonId ? { seasonId } : {}),
+      },
       orderBy: { playedOn: "asc" },
       include: {
         events: {
@@ -35,6 +46,7 @@ export default async function RozboryStatistikyPage() {
       },
     }),
     prisma.reviewEventType.findMany({ where: { userId }, orderBy: { sortOrder: "asc" } }),
+    filtryRozboru(userId),
   ]);
 
   const statTypes: StatType[] = types.map((t) => ({
@@ -71,7 +83,7 @@ export default async function RozboryStatistikyPage() {
   return (
     <div className="min-w-0 max-w-4xl">
       <Link
-        href="/rozbory"
+        href={{ pathname: "/rozbory", query: { ...(groupId && { kategorie: groupId }), ...(seasonId && { sezona: seasonId }) } }}
         className="text-sm text-slate-500 underline decoration-slate-300 underline-offset-4"
       >
         ‹ Rozbory
@@ -80,14 +92,26 @@ export default async function RozboryStatistikyPage() {
       <div className="mt-3">
         <PageHeader
           title="Statistiky rozborů"
-          description="Všechny zápasy dohromady. Jeden rozbor řekne, jak dopadl zápas; tahle stránka ukáže, co se opakuje."
+          description="Zápasy z výběru dohromady. Jeden rozbor řekne, jak dopadl zápas; tahle stránka ukáže, co se opakuje."
+        />
+      </div>
+
+      <div className="mt-4">
+        <FiltrRozboruChips
+          zaklad="/rozbory/statistiky"
+          kategorie={nabidka.kategorie}
+          sezony={nabidka.sezony}
+          groupId={groupId}
+          seasonId={seasonId}
         />
       </div>
 
       {souhrn.pocetZapasu === 0 ? (
-        <Panel>
+        <Panel className="mt-4">
           <p className="text-sm italic text-slate-500">
-            Zatím není z čeho počítat — založ první rozbor.
+            {groupId || seasonId
+              ? "V tomhle výběru žádný rozbor není."
+              : "Zatím není z čeho počítat — založ první rozbor."}
           </p>
         </Panel>
       ) : (

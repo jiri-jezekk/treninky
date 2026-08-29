@@ -7,7 +7,7 @@ import { SessionRefresh } from "./SessionRefresh";
 import { getPlayerBalance } from "@/lib/player-balance";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { formatCzkFromCents } from "@/lib/money";
-import { countSharedReviews } from "@/lib/reviews";
+import { countReviewsForPlayer } from "@/lib/reviews";
 import { czPlural } from "@/lib/czech";
 import { prisma } from "@/lib/prisma";
 import { PortalShell } from "./PortalShell";
@@ -71,10 +71,7 @@ export default async function PortalPage({
   );
   if (!balance) notFound();
 
-  const rozboru = await countSharedReviews(
-    String(player.user.id),
-    String(player.id),
-  );
+  const rozboru = await countReviewsForPlayer(String(player.user.id));
 
   const firstName = player.name.split(" ")[0];
 

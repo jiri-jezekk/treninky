@@ -30,6 +30,45 @@ const reviewSchema = z.object({
   notes: z.string().trim().max(4000).optional(),
 });
 
+/**
+ * Kategorie a sezóna z formuláře. Cizí id se zahodí — klub hraje
+ * ve víc sestavách, ale rozbor patří vždycky do té svojí.
+ */
+async function zarazeni(
+  userId: string,
+  formData: FormData,
+  playedOn: Date,
+): Promise<{ groupId: string | null; seasonId: string | null }> {
+  const groupRaw = String(formData.get("groupId") ?? "").trim();
+  const seasonRaw = String(formData.get("seasonId") ?? "").trim();
+
+  const group =
+    groupRaw === ""
+      ? null
+      : await prisma.group.findFirst({
+          where: { id: groupRaw, userId },
+          select: { id: true },
+        });
+
+  // Bez výběru se sezóna dopočítá z data zápasu — ručně by to stejně
+  // nikdo nevyplňoval a filtr by zůstal prázdný.
+  const season =
+    seasonRaw === ""
+      ? await prisma.season.findFirst({
+          where: { userId, startsOn: { lte: playedOn }, endsOn: { gte: playedOn } },
+          select: { id: true },
+        })
+      : await prisma.season.findFirst({
+          where: { id: seasonRaw, userId },
+          select: { id: true },
+        });
+
+  return {
+    groupId: group ? String(group.id) : null,
+    seasonId: season ? String(season.id) : null,
+  };
+}
+
 /* ------------------------------------------------------ rozbor */
 
 export async function createReview(formData: FormData): Promise<ActionResult> {
@@ -57,6 +96,8 @@ export async function createReview(formData: FormData): Promise<ActionResult> {
       };
     }
 
+    const { groupId, seasonId } = await zarazeni(userId, formData, playedOn);
+
     const review = await prisma.videoReview.create({
       data: {
         userId,
@@ -65,6 +106,8 @@ export async function createReview(formData: FormData): Promise<ActionResult> {
         notes: parsed.data.notes ?? null,
         playedOn,
         videoId,
+        groupId,
+        seasonId,
       },
       select: { id: true },
     });
@@ -102,6 +145,17 @@ export async function updateReview(
       return { ok: false, error: "Odkaz na video nevypadá jako YouTube." };
     }
 
+    const datum = parseDateInput(formData.get("playedOn"));
+    const puvodni = await prisma.videoReview.findFirst({
+      where: { id: reviewId, userId },
+      select: { playedOn: true },
+    });
+    const { groupId, seasonId } = await zarazeni(
+      userId,
+      formData,
+      datum ?? puvodni?.playedOn ?? new Date(),
+    );
+
     await prisma.videoReview.updateMany({
       where: { id: reviewId, userId },
       data: {
@@ -109,9 +163,9 @@ export async function updateReview(
         opponent: parsed.data.opponent ?? null,
         notes: parsed.data.notes ?? null,
         videoId,
-        ...(parseDateInput(formData.get("playedOn")) && {
-          playedOn: parseDateInput(formData.get("playedOn"))!,
-        }),
+        groupId,
+        seasonId,
+        ...(datum && { playedOn: datum }),
       },
     });
 
@@ -288,51 +342,6 @@ export async function deleteEvent(eventId: string): Promise<ActionResult> {
   }
 }
 
-/* ------------------------------------------------------ sdílení */
-
-export async function setShares(
-  reviewId: string,
-  playerIds: string[],
-  sharedAll: boolean,
-): Promise<ActionResult> {
-  try {
-    const userId = await requireUserId();
-    if (!(await ownsReview(userId, reviewId))) {
-      return { ok: false, error: "Rozbor nenalezen." };
-    }
-
-    const owned = await prisma.player.findMany({
-      where: { userId, id: { in: playerIds } },
-      select: { id: true },
-    });
-
-    await prisma.$transaction(async (tx) => {
-      await tx.reviewShare.deleteMany({ where: { reviewId } });
-      if (owned.length > 0) {
-        await tx.reviewShare.createMany({
-          data: owned.map((p) => ({ reviewId, playerId: String(p.id) })),
-        });
-      }
-      await tx.videoReview.updateMany({
-        where: { id: reviewId, userId },
-        data: { sharedAll },
-      });
-    });
-
-    revalidateReviews(reviewId);
-    return {
-      ok: true,
-      message: sharedAll
-        ? "Sdíleno s celým týmem."
-        : owned.length === 0
-          ? "Sdílení zrušeno."
-          : `Sdíleno s ${owned.length} hráči.`,
-    };
-  } catch (e) {
-    console.error("[setShares]", e);
-    return { ok: false, error: e instanceof Error ? e.message : "Sdílení se nepovedlo." };
-  }
-}
 
 /* -------------------------------------------------- komentáře */
 
@@ -342,8 +351,8 @@ const komentarSchema = z.string().trim().min(1, "Napiš něco.").max(1000);
  * Komentář k rozboru — od trenéra i od hráče.
  *
  * Hráč se hlásí odkazem a heslem, ne účtem, takže se ověřuje token:
- * musí mít platnou session **a** rozbor musí být nasdílený jemu. Bez
- * druhé podmínky by stačilo tipnout id rozboru a napsat do cizího.
+ * musí mít platnou session a rozbor musí patřit jeho klubu. Bez druhé
+ * podmínky by stačilo tipnout id a napsat do rozboru cizího klubu.
  */
 export async function addComment(
   reviewId: string,
@@ -367,11 +376,7 @@ export async function addComment(
       if (!player) return { ok: false, error: "Neznámý hráč." };
 
       const smi = await prisma.videoReview.findFirst({
-        where: {
-          id: reviewId,
-          userId: String(player.userId),
-          OR: [{ sharedAll: true }, { shares: { some: { playerId: String(player.id) } } }],
-        },
+        where: { id: reviewId, userId: String(player.userId) },
         select: { id: true },
       });
       if (!smi) return { ok: false, error: "Rozbor nenalezen." };
