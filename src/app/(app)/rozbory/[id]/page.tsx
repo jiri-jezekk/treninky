@@ -26,6 +26,7 @@ export default async function RozborDetailPage({
           include: { player: { select: { id: true, name: true } } },
         },
         shares: { select: { playerId: true } },
+        roster: { select: { playerId: true } },
       },
     }),
     prisma.reviewEventType.findMany({
@@ -69,6 +70,9 @@ export default async function RozborDetailPage({
           notes: review.notes,
           sharedAll: review.sharedAll,
           sharedWith: review.shares.map((s) => String(s.playerId)),
+          // Prázdná soupiska = celý klub; rozhoduje se až v komponentě,
+          // aby staré rozbory fungovaly beze změny.
+          roster: review.roster.map((r) => String(r.playerId)),
         }}
         types={statTypes}
         players={players.map((p) => ({ id: String(p.id), name: p.name }))}

@@ -333,6 +333,57 @@ export async function setShares(
   }
 }
 
+/* ---------------------------------------------------- soupiska */
+
+/**
+ * Kdo u tohohle zápasu hrál.
+ *
+ * Prázdná soupiska znamená „všichni“ — proto se prázdný seznam ukládá
+ * jako smazání, ne jako „nikdo“. Jinak by rozbor po odškrtnutí všech
+ * zůstal bez jediného hráče a nešlo by za nikoho zapisovat.
+ */
+export async function setRoster(
+  reviewId: string,
+  playerIds: string[],
+): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId();
+    if (!(await ownsReview(userId, reviewId))) {
+      return { ok: false, error: "Rozbor nenalezen." };
+    }
+
+    // Jen hráči z vlastního klubu; cizí id se tiše zahodí.
+    const owned = await prisma.player.findMany({
+      where: { userId, id: { in: playerIds } },
+      select: { id: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.reviewRoster.deleteMany({ where: { reviewId } });
+      if (owned.length > 0) {
+        await tx.reviewRoster.createMany({
+          data: owned.map((p) => ({ reviewId, playerId: String(p.id) })),
+        });
+      }
+    });
+
+    revalidateReviews(reviewId);
+    return {
+      ok: true,
+      message:
+        owned.length === 0
+          ? "Soupiska zrušena — nabízí se celý klub."
+          : `Na soupisce je ${owned.length} hráčů.`,
+    };
+  } catch (e) {
+    console.error("[setRoster]", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Soupisku se nepodařilo uložit.",
+    };
+  }
+}
+
 /* ------------------------------------------------ tlačítka akcí */
 
 const typesSchema = z.array(

@@ -15,6 +15,7 @@ import {
   deleteEvent,
   deleteReview,
   logEvents,
+  setRoster,
   setShares,
   updateEvent,
   updateReview,
@@ -29,6 +30,14 @@ import {
   vychoziOkno,
   type Rozsah,
 } from "@/lib/review-timeline";
+import {
+  MIN_H,
+  MIN_W,
+  najdiPosledniZapis,
+  omezRamec,
+  type KlicZapisu,
+  type Ramec,
+} from "@/lib/review-tracker";
 import { formatVideoTime } from "@/lib/youtube";
 import { czPlural } from "@/lib/czech";
 
@@ -54,6 +63,8 @@ type Review = {
   notes: string | null;
   sharedAll: boolean;
   sharedWith: string[];
+  /** Kdo u zápasu hrál. Prázdné = nabízí se celý klub. */
+  roster: string[];
 };
 
 type Ev = {
@@ -72,8 +83,8 @@ const OFFSET_KEY = "rozbory:offset";
 const DEFAULT_OFFSET = 2;
 /** Po jak dlouhém klidu se dávka odešle. */
 const FLUSH_MS = 3000;
-/** Kam si trenér odtáhl plovoucí panel; drží se mezi rozbory. */
-const PANEL_KEY = "rozbory:panel";
+/** Kam si trenér odtáhl a jak zvětšil plovoucí panely; drží se mezi rozbory. */
+const PANEL_KEY = "rozbory:panel:";
 
 const btn =
   "rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 hover:text-slate-800";
@@ -99,6 +110,13 @@ export function ReviewTracker({
   const [, start] = useTransition();
 
   const zivaTlacitka = types.filter((t) => !t.archived);
+
+  // Soupiska: klub má dvacet lidí, na turnaj jich jede deset. Prázdná
+  // soupiska znamená „všichni“, ať se nový rozbor dá začít bez klikání.
+  const naSoupisce =
+    review.roster.length === 0
+      ? players
+      : players.filter((p) => review.roster.includes(p.id));
 
   /* ---------------------------------------------- přehrávač */
 
@@ -244,9 +262,20 @@ export function ReviewTracker({
     setNove([]);
   }
 
-  const odesli = useCallback(() => {
+  // Dokud se píše poznámka, dávka počká. Odeslání totiž přinese
+  // čerstvá data ze serveru, čekající zápis vymění za uložený a
+  // rozepsaná poznámka by zmizela pod rukama.
+  const pisePoznamku = useRef(false);
+  const odesliRef = useRef<() => void>(() => {});
+
+  const odesli = useCallback((hned = false) => {
     const davka = noveRef.current;
     if (davka.length === 0) return;
+    if (!hned && pisePoznamku.current) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => odesliRef.current(), FLUSH_MS);
+      return;
+    }
     setUkladam(true);
     start(async () => {
       const res = await logEvents(
@@ -268,10 +297,15 @@ export function ReviewTracker({
     });
   }, [review.id, router, start]);
 
-  // Odeslat i při odchodu ze stránky a při zavření karty — jinak by se
-  // poslední naklikané zápisy ztratily.
   useEffect(() => {
-    const pri = () => odesli();
+    odesliRef.current = () => odesli();
+  }, [odesli]);
+
+  // Odeslat i při odchodu ze stránky a při zavření karty — jinak by se
+  // poslední naklikané zápisy ztratily. Tady se na rozepsanou poznámku
+  // nečeká; lepší uložit zápis bez poznámky než přijít o obojí.
+  useEffect(() => {
+    const pri = () => odesli(true);
     window.addEventListener("pagehide", pri);
     return () => {
       window.removeEventListener("pagehide", pri);
@@ -279,23 +313,75 @@ export function ReviewTracker({
     };
   }, [odesli]);
 
+  // Na co se váže poznámka „k poslednímu zápisu“. Nedrží se id: čekající
+  // zápis ho po uložení vymění za serverové. Typ a zaokrouhlený čas
+  // přežijou obojí.
+  const [posledniKlic, setPosledniKlic] = useState<KlicZapisu | null>(null);
+
   const zapis = useCallback(
     (typeId: string) => {
       const hrac = players.find((p) => p.id === zaHrace) ?? null;
+      const at = Math.max(0, casRef.current - offset);
       const e: Ev = {
         id: `novy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         typeId,
-        atSeconds: Math.max(0, casRef.current - offset),
+        atSeconds: at,
         playerId: hrac?.id ?? null,
         playerName: hrac?.name ?? null,
         note: null,
       };
       setNove((n) => [...n, e]);
+      setPosledniKlic({ typeId, at: Math.round(at) });
 
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(odesli, FLUSH_MS);
+      timerRef.current = setTimeout(() => odesliRef.current(), FLUSH_MS);
     },
-    [odesli, offset, players, zaHrace],
+    [offset, players, zaHrace],
+  );
+
+  /* ------------------------------------------- úpravy zápisů */
+
+  // Čekající zápis se opraví v paměti, uložený na serveru. Jedno místo
+  // pro záznam i pro poznámku v celé obrazovce.
+  const zmenZapis = useCallback(
+    (ev: Ev, patch: { note?: string | null; playerId?: string | null }) => {
+      if (ev.id.startsWith("novy-")) {
+        setNove((n) =>
+          n.map((x) =>
+            x.id === ev.id
+              ? {
+                  ...x,
+                  ...patch,
+                  playerName:
+                    patch.playerId === undefined
+                      ? x.playerName
+                      : (players.find((p) => p.id === patch.playerId)?.name ?? null),
+                }
+              : x,
+          ),
+        );
+        return;
+      }
+      start(async () => {
+        await updateEvent(ev.id, patch);
+        router.refresh();
+      });
+    },
+    [players, router, start],
+  );
+
+  const smazZapis = useCallback(
+    (ev: Ev) => {
+      if (ev.id.startsWith("novy-")) {
+        setNove((n) => n.filter((x) => x.id !== ev.id));
+        return;
+      }
+      start(async () => {
+        await deleteEvent(ev.id);
+        router.refresh();
+      });
+    },
+    [router, start],
   );
 
   /* ------------------------------------------------- klávesy */
@@ -360,9 +446,12 @@ export function ReviewTracker({
 
   const zaznam = [...vsechny].sort((a, b) => b.atSeconds - a.atSeconds);
 
+  // Poslední naklikaný zápis — na něj se v celé obrazovce věší poznámka.
+  const posledni = najdiPosledniZapis(vsechny, posledniKlic);
+
   /* --------------------------------------------------- modaly */
 
-  const [modal, setModal] = useState<null | "sdileni" | "uprava">(null);
+  const [modal, setModal] = useState<null | "sdileni" | "uprava" | "soupiska">(null);
 
   return (
     <>
@@ -377,6 +466,12 @@ export function ReviewTracker({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          <button type="button" className={btn} onClick={() => setModal("soupiska")}>
+            Soupiska
+            {review.roster.length > 0 && (
+              <span className="ml-1.5 text-xs text-slate-500">{review.roster.length}</span>
+            )}
+          </button>
           <button type="button" className={btn} onClick={() => setModal("sdileni")}>
             Sdílet
           </button>
@@ -443,26 +538,62 @@ export function ReviewTracker({
               </div>
 
               {celaObrazovka && (
-                <PlovouciPanel onZavrit={prepniObrazovku}>
-                  <div className="mb-2 flex items-baseline gap-2">
-                    <span className="font-heading text-lg font-bold tabular-nums text-slate-900">
-                      {formatVideoTime(cas)}
-                    </span>
-                    <span className="flex-1" />
-                    <span className="text-[11px] text-slate-500">
-                      {nove.length > 0 ? `${nove.length} čeká` : ukladam ? "ukládám…" : "uloženo"}
-                    </span>
-                  </div>
-                  <Pocitadla
-                    tlacitka={zivaTlacitka}
-                    pocty={pocty}
-                    players={players}
-                    zaHrace={zaHrace}
-                    setZaHrace={setZaHrace}
-                    onZapis={zapis}
-                    husto
-                  />
-                </PlovouciPanel>
+                <>
+                  {/* Dva panely, ne jeden: hráče si trenér dá k ruce,
+                      situace na druhou stranu obrazovky. Oba jdou
+                      přetáhnout i zvětšit za pravý dolní roh. */}
+                  <PlovouciPanel
+                    klic="hraci"
+                    nadpis="Hráči"
+                    vychozi={{ x: 12, y: 72, w: 260, h: 300 }}
+                    onZavrit={prepniObrazovku}
+                  >
+                    <VyberHrace
+                      players={naSoupisce}
+                      zaHrace={zaHrace}
+                      setZaHrace={setZaHrace}
+                      velke
+                    />
+                    {review.roster.length === 0 && players.length > 8 && (
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        Soupisku vybereš tlačítkem „Soupiska“ mimo celou obrazovku.
+                      </p>
+                    )}
+                  </PlovouciPanel>
+
+                  <PlovouciPanel
+                    klic="situace"
+                    nadpis="Situace"
+                    vychozi={{ x: -1, y: 72, w: 320, h: 380 }}
+                    onZavrit={prepniObrazovku}
+                  >
+                    <div className="mb-2 flex items-baseline gap-2">
+                      <span className="font-heading text-lg font-bold tabular-nums text-slate-900">
+                        {formatVideoTime(cas)}
+                      </span>
+                      <span className="flex-1" />
+                      <span className="text-[11px] text-slate-500">
+                        {nove.length > 0
+                          ? `${nove.length} čeká`
+                          : ukladam
+                            ? "ukládám…"
+                            : "uloženo"}
+                      </span>
+                    </div>
+
+                    <Tlacitka tlacitka={zivaTlacitka} pocty={pocty} onZapis={zapis} husto />
+
+                    <PoznamkaKPoslednimu
+                      ev={posledni}
+                      typ={posledni ? typById.get(posledni.typeId) : undefined}
+                      onZmena={(patch) => posledni && zmenZapis(posledni, patch)}
+                      onSmazat={() => posledni && smazZapis(posledni)}
+                      onPise={(ano) => {
+                        pisePoznamku.current = ano;
+                      }}
+                    />
+                  </PlovouciPanel>
+                </>
               )}
             </div>
 
@@ -484,14 +615,12 @@ export function ReviewTracker({
                 </button>
               </div>
 
-              <Pocitadla
-                tlacitka={zivaTlacitka}
-                pocty={pocty}
-                players={players}
+              <VyberHrace
+                players={naSoupisce}
                 zaHrace={zaHrace}
                 setZaHrace={setZaHrace}
-                onZapis={zapis}
               />
+              <Tlacitka tlacitka={zivaTlacitka} pocty={pocty} onZapis={zapis} />
 
               <p className="mt-3 text-xs text-slate-500">
                 {nove.length > 0
@@ -649,43 +778,11 @@ export function ReviewTracker({
                     key={e.id}
                     ev={e}
                     typ={typById.get(e.typeId)}
-                    players={players}
+                    players={naSoupisce}
                     ceka={e.id.startsWith("novy-")}
                     onSeek={() => skoc(e.atSeconds)}
-                    onSmazat={() => {
-                      if (e.id.startsWith("novy-")) {
-                        setNove((n) => n.filter((x) => x.id !== e.id));
-                        return;
-                      }
-                      start(async () => {
-                        await deleteEvent(e.id);
-                        router.refresh();
-                      });
-                    }}
-                    onZmena={(patch) => {
-                      if (e.id.startsWith("novy-")) {
-                        setNove((n) =>
-                          n.map((x) =>
-                            x.id === e.id
-                              ? {
-                                  ...x,
-                                  ...patch,
-                                  playerName:
-                                    patch.playerId === undefined
-                                      ? x.playerName
-                                      : (players.find((p) => p.id === patch.playerId)?.name ??
-                                        null),
-                                }
-                              : x,
-                          ),
-                        );
-                        return;
-                      }
-                      start(async () => {
-                        await updateEvent(e.id, patch);
-                        router.refresh();
-                      });
-                    }}
+                    onSmazat={() => smazZapis(e)}
+                    onZmena={(patch) => zmenZapis(e, patch)}
                   />
                 ))}
               </ul>
@@ -694,6 +791,19 @@ export function ReviewTracker({
         </div>
       </div>
 
+      {modal === "soupiska" && (
+        <Soupiska
+          review={review}
+          players={players}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            // Zapisovalo se možná za hráče, který ze soupisky vypadl.
+            setZaHrace(null);
+            router.refresh();
+          }}
+        />
+      )}
       {modal === "sdileni" && (
         <Sdileni
           review={review}
@@ -725,10 +835,12 @@ export function ReviewTracker({
 function Pill({
   on,
   onClick,
+  velke = false,
   children,
 }: {
   on: boolean;
   onClick: () => void;
+  velke?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -736,7 +848,9 @@ function Pill({
       type="button"
       onClick={onClick}
       aria-pressed={on}
-      className={`rounded-full border px-2.5 py-1 text-[13px] transition ${
+      className={`rounded-full border transition ${
+        velke ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-[13px]"
+      } ${
         on
           ? "border-club-line bg-club-soft font-medium text-club"
           : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
@@ -761,43 +875,56 @@ function Tile({ k, v, tone }: { k: string; v: string; tone?: string }) {
 }
 
 /**
- * Přepínač hráče a tlačítka počítadel.
- *
- * Jeden kus kódu pro stránku i pro plovoucí panel v celé obrazovce —
- * kdyby to byly dvě verze, jedna by časem zapomněla počítat.
+ * Za koho se zapisuje. Stejný kus kódu na stránce i v plovoucím
+ * panelu — kdyby to byly dvě verze, jedna by časem přestala sedět.
  */
-function Pocitadla({
-  tlacitka,
-  pocty,
+function VyberHrace({
   players,
   zaHrace,
   setZaHrace,
+  velke = false,
+}: {
+  players: Hrac[];
+  zaHrace: string | null;
+  setZaHrace: (id: string | null) => void;
+  /** Do panelu ve fullscreenu: větší terč, jméno na celý řádek. */
+  velke?: boolean;
+}) {
+  return (
+    <div className={`mb-2.5 flex flex-wrap items-center gap-1.5 ${velke ? "gap-2" : ""}`}>
+      {!velke && <span className="mr-0.5 text-xs text-slate-500">Zapisuji za:</span>}
+      <Pill on={zaHrace == null} onClick={() => setZaHrace(null)} velke={velke}>
+        celý tým
+      </Pill>
+      {players.map((p) => (
+        <Pill
+          key={p.id}
+          on={zaHrace === p.id}
+          onClick={() => setZaHrace(p.id)}
+          velke={velke}
+        >
+          {p.name}
+        </Pill>
+      ))}
+    </div>
+  );
+}
+
+/** Počítadla situací. */
+function Tlacitka({
+  tlacitka,
+  pocty,
   onZapis,
   husto = false,
 }: {
   tlacitka: StatType[];
   pocty: Map<string, number>;
-  players: Hrac[];
-  zaHrace: string | null;
-  setZaHrace: (id: string | null) => void;
   onZapis: (typeId: string) => void;
   /** Menší varianta do plovoucího panelu. */
   husto?: boolean;
 }) {
   return (
     <>
-      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-        <span className="mr-0.5 text-xs text-slate-500">Zapisuji za:</span>
-        <Pill on={zaHrace == null} onClick={() => setZaHrace(null)}>
-          tým
-        </Pill>
-        {players.map((p) => (
-          <Pill key={p.id} on={zaHrace === p.id} onClick={() => setZaHrace(p.id)}>
-            {p.name}
-          </Pill>
-        ))}
-      </div>
-
       <div
         className={`grid gap-2 ${
           husto
@@ -840,81 +967,206 @@ function Pocitadla({
   );
 }
 
+/** Poznámka k poslednímu zápisu, aby se nemuselo z celé obrazovky ven. */
+function PoznamkaKPoslednimu({
+  ev,
+  typ,
+  onZmena,
+  onSmazat,
+  onPise,
+}: {
+  ev: Ev | null;
+  typ: StatType | undefined;
+  onZmena: (patch: { note?: string | null }) => void;
+  onSmazat: () => void;
+  /** Hlásí ven, že se píše — dávka zápisů zatím počká. */
+  onPise: (ano: boolean) => void;
+}) {
+  const [drzeny, setDrzeny] = useState<string | null>(null);
+  const [text, setText] = useState("");
+
+  // Po novém kliknutí se pole přepne na čerstvý zápis. Nastavuje se
+  // při vykreslení, ne v efektu — jinak by problikla stará poznámka.
+  if (ev != null && ev.id !== drzeny) {
+    setDrzeny(ev.id);
+    setText(ev.note ?? "");
+  }
+
+  if (ev == null) {
+    return (
+      <p className="mt-2.5 text-[11.5px] italic text-slate-500">
+        Po kliknutí se sem dá napsat poznámka k té situaci.
+      </p>
+    );
+  }
+
+  const uloz = () => {
+    const v = text.trim();
+    if (v !== (ev.note ?? "")) onZmena({ note: v === "" ? null : v });
+  };
+
+  return (
+    <div className="mt-2.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+      <div className="flex items-center gap-1.5">
+        <i
+          aria-hidden
+          style={{ background: typ?.color ?? "#64748b" }}
+          className="inline-block h-1.5 w-1.5 shrink-0 rotate-45 rounded-[2px]"
+        />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-700">
+          {typ?.label ?? "Akce"}
+          {ev.playerName ? ` · ${ev.playerName}` : ""}
+        </span>
+        <span className="shrink-0 text-[11.5px] tabular-nums text-slate-500">
+          {formatVideoTime(ev.atSeconds)}
+        </span>
+        <button
+          type="button"
+          onClick={onSmazat}
+          aria-label="Smazat poslední zápis"
+          className="shrink-0 rounded px-1 text-slate-500 transition hover:bg-red-50 hover:text-red-800"
+        >
+          ✕
+        </button>
+      </div>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={() => onPise(true)}
+        onBlur={() => {
+          onPise(false);
+          uloz();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            uloz();
+            e.currentTarget.blur();
+          }
+        }}
+        placeholder="poznámka k téhle situaci…"
+        aria-label="Poznámka k poslednímu zápisu"
+        className="mt-1 w-full rounded border border-slate-200 bg-slate-100 px-2 py-1 text-[12.5px] text-slate-800 outline-none focus:border-club"
+      />
+    </div>
+  );
+}
+
 /* ------------------------------------------- plovoucí panel */
 
-type Poloha = { x: number; y: number };
+type Vychozi = { x: number | "vpravo"; y: number; w: number; h: number };
 
-function nactiPolohu(): Poloha | null {
+function nactiRamec(klic: string): Ramec | null {
   try {
-    const s = window.localStorage.getItem(PANEL_KEY);
+    const s = window.localStorage.getItem(PANEL_KEY + klic);
     if (!s) return null;
     const p: unknown = JSON.parse(s);
+    if (typeof p !== "object" || p === null) return null;
+    const r = p as Partial<Ramec>;
     if (
-      typeof p === "object" &&
-      p !== null &&
-      typeof (p as Poloha).x === "number" &&
-      typeof (p as Poloha).y === "number"
+      typeof r.x !== "number" ||
+      typeof r.y !== "number" ||
+      typeof r.w !== "number" ||
+      typeof r.h !== "number"
     ) {
-      return { x: (p as Poloha).x, y: (p as Poloha).y };
+      return null;
     }
-    return null;
+    return { x: r.x, y: r.y, w: r.w, h: r.h };
   } catch {
     return null;
   }
 }
 
-/** Panel se nesmí zatáhnout mimo obrazovku — zpátky by nešel. */
-function vObrazovce(p: Poloha, el: HTMLElement): Poloha {
-  const okraj = 8;
-  const maxX = Math.max(okraj, window.innerWidth - el.offsetWidth - okraj);
-  const maxY = Math.max(okraj, window.innerHeight - el.offsetHeight - okraj);
-  return {
-    x: Math.min(Math.max(p.x, okraj), maxX),
-    y: Math.min(Math.max(p.y, okraj), maxY),
-  };
+/** Panel se nesmí zatáhnout za hranu obrazovky; myší by se nevrátil. */
+function vObrazovce(r: Ramec): Ramec {
+  return omezRamec(r, { w: window.innerWidth, h: window.innerHeight });
 }
 
 /**
- * Počítadla nad videem v celé obrazovce, tažitelná kamkoliv.
- *
- * Trenér kouká na zápas přes celou obrazovku a zapisuje bez toho, aby
- * z videa odcházel. Kam si panel dá, tam mu zůstane i příště.
+ * Panel nad videem v celé obrazovce: přetáhnout za hlavičku, zvětšit
+ * za pravý dolní roh. Poloha i velikost se pamatují pro každý panel
+ * zvlášť — u každého streamu sedí něco jiného.
  */
 function PlovouciPanel({
+  klic,
+  nadpis,
+  vychozi,
   onZavrit,
   children,
 }: {
+  klic: string;
+  nadpis: string;
+  vychozi: Vychozi;
   onZavrit: () => void;
   children: React.ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const uchopRef = useRef<Poloha | null>(null);
-  const [poloha, setPoloha] = useState<Poloha>(
-    () => nactiPolohu() ?? { x: Math.max(8, window.innerWidth - 340), y: 72 },
+  const uchopRef = useRef<{ x: number; y: number } | null>(null);
+  const [ramec, setRamec] = useState<Ramec>(() =>
+    vObrazovce(
+      nactiRamec(klic) ?? {
+        ...vychozi,
+        x:
+          vychozi.x === "vpravo"
+            ? Math.max(8, window.innerWidth - vychozi.w - 12)
+            : vychozi.x,
+      },
+    ),
   );
   const [schovano, setSchovano] = useState(false);
 
-  // Uložená poloha může být z většího okna; po otevření se srovná.
+  const uloz = useCallback(
+    (r: Ramec) => {
+      try {
+        window.localStorage.setItem(PANEL_KEY + klic, JSON.stringify(r));
+      } catch {
+        /* nevadí, jen se příště otevře na výchozím místě */
+      }
+    },
+    [klic],
+  );
+
+  // Zvětšování drží prohlížeč (CSS resize), takže se změna jen odchytí
+  // a uloží. Vlastní úchyt by na dotyku ani nefungoval líp.
   useEffect(() => {
     const el = panelRef.current;
-    if (el) setPoloha((p) => vObrazovce(p, el));
-  }, []);
-
-  const uloz = (p: Poloha) => {
-    try {
-      window.localStorage.setItem(PANEL_KEY, JSON.stringify(p));
-    } catch {
-      /* nevadí, jen se příště objeví vpravo */
-    }
-  };
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => {
+        setRamec((r) => {
+          const novy = { ...r, w: el.offsetWidth, h: el.offsetHeight };
+          if (novy.w === r.w && novy.h === r.h) return r;
+          uloz(novy);
+          return novy;
+        });
+      }, 250);
+    });
+    ro.observe(el);
+    return () => {
+      if (t) clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [uloz]);
 
   return (
     <div
       ref={panelRef}
-      style={{ left: poloha.x, top: poloha.y }}
-      className="fixed z-[70] w-[19rem] max-w-[calc(100vw-1rem)] rounded-xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur"
+      style={{
+        left: ramec.x,
+        top: ramec.y,
+        width: ramec.w,
+        height: schovano ? undefined : ramec.h,
+        resize: schovano ? "none" : "both",
+        minWidth: MIN_W,
+        minHeight: schovano ? undefined : MIN_H,
+        maxWidth: "calc(100vw - 1rem)",
+        maxHeight: "calc(100vh - 1rem)",
+      }}
+      className="fixed z-[70] flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur"
     >
-      <div className="mb-2 flex items-center gap-1.5">
+      <div className="mb-2 flex shrink-0 items-center gap-1.5">
         <span
           onPointerDown={(e) => {
             const el = panelRef.current;
@@ -925,43 +1177,42 @@ function PlovouciPanel({
           }}
           onPointerMove={(e) => {
             const u = uchopRef.current;
-            const el = panelRef.current;
-            if (!u || !el) return;
+            if (!u) return;
             e.preventDefault();
-            setPoloha(vObrazovce({ x: e.clientX - u.x, y: e.clientY - u.y }, el));
+            setRamec((r) => vObrazovce({ ...r, x: e.clientX - u.x, y: e.clientY - u.y }));
           }}
           onPointerUp={() => {
             if (!uchopRef.current) return;
             uchopRef.current = null;
-            uloz(poloha);
+            uloz(ramec);
           }}
           role="button"
           tabIndex={-1}
-          aria-label="Přesunout panel"
-          title="Chytni a táhni, kam potřebuješ"
-          className="flex-1 cursor-move touch-none select-none font-heading text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500"
+          aria-label={`Přesunout panel ${nadpis}`}
+          title="Chytni a táhni, kam potřebuješ. Velikost se mění za pravý dolní roh."
+          className="min-w-0 flex-1 cursor-move touch-none select-none truncate font-heading text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500"
         >
-          ⠿ Počítadla
+          ⠿ {nadpis}
         </span>
         <button
           type="button"
           onClick={() => setSchovano((s) => !s)}
           aria-label={schovano ? "Rozbalit panel" : "Sbalit panel"}
-          className="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+          className="shrink-0 rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
         >
           {schovano ? "▾" : "▴"}
         </button>
         <button
           type="button"
           onClick={onZavrit}
-          aria-label="Zpět ze celé obrazovky"
-          className="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+          aria-label="Zpět z celé obrazovky"
+          className="shrink-0 rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
         >
           ✕
         </button>
       </div>
 
-      {!schovano && <div className="max-h-[70vh] overflow-y-auto">{children}</div>}
+      {!schovano && <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>}
     </div>
   );
 }
@@ -1169,6 +1420,101 @@ function Obal({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Kdo u zápasu hrál. Bez soupisky se při zapisování proklikává celý
+ * klub, i lidi, co na turnaji vůbec nebyli.
+ */
+function Soupiska({
+  review,
+  players,
+  onClose,
+  onSaved,
+}: {
+  review: Review;
+  players: Hrac[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [vybrani, setVybrani] = useState<string[]>(review.roster);
+  const [chyba, setChyba] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const prepni = (id: string) =>
+    setVybrani((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
+
+  return (
+    <Obal title="Soupiska zápasu" onClose={onClose}>
+      <p className="mb-3 text-xs text-slate-500">
+        Vyber, kdo tenhle zápas hrál. Při zapisování se pak nabízejí jen
+        oni. Prázdná soupiska znamená celý klub.
+      </p>
+
+      <div className="mb-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={btn}
+          onClick={() => setVybrani(players.map((p) => p.id))}
+        >
+          Označit všechny
+        </button>
+        <button type="button" className={btn} onClick={() => setVybrani([])}>
+          Zrušit výběr
+        </button>
+        <span className="self-center text-xs text-slate-500">
+          vybráno {vybrani.length} z {players.length}
+        </span>
+      </div>
+
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {players.map((p) => (
+          <label
+            key={p.id}
+            className={`flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 ${
+              vybrani.includes(p.id)
+                ? "border-club-line bg-club-soft"
+                : "border-slate-200 bg-slate-50"
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={vybrani.includes(p.id)}
+              onChange={() => prepni(p.id)}
+              className="h-4 w-4"
+            />
+            <span className="min-w-0 truncate text-[13.5px] text-slate-800">{p.name}</span>
+          </label>
+        ))}
+      </div>
+
+      {chyba && (
+        <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          {chyba}
+        </p>
+      )}
+
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <button type="button" className={btn} onClick={onClose}>
+          Zrušit
+        </button>
+        <button
+          type="button"
+          className={btnPrimary}
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              const res = await setRoster(review.id, vybrani);
+              if (!res.ok) setChyba(res.error);
+              else onSaved();
+            })
+          }
+        >
+          {pending ? "Ukládám…" : "Uložit soupisku"}
+        </button>
+      </div>
+    </Obal>
   );
 }
 

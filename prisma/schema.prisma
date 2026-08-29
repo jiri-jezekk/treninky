@@ -126,6 +126,7 @@ model Player {
   soloSessions SoloSession[]
   reviewEvents ReviewEvent[]
   reviewShares ReviewShare[]
+  reviewRoster ReviewRoster[]
   /** Vypnuté = hráč se do ratingu nepočítá a v žebříčku není. */
   inRating     Boolean                   @default(true)
 
@@ -682,8 +683,27 @@ model VideoReview {
   createdAt DateTime @default(now())
   events    ReviewEvent[]
   shares    ReviewShare[]
+  roster    ReviewRoster[]
 
   @@index([userId, playedOn])
+}
+
+/**
+ * Soupiska rozboru — kdo u tohohle zápasu hrál.
+ *
+ * Klub má dvacet lidí, na turnaj jich jede deset. Bez soupisky by se
+ * při zapisování proklikávalo dvacet jmen, z toho polovina tam vůbec
+ * nebyla. Prázdná soupiska znamená „všichni“: staré rozbory fungují
+ * dál a nový jde začít bez vyplňování.
+ */
+model ReviewRoster {
+  reviewId String
+  review   VideoReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, playerId])
+  @@index([playerId])
 }
 
 /**

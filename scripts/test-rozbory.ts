@@ -18,6 +18,12 @@ import {
   rozsahOsy,
   vychoziOkno,
 } from "../src/lib/review-timeline.ts";
+import {
+  MIN_H,
+  MIN_W,
+  najdiPosledniZapis,
+  omezRamec,
+} from "../src/lib/review-tracker.ts";
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -202,6 +208,67 @@ console.log("\nVýřez časové osy (živé přenosy mají hodiny záznamu):");
   check("značka na začátku výřezu", polohaVeVyrezu(4700, r), 0);
   check("značka mimo výřez se nekreslí", polohaVeVyrezu(120, r), null);
   check("ani zápis po výřezu", polohaVeVyrezu(9000, r), null);
+}
+
+console.log("\nPlovoucí panel ve fullscreenu:");
+{
+  const okno = { w: 1440, h: 900 };
+  check("beze změny uvnitř obrazovky", omezRamec({ x: 100, y: 100, w: 300, h: 400 }, okno), {
+    w: 300,
+    h: 400,
+    x: 100,
+    y: 100,
+  });
+  // Zatáhnout panel za hranu = přijít o něj, myší se pro něj nedá vrátit.
+  check("zatažený doprava se vrátí", omezRamec({ x: 1400, y: 100, w: 300, h: 400 }, okno), {
+    w: 300,
+    h: 400,
+    x: 1132,
+    y: 100,
+  });
+  check("zatažený nahoru a doleva se vrátí", omezRamec({ x: -50, y: -80, w: 300, h: 400 }, okno), {
+    w: 300,
+    h: 400,
+    x: 8,
+    y: 8,
+  });
+  check("menší než minimum se nafoukne", omezRamec({ x: 10, y: 10, w: 20, h: 20 }, okno).w, MIN_W);
+  check("a na výšku taky", omezRamec({ x: 10, y: 10, w: 20, h: 20 }, okno).h, MIN_H);
+  check(
+    "větší než obrazovka se ořízne",
+    omezRamec({ x: 0, y: 0, w: 5000, h: 5000 }, okno),
+    { w: 1424, h: 884, x: 8, y: 8 },
+  );
+  // Malé okno (telefon na šířku) nesmí protlačit panel do záporných čísel.
+  check(
+    "malé okno panel nevystrčí",
+    omezRamec({ x: 300, y: 300, w: 300, h: 400 }, { w: 200, h: 150 }),
+    { w: 184, h: 134, x: 8, y: 8 },
+  );
+  check("a nikdy pod minimum", [MIN_W, MIN_H], [180, 120]);
+}
+
+console.log("\nPoslední zápis, na který se věší poznámka:");
+{
+  const zapisy = [
+    { id: "a", typeId: "hit", atSeconds: 10.4 },
+    { id: "b", typeId: "catch", atSeconds: 30 },
+    { id: "c", typeId: "hit", atSeconds: 30.2 },
+  ];
+  check("bez kliknutí není co doplňovat", najdiPosledniZapis(zapisy, null), null);
+  check("podle typu a času", najdiPosledniZapis(zapisy, { typeId: "hit", at: 10 })?.id, "a");
+  // Čekající zápis po uložení dostane jiné id; klíč musí přežít.
+  check("zaokrouhlený čas sedí", najdiPosledniZapis(zapisy, { typeId: "hit", at: 30 })?.id, "c");
+  check("stejný čas, jiný typ", najdiPosledniZapis(zapisy, { typeId: "catch", at: 30 })?.id, "b");
+  check("smazaný zápis se nenajde", najdiPosledniZapis(zapisy, { typeId: "hit", at: 99 }), null);
+  {
+    // Dvakrát tatáž akce ve stejné vteřině: platí ta pozdější.
+    const dva = [
+      { id: "x", typeId: "hit", atSeconds: 12 },
+      { id: "y", typeId: "hit", atSeconds: 12.4 },
+    ];
+    check("při shodě vyhrává novější", najdiPosledniZapis(dva, { typeId: "hit", at: 12 })?.id, "y");
+  }
 }
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\nNEPROŠLO: ${failures}`);
