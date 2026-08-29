@@ -220,15 +220,6 @@ export function challengeDeltas(
   });
 }
 
-/** Slovní zařazení podle ratingu — pro hráče čitelnější než holé číslo. */
-export function ratingBand(rating: number): string {
-  if (rating >= 1300) return "Špička";
-  if (rating >= 1150) return "Pokročilý";
-  if (rating >= 1050) return "Zkušený";
-  if (rating >= 950) return "Základ";
-  return "Začátečník";
-}
-
 export type MatchTeamInput = {
   teamId: string;
   score: number;

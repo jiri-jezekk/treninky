@@ -364,7 +364,7 @@ function Leaderboard({
                     {r.playerName}
                   </span>
                   <span className="block truncate text-xs text-slate-500">
-                    {r.band} · {r.duelsWon}–{r.duelsLost} v duelech ·{" "}
+                    {r.duelsWon}–{r.duelsLost} v duelech ·{" "}
                     {r.fromDuels === 0 ? "±0" : delta(r.fromDuels)} z duelů,{" "}
                     +{r.fromAttendance} za {r.attendanceCount}{" "}
                     {czPlural(r.attendanceCount, "trénink", "tréninky", "tréninků")}

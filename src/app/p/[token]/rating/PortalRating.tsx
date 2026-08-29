@@ -92,7 +92,6 @@ export function PortalRating({
   myName,
   myRating,
   myRank,
-  myBand,
   seasonName,
   board,
   duels,
@@ -106,7 +105,6 @@ export function PortalRating({
   myName: string;
   myRating: number | null;
   myRank: number | null;
-  myBand: string | null;
   seasonName: string | null;
   board: BoardRow[];
   duels: PortalDuel[];
@@ -146,7 +144,6 @@ export function PortalRating({
         {myRank && (
           <p className="mt-2 text-sm text-slate-600">
             {myRank}. místo z {board.length}
-            {myBand && ` · ${myBand}`}
           </p>
         )}
       </div>

@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ratingBand, STARTING_RATING } from "@/lib/elo";
+import { STARTING_RATING } from "@/lib/elo";
 
 /**
  * Kolik ratingu přidá jedna účast — trénink i posilovna.
@@ -48,7 +48,6 @@ export type RatingRow = {
   gymCount: number;
   /** Individuální tréninky, které si hráč zapsal sám. */
   soloCount: number;
-  band: string;
   rank: number;
   duelsWon: number;
   duelsLost: number;
@@ -158,7 +157,6 @@ export async function getLeaderboard(
         attendanceCount: count,
         gymCount: gymCount.get(id) ?? 0,
         soloCount: solo,
-        band: ratingBand(points + fromAttendance),
         rank: 0,
         duelsWon: won.get(id) ?? 0,
         duelsLost: lost.get(id) ?? 0,
@@ -436,7 +434,6 @@ export type PlayerActivity = {
   seasonName: string | null;
   rating: number;
   rank: number | null;
-  band: string;
   /**
    * Rozpad ratingu podle toho, odkud se vzal. Bez něj je rating jen
    * číslo, o kterém se dá leda hádat.
@@ -491,7 +488,6 @@ export async function getPlayerActivity(
       seasonName: null,
       rating: STARTING_RATING,
       rank: null,
-      band: ratingBand(STARTING_RATING),
       fromDuelsAndMatches: 0,
       fromChallenges: 0,
       fromCoach: 0,
@@ -551,7 +547,6 @@ export async function getPlayerActivity(
     seasonName: season.name,
     rating: row?.rating ?? STARTING_RATING,
     rank: row?.rank ?? null,
-    band: row?.band ?? ratingBand(STARTING_RATING),
     fromDuelsAndMatches,
     fromChallenges,
     fromCoach,

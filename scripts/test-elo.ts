@@ -15,9 +15,7 @@ import {
   expectedScore,
   averageRating,
   marginMultiplier,
-  ratingBand,
   scoreFromValues,
-  STARTING_RATING,
   matchPlayerDeltas,
   roundKeepingZeroSum,
   WEIGHT_CHALLENGE_DEFAULT,
@@ -563,10 +561,6 @@ eq("zbytek se rozdá", roundKeepingZeroSum([1.5, -1.5]).reduce((a, b) => a + b, 
   eq("500 náhodných rozpadů má součet nula", nejhorsi, 0);
 }
 
-console.log("\nZařazení:");
-eq("start je Základ", ratingBand(STARTING_RATING), "Základ");
-eq("pod 950 začátečník", ratingBand(900), "Začátečník");
-eq("1400 je špička", ratingBand(1400), "Špička");
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\n${failures} KONTROL NEPROŠLO`);
 process.exit(failures === 0 ? 0 : 1);

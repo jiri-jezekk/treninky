@@ -178,7 +178,6 @@ export default async function PortalRatingPage({
           myName={player.name}
           myRating={myRow?.rating ?? null}
           myRank={myRow?.rank ?? null}
-          myBand={myRow?.band ?? null}
           seasonName={season?.name ?? null}
           board={board.map((r) => ({
             playerId: r.playerId,

@@ -18,7 +18,6 @@ export type ProfileRow = {
   seasonName: string | null;
   rating: number;
   rank: number | null;
-  band: string;
   fromDuelsAndMatches: number;
   fromChallenges: number;
   fromCoach: number;
@@ -77,7 +76,6 @@ export function PlayerProfile({ profile }: { profile: ProfileRow }) {
             <p className="mt-0.5 text-xs text-slate-500">
               {profile.seasonName ?? "Bez sezóny"}
               {profile.rank != null && ` · ${profile.rank}. v žebříčku`}
-              {` · ${profile.band}`}
             </p>
           </div>
           <span className="shrink-0 text-right">
