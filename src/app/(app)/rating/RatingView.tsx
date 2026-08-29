@@ -6,6 +6,7 @@ import {
   confirmDuel,
   createDuel,
   deleteDuel,
+  reopenDuel,
   reportDuelResult,
 } from "@/actions/duels";
 import {
@@ -13,13 +14,17 @@ import {
   createChallenge,
   deleteChallenge,
   deleteChallengeEntry,
+  reopenChallenge,
+  updateChallengeEntry,
 } from "@/actions/challenges";
 import {
   closeMatch,
   createMatch,
   deleteMatch,
+  reopenMatch,
   updateMatchScores,
 } from "@/actions/matches";
+import { ActionButton } from "./ActionButton";
 import { czPlural, initials } from "@/lib/czech";
 import { deleteSoloSession } from "@/actions/solo-sessions";
 import type { RatingRow } from "@/lib/rating";
@@ -58,6 +63,11 @@ export type MatchRow = {
     name: string;
     score: number;
     delta: number | null;
+    /** Průměrný rating týmu — z něj se počítá. */
+    rating: number | null;
+    rank: number | null;
+    /** Kolik dostane každý člen po vyhodnocení. Null u uzavřeného. */
+    previewDelta: number | null;
     playerNames: string[];
   }[];
 };
@@ -82,13 +92,17 @@ export type ChallengeRow = {
   startsOn: string;
   endsOn: string;
   closed: boolean;
-  entries: {
-    id: string;
+  /** Pořadí podle nejlepšího pokusu; pokusy zůstávají jako historie. */
+  standings: {
+    playerId: string;
     playerName: string;
-    value: number;
-    note: string | null;
+    best: number;
+    bestAttemptId: string;
     rank: number;
+    improvement: number;
+    attempts: { id: string; value: number; note: string | null; when: string }[];
   }[];
+  attemptCount: number;
 };
 
 const label =
@@ -497,13 +511,15 @@ function Duels({
                       </button>
                     </form>
                   )}
-                  {(d.status === "ACCEPTED" || d.status === "PENDING") && (
+                  {(d.status === "ACCEPTED" ||
+                    d.status === "PENDING" ||
+                    d.status === "REPORTED") && (
                     <button
                       type="button"
                       className={mini}
                       onClick={() => setReporting(reporting === d.id ? null : d.id)}
                     >
-                      Zapsat výsledek
+                      {d.status === "REPORTED" ? "Opravit výsledek" : "Zapsat výsledek"}
                     </button>
                   )}
                   {d.status !== "CONFIRMED" && (
@@ -512,6 +528,15 @@ function Duels({
                         Smazat
                       </button>
                     </form>
+                  )}
+                  {d.status === "CONFIRMED" && (
+                    <ActionButton
+                      action={reopenDuel.bind(null, d.id)}
+                      label="Vrátit zpět"
+                      pendingLabel="Vracím…"
+                      className={mini}
+                      confirm="Vrátit duel k opravě? Rating se oběma hráčům odečte a výsledek půjde zapsat znovu."
+                    />
                   )}
                 </div>
               </div>
@@ -742,20 +767,29 @@ function Matches({
                       <p className="mt-1 text-sm text-slate-600">{m.description}</p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    {!m.closed && (
+                  <div className="flex shrink-0 flex-wrap items-start gap-2">
+                    {!m.closed ? (
                       <>
-                        <form action={closeMatch.bind(null, m.id)}>
-                          <button type="submit" className={btnPrimary}>
-                            Vyhodnotit
-                          </button>
-                        </form>
+                        <ActionButton
+                          action={closeMatch.bind(null, m.id)}
+                          label="Vyhodnotit"
+                          pendingLabel="Vyhodnocuji…"
+                          className={btnPrimary}
+                        />
                         <form action={deleteMatch.bind(null, m.id)}>
                           <button type="submit" className={btnDanger}>
                             Smazat
                           </button>
                         </form>
                       </>
+                    ) : (
+                      <ActionButton
+                        action={reopenMatch.bind(null, m.id)}
+                        label="Vrátit zpět"
+                        pendingLabel="Vracím…"
+                        className={btnOutline}
+                        confirm="Vrátit vyhodnocení? Rating z tohohle zápasu se hráčům odečte a zápas půjde opravit."
+                      />
                     )}
                   </div>
                 </div>
@@ -801,6 +835,27 @@ function Matches({
                       <p className="mt-1 text-xs text-slate-500">
                         {t.playerNames.join(", ")}
                       </p>
+                      {/* Co vyhodnocení udělá — vidět dřív, než se na něj klikne. */}
+                      {!m.closed && t.previewDelta != null && (
+                        <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-xs text-slate-600">
+                          <b className="font-heading text-slate-700">{t.rank}. místo</b>
+                          {" · rating týmu "}
+                          {t.rating}
+                          {" · po vyhodnocení "}
+                          <b
+                            className={
+                              t.previewDelta > 0
+                                ? "text-emerald-800"
+                                : t.previewDelta < 0
+                                  ? "text-red-800"
+                                  : "text-slate-600"
+                            }
+                          >
+                            {delta(t.previewDelta) || "±0"}
+                          </b>
+                          {" každému"}
+                        </p>
+                      )}
                     </div>
                   ))}
                   {!m.closed && (
@@ -946,63 +1001,132 @@ function Challenges({
                     <p className="mt-1 text-sm text-slate-600">{c.description}</p>
                   )}
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {!c.closed && c.entries.length >= 2 && (
-                    <form action={closeChallenge.bind(null, c.id)}>
-                      <button type="submit" className={btnPrimary}>
-                        Uzavřít a rozdat rating
-                      </button>
-                    </form>
-                  )}
-                  {!c.closed && (
-                    <form action={deleteChallenge.bind(null, c.id)}>
-                      <button type="submit" className={btnDanger}>
-                        Smazat
-                      </button>
-                    </form>
+                <div className="flex shrink-0 flex-wrap items-start gap-2">
+                  {!c.closed ? (
+                    <>
+                      {c.standings.length >= 2 && (
+                        <ActionButton
+                          action={closeChallenge.bind(null, c.id)}
+                          label="Uzavřít a rozdat rating"
+                          pendingLabel="Uzavírám…"
+                          className={btnPrimary}
+                        />
+                      )}
+                      <form action={deleteChallenge.bind(null, c.id)}>
+                        <button type="submit" className={btnDanger}>
+                          Smazat
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <ActionButton
+                      action={reopenChallenge.bind(null, c.id)}
+                      label="Vrátit zpět"
+                      pendingLabel="Vracím…"
+                      className={btnOutline}
+                      confirm="Vrátit vyhodnocení? Rating z téhle výzvy se hráčům odečte a půjde ji opravit."
+                    />
                   )}
                 </div>
               </div>
 
-              {c.entries.length > 0 ? (
-                <ol className="mt-3 space-y-1">
-                  {c.entries.map((e) => (
-                    <li
-                      key={e.id}
-                      className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-1.5 text-sm"
-                    >
-                      <span className="w-5 shrink-0 text-center font-heading text-xs font-extrabold tabular-nums text-slate-500">
-                        {e.rank}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-slate-800">
-                        {e.playerName}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-slate-700">
-                        {fmt(e.value, c.unit)}
-                      </span>
-                      {!c.closed && (
-                        <form action={deleteChallengeEntry.bind(null, e.id)}>
-                          <button
-                            type="submit"
-                            className="text-xs text-slate-500 hover:text-red-800"
-                            aria-label="Smazat zápis"
-                          >
-                            ✕
-                          </button>
-                        </form>
+              {c.standings.length > 0 ? (
+                <ol className="mt-3 space-y-2">
+                  {c.standings.map((r) => (
+                    <li key={r.playerId} className="rounded-lg bg-slate-50 px-3 py-2">
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="w-5 shrink-0 text-center font-heading text-xs font-extrabold tabular-nums text-slate-500">
+                          {r.rank}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-slate-800">
+                          {r.playerName}
+                        </span>
+                        <span className="shrink-0 font-heading font-bold tabular-nums text-slate-800">
+                          {fmt(r.best, c.unit)}
+                        </span>
+                      </div>
+                      {/* Na vlastním řádku: na mobilu by jinak ukrojilo
+                          půlku jména. */}
+                      {r.improvement > 0 && (
+                        <p className="mt-0.5 pl-8 font-heading text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                          zlepšení o {fmt(r.improvement, c.unit)} od prvního pokusu
+                        </p>
                       )}
+
+                      {/* Kvůli tomuhle to celé je: ať je vidět, jak se kdo
+                          za měsíc posouval. Nejnovější pokus nahoře. */}
+                      <ul className="mt-1.5 space-y-1 border-t border-slate-200 pt-1.5">
+                        {r.attempts.map((a) => (
+                          <li
+                            key={a.id}
+                            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                          >
+                            <span className="w-16 shrink-0 tabular-nums text-slate-500">
+                              {a.when}
+                            </span>
+                            {c.closed ? (
+                              <span className="tabular-nums text-slate-700">
+                                {fmt(a.value, c.unit)}
+                              </span>
+                            ) : (
+                              <form
+                                action={updateChallengeEntry.bind(null, a.id)}
+                                className="flex shrink-0 items-center gap-1.5"
+                              >
+                                <input
+                                  name="value"
+                                  defaultValue={String(a.value)}
+                                  inputMode="decimal"
+                                  aria-label="Hodnota pokusu"
+                                  className="w-20 rounded border border-slate-200 px-2 py-0.5 text-right tabular-nums text-slate-900"
+                                />
+                                <button type="submit" className={mini}>
+                                  Opravit
+                                </button>
+                              </form>
+                            )}
+                            {a.id === r.bestAttemptId && (
+                              <span className="shrink-0 font-heading text-[10px] font-bold uppercase tracking-wider text-club">
+                                nejlepší
+                              </span>
+                            )}
+                            {!c.closed && (
+                              <form
+                                action={deleteChallengeEntry.bind(null, a.id, undefined)}
+                                className="ml-auto shrink-0"
+                              >
+                                <button
+                                  type="submit"
+                                  className="text-slate-500 hover:text-red-800"
+                                  aria-label="Smazat pokus"
+                                >
+                                  ✕
+                                </button>
+                              </form>
+                            )}
+                            {/* Poznámka na celou šířku — zkrácená na „z..“
+                                by nikomu nic neřekla. */}
+                            {a.note && (
+                              <span className="w-full pl-[4.5rem] text-slate-500">
+                                {a.note}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   ))}
                 </ol>
               ) : (
                 <p className="mt-3 text-xs italic text-slate-500">
-                  Zatím nikdo nezapsal výsledek. Hráči je zapisují ve svém odkazu.
+                  Zatím nikdo nezapsal výsledek. Hráči je zapisují ve svém odkazu
+                  a pokusů můžou mít víc — do pořadí se počítá ten nejlepší.
                 </p>
               )}
 
-              {!c.closed && c.entries.length === 1 && (
+              {!c.closed && c.standings.length === 1 && (
                 <p className="mt-2 text-xs italic text-amber-900">
-                  Na uzavření je potřeba aspoň dva zapsané výsledky — s jedním
+                  Na uzavření je potřeba aspoň dva zapsané hráče — s jedním
                   není proti komu poměřovat.
                 </p>
               )}
@@ -1012,8 +1136,10 @@ function Challenges({
       </section>
 
       <p className="text-xs italic text-slate-500">
-        Uzavřením se rozdá rating podle pořadí a výzva se zamkne. Zpět to nejde,
-        tak si napřed zkontroluj zapsané hodnoty.
+        Do pořadí se počítá nejlepší pokus, ne poslední — horší pokus nikoho
+        nesrazí, takže se dá zkoušet znovu celý měsíc. Uzavřením se rozdá rating
+        podle pořadí; kdyby se zapsalo něco špatně, jde vyhodnocení vrátit
+        a rating se hráčům zase odečte.
       </p>
     </>
   );

@@ -209,7 +209,12 @@ model ChallengeEntry {
   note        String?
   createdAt   DateTime  @default(now())
 
-  @@unique([challengeId, playerId])
+  /**
+   * Jeden řádek = jeden pokus, ne konečný výsledek. Hráč jich ve výzvě
+   * smí mít libovolně a do pořadí se počítá ten nejlepší — proto tu
+   * dvojice (výzva, hráč) není unikátní, jen indexovaná.
+   */
+  @@index([challengeId, playerId])
   @@index([playerId])
 }
 
@@ -254,8 +259,9 @@ model PlayerRating {
  * Individuální trénink, který si hráč zapíše sám — házení, posilovna,
  * běh. Počítá se stejně jako účast na klubovém tréninku: +1.
  *
- * Jeden zápis na den. Rating za docházku má odměňovat pravidelnost,
- * ne to, kdo si nakliká víc řádků.
+ * Za den jich může být víc — dopoledne házení, večer fitko — a počítají
+ * se všechny. Proti nakliknutí ratingu z gauče stojí denní strop
+ * v akci, ne v databázi.
  */
 model SoloSession {
   id          String   @id @default(cuid())
@@ -268,7 +274,7 @@ model SoloSession {
   note        String?
   createdAt   DateTime @default(now())
 
-  @@unique([playerId, performedOn])
+  @@index([playerId, performedOn])
   @@index([userId, performedOn])
 }
 

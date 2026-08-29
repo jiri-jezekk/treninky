@@ -12,6 +12,7 @@ import {
   getRatingHistory,
 } from "@/lib/rating";
 import { duelOutcome } from "@/lib/elo";
+import { standings, type Attempt } from "@/lib/challenge-attempts";
 import { toDateInputValue } from "@/lib/prepaid";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
@@ -86,10 +87,9 @@ export default async function PortalRatingPage({
       where: { userId, closedAt: null, ...(season && { seasonId: season.id }) },
       orderBy: { endsOn: "asc" },
       include: {
-        entries: {
-          where: { playerId: me },
-          select: { value: true },
-        },
+        // Všechny pokusy všech hráčů, ne jen moje číslo — pořadí ve
+        // výzvě mají vidět všichni.
+        entries: { include: { player: { select: { name: true } } } },
       },
     }),
     getRatingHistory(userId, season, 40),
@@ -190,14 +190,47 @@ export default async function PortalRatingPage({
           }))}
           duels={myDuels}
           opponents={players.map((p) => ({ id: p.id, name: p.name }))}
-          challenges={challenges.map((c) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-            unit: c.unit,
-            endsOn: toDateInputValue(c.endsOn),
-            myValue: c.entries[0]?.value ?? null,
-          }))}
+          challenges={challenges.map((c) => {
+            // Stejná funkce jako v aplikaci trenéra i při vyhodnocení,
+            // aby pořadí bylo všude stejné.
+            const poradi = standings(
+              c.entries.map(
+                (e): Attempt => ({
+                  id: String(e.id),
+                  playerId: String(e.playerId),
+                  playerName: e.player.name,
+                  value: e.value,
+                  note: e.note,
+                  createdAt: e.createdAt,
+                }),
+              ),
+              c.higherWins,
+            );
+            const mine = poradi.find((r) => r.playerId === me);
+
+            return {
+              id: c.id,
+              name: c.name,
+              description: c.description,
+              unit: c.unit,
+              higherWins: c.higherWins,
+              endsOn: toDateInputValue(c.endsOn),
+              standings: poradi.map((r) => ({
+                playerId: r.playerId,
+                playerName: r.playerName,
+                best: r.best,
+                rank: r.rank,
+                improvement: r.improvement,
+                isMe: r.playerId === me,
+              })),
+              myAttempts: (mine?.attempts ?? []).map((a) => ({
+                id: a.id,
+                value: a.value,
+                when: formatDateDdMmYyyy(a.createdAt).slice(0, 5),
+                isBest: a.id === mine?.bestAttemptId,
+              })),
+            };
+          })}
           inRating={player.inRating}
           today={toDateInputValue(new Date())}
           solos={solos.map((so) => ({

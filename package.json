@@ -17,11 +17,13 @@
     "check:elo": "node --experimental-strip-types scripts/test-elo.ts",
     "gen:prisma-stub": "node --experimental-strip-types scripts/generate-prisma-stub.ts",
     "check:types": "npm run gen:prisma-stub && tsc -p tsconfig.check.json --noEmit",
-    "check": "npm run check:types && npm run check:fields && npm run check:vs && npm run check:pricing && npm run check:prepaid && npm run check:billing && npm run check:slots && npm run check:plan && npm run check:elo",
+    "check": "npm run check:types && npm run check:fields && npm run check:vs && npm run check:pricing && npm run check:prepaid && npm run check:billing && npm run check:slots && npm run check:plan && npm run check:elo && npm run check:form && npm run check:attempts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "check:form": "node --experimental-strip-types scripts/test-form-values.ts",
+    "check:attempts": "node --experimental-strip-types scripts/test-challenge-attempts.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",

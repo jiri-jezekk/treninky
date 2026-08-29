@@ -9,9 +9,14 @@ import { parseDateInput } from "@/lib/prepaid";
 import {
   applyRatingChange,
   getActiveSeason,
-  RATING_PER_ATTENDANCE,
+  getEffectiveRatings,
+  revertRatingChanges,
 } from "@/lib/rating";
 import { STARTING_RATING } from "@/lib/elo";
+import { checkboxOn } from "@/lib/form-values";
+import { MAX_ATTEMPTS_PER_CHALLENGE } from "@/lib/rating-limits";
+import { standings, type Attempt } from "@/lib/challenge-attempts";
+import type { ActionResult } from "@/lib/action-result";
 
 function revalidateChallenges(payToken?: string) {
   revalidatePath("/rating");
@@ -52,7 +57,7 @@ export async function createChallenge(formData: FormData) {
       name,
       description: String(formData.get("description") ?? "").trim() || null,
       unit: String(formData.get("unit") ?? "").trim() || null,
-      higherWins: formData.get("higherWins") !== "off",
+      higherWins: checkboxOn(formData.get("higherWins")),
       startsOn,
       endsOn,
     },
@@ -100,119 +105,220 @@ export async function submitChallengeEntry(challengeId: string, formData: FormDa
 
   const note = String(formData.get("note") ?? "").trim() || null;
 
-  await prisma.challengeEntry.upsert({
-    where: { challengeId_playerId: { challengeId, playerId } },
-    create: { challengeId, playerId, value, note },
-    update: { value, note },
+  // Strop na počet pokusů. Ne kvůli ratingu — do pořadí se stejně
+  // počítá jen nejlepší — ale aby se seznam nezaplnil stovkou řádků
+  // a historie zůstala čitelná.
+  const existing = await prisma.challengeEntry.count({
+    where: { challengeId, playerId },
+  });
+  if (existing >= MAX_ATTEMPTS_PER_CHALLENGE) return;
+
+  // Create, ne upsert: každý zápis je samostatný pokus. Dřív tu byl
+  // upsert a druhý pokus ten první přepsal, takže nebylo vidět,
+  // jak se kdo za měsíc posunul.
+  await prisma.challengeEntry.create({
+    data: { challengeId, playerId, value, note },
   });
   revalidateChallenges(payToken ?? undefined);
 }
 
-export async function deleteChallengeEntry(entryId: string) {
-  const userId = await requireUserId();
-  const entry = await prisma.challengeEntry.findFirst({
-    where: { id: entryId, challenge: { userId, closedAt: null } },
-    select: { id: true },
-  });
-  if (!entry) return;
+/**
+ * Oprava pokusu, když se někdo překlepl.
+ *
+ * Hráč smí opravit jen svůj, trenér kterýkoli. Do uzavřené výzvy se
+ * nesahá — pořadí i rating už platí.
+ */
+export async function updateChallengeEntry(entryId: string, formData: FormData) {
+  const payToken = String(formData.get("payToken") ?? "") || null;
+  const value = parseValue(formData.get("value"));
+  if (value == null) return;
+  const note = String(formData.get("note") ?? "").trim() || null;
 
-  await prisma.challengeEntry.delete({ where: { id: entryId } });
+  if (payToken) {
+    if (!(await hasPortalSession(payToken))) return;
+    const player = await prisma.player.findUnique({
+      where: { payToken },
+      select: { id: true },
+    });
+    if (!player) return;
+    await prisma.challengeEntry.updateMany({
+      where: {
+        id: entryId,
+        playerId: String(player.id),
+        challenge: { closedAt: null },
+      },
+      data: { value, note },
+    });
+    revalidateChallenges(payToken);
+    return;
+  }
+
+  const userId = await requireUserId();
+  await prisma.challengeEntry.updateMany({
+    where: { id: entryId, challenge: { userId, closedAt: null } },
+    data: { value, note },
+  });
+  revalidateChallenges();
+}
+
+/** Smaže pokus. Hráč jen svůj, trenér kterýkoli. */
+export async function deleteChallengeEntry(entryId: string, payToken?: string) {
+  if (payToken) {
+    if (!(await hasPortalSession(payToken))) return;
+    const player = await prisma.player.findUnique({
+      where: { payToken },
+      select: { id: true },
+    });
+    if (!player) return;
+    await prisma.challengeEntry.deleteMany({
+      where: {
+        id: entryId,
+        playerId: String(player.id),
+        challenge: { closedAt: null },
+      },
+    });
+    revalidateChallenges(payToken);
+    return;
+  }
+
+  const userId = await requireUserId();
+  await prisma.challengeEntry.deleteMany({
+    where: { id: entryId, challenge: { userId, closedAt: null } },
+  });
   revalidateChallenges();
 }
 
 /**
  * Uzavře výzvu a rozdá rating podle pořadí.
  *
+ * Do pořadí jde nejlepší pokus každého hráče, ne poslední — jinak by
+ * se nikdo neodvážil zkusit to znovu, protože horší pokus by mu srazil
+ * umístění. Používá se stejná funkce jako pro výpis, aby žebříček
+ * výzvy a rozdaný rating nemohly říct každý něco jiného.
+ *
  * Jde to jen jednou — podruhé by se rating rozdal znovu. Hlídá to
  * podmínka `closedAt: null` uvnitř transakce.
+ *
+ * Nevyhazuje; co se nepovede, vrátí textem.
  */
-export async function closeChallenge(challengeId: string) {
-  const userId = await requireUserId();
+export async function closeChallenge(challengeId: string): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId();
 
-  const challenge = await prisma.challenge.findFirst({
-    where: { id: challengeId, userId, closedAt: null },
-    include: {
-      season: true,
-      entries: { include: { player: { select: { id: true, name: true } } } },
-    },
-  });
-  if (!challenge) return;
-  if (challenge.entries.length < 2) return;
-
-  // Docházková část se do ratingu započítá i tady, aby výpočet
-  // vycházel ze stejného čísla, jaké hráči vidí v žebříčku.
-  const from = new Date(challenge.season.startsOn);
-  const to = new Date(challenge.season.endsOn);
-  to.setUTCHours(23, 59, 59, 999);
-
-  const playerIds = challenge.entries.map((e) => e.playerId);
-  const [counts, solos, ratings] = await Promise.all([
-    prisma.attendance.groupBy({
-      by: ["playerId"],
-      where: {
-        status: "PRESENT",
-        training: { userId, cancelled: false, startsAt: { gte: from, lte: to } },
-        playerId: { in: playerIds },
+    const challenge = await prisma.challenge.findFirst({
+      where: { id: challengeId, userId, closedAt: null },
+      include: {
+        season: true,
+        entries: { include: { player: { select: { id: true, name: true } } } },
       },
-      _count: { playerId: true },
-    }),
-    prisma.soloSession.groupBy({
-      by: ["playerId"],
-      where: { playerId: { in: playerIds }, performedOn: { gte: from, lte: to } },
-      _count: { playerId: true },
-    }),
-    prisma.playerRating.findMany({
-      where: { seasonId: challenge.seasonId, playerId: { in: playerIds } },
-      select: { playerId: true, points: true },
-    }),
-  ]);
-
-  const attendanceById = new Map<string, number>(
-    counts.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
-  );
-  const soloById = new Map<string, number>(
-    solos.map((c) => [String(c.playerId), Number(c._count.playerId ?? 0)]),
-  );
-  const pointsById = new Map<string, number>(
-    ratings.map((r) => [String(r.playerId), r.points]),
-  );
-
-  const deltas = challengeDeltas(
-    challenge.entries.map((e) => ({
-      playerId: String(e.playerId),
-      rating:
-        (pointsById.get(String(e.playerId)) ?? STARTING_RATING) +
-        ((attendanceById.get(String(e.playerId)) ?? 0) +
-          (soloById.get(String(e.playerId)) ?? 0)) *
-          RATING_PER_ATTENDANCE,
-      value: e.value,
-    })),
-    challenge.higherWins,
-    { weightPercent: challenge.weightPercent },
-  );
-
-  await prisma.$transaction(async (tx) => {
-    const claimed = await tx.challenge.updateMany({
-      where: { id: challengeId, closedAt: null },
-      data: { closedAt: new Date() },
     });
-    if (claimed.count === 0) return;
-
-    for (const d of deltas) {
-      if (d.delta === 0) continue;
-      await applyRatingChange(tx, {
-        userId,
-        seasonId: challenge.seasonId,
-        playerId: d.playerId,
-        delta: d.delta,
-        source: "CHALLENGE",
-        label: `${challenge.name} — ${d.rank}. místo`,
-        challengeId,
-      });
+    if (!challenge) {
+      return { ok: false, error: "Výzva nenalezena, nebo je už vyhodnocená." };
     }
-  });
 
-  revalidateChallenges();
+    const poradi = standings(
+      challenge.entries.map(
+        (e): Attempt => ({
+          id: String(e.id),
+          playerId: String(e.playerId),
+          playerName: e.player.name,
+          value: e.value,
+          note: e.note,
+          createdAt: e.createdAt,
+        }),
+      ),
+      challenge.higherWins,
+    );
+    if (poradi.length < 2) {
+      return {
+        ok: false,
+        error: "Výzvu má zapsanou míň než dva hráči — není co porovnávat.",
+      };
+    }
+
+    // Docházková část se do ratingu započítá i tady, aby výpočet
+    // vycházel ze stejného čísla, jaké hráči vidí v žebříčku.
+    const ratings = await getEffectiveRatings(
+      poradi.map((r) => r.playerId),
+      challenge.season,
+    );
+
+    const deltas = challengeDeltas(
+      poradi.map((r) => ({
+        playerId: r.playerId,
+        rating: ratings.get(r.playerId) ?? STARTING_RATING,
+        value: r.best,
+      })),
+      challenge.higherWins,
+      { weightPercent: challenge.weightPercent },
+    );
+
+    await prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.challenge.updateMany({
+          where: { id: challengeId, closedAt: null },
+          data: { closedAt: new Date() },
+        });
+        if (claimed.count === 0) return;
+
+        for (const d of deltas) {
+          if (d.delta === 0) continue;
+          await applyRatingChange(tx, {
+            userId,
+            seasonId: challenge.seasonId,
+            playerId: d.playerId,
+            delta: d.delta,
+            source: "CHALLENGE",
+            label: `${challenge.name} — ${d.rank}. místo`,
+            challengeId,
+          });
+        }
+      },
+      { timeout: 20000, maxWait: 10000 },
+    );
+
+    revalidateChallenges();
+    return { ok: true, message: "Výzva vyhodnocena, rating rozdaný." };
+  } catch (e) {
+    console.error("[closeChallenge]", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Vyhodnocení se nepovedlo.",
+    };
+  }
+}
+
+/** Vrátí vyhodnocení výzvy — rating se odečte a dá se opravit. */
+export async function reopenChallenge(challengeId: string): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId();
+    const challenge = await prisma.challenge.findFirst({
+      where: { id: challengeId, userId, closedAt: { not: null } },
+      select: { id: true },
+    });
+    if (!challenge) return { ok: false, error: "Výzva není vyhodnocená." };
+
+    let vraceno = 0;
+    await prisma.$transaction(
+      async (tx) => {
+        vraceno = await revertRatingChanges(tx, { challengeId });
+        await tx.challenge.updateMany({
+          where: { id: challengeId, userId },
+          data: { closedAt: null },
+        });
+      },
+      { timeout: 20000, maxWait: 10000 },
+    );
+
+    revalidateChallenges();
+    return { ok: true, message: `Vráceno zpět, rating odebrán ${vraceno} hráčům.` };
+  } catch (e) {
+    console.error("[reopenChallenge]", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Vrácení se nepovedlo.",
+    };
+  }
 }
 
 /**

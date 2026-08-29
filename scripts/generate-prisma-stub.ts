@@ -193,8 +193,10 @@ for (const model of models) {
   );
 }
 lines.push("    $transaction(ops: readonly Promise<unknown>[]): Promise<unknown[]>;");
+// Druhý argument je nastavení interaktivní transakce. Hlavně `timeout`:
+// výchozích 5 s nestačí, když se rozdává rating dvaceti hráčům.
 lines.push(
-  "    $transaction<R>(fn: (tx: PrismaClientLike) => Promise<R>): Promise<R>;",
+  "    $transaction<R>(fn: (tx: PrismaClientLike) => Promise<R>, options?: { timeout?: number; maxWait?: number; isolationLevel?: string }): Promise<R>;",
 );
 lines.push("    $connect(): Promise<void>;");
 lines.push("    $disconnect(): Promise<void>;");

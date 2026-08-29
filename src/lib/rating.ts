@@ -315,6 +315,50 @@ export async function applyRatingChange(
   });
 }
 
+/**
+ * Vrátí rating rozdaný jednou akcí — duelem, zápasem nebo výzvou.
+ *
+ * Bez tohohle nešlo špatně zapsaný výsledek opravit: jakmile se rating
+ * jednou rozdal, zůstal v žebříčku napořád a jediná cesta zpátky vedla
+ * přes ruční úpravu, která v historii vypadá jako svévole trenéra.
+ * Takhle se odečte přesně to, co se přičetlo, a záznamy z historie
+ * zmizí, takže po opravě nezůstane dvojí stopa.
+ *
+ * Vrací počet vrácených záznamů. Volá se uvnitř transakce.
+ */
+export async function revertRatingChanges(
+  tx: {
+    ratingEntry: {
+      findMany(args: Record<string, unknown>): Promise<
+        { id: string; playerId: string; seasonId: string; delta: number }[]
+      >;
+      deleteMany(args: Record<string, unknown>): Promise<{ count: number }>;
+    };
+    playerRating: {
+      updateMany(args: Record<string, unknown>): Promise<{ count: number }>;
+    };
+  },
+  where: { duelId?: string; matchId?: string; challengeId?: string },
+): Promise<number> {
+  const entries = await tx.ratingEntry.findMany({
+    where,
+    select: { id: true, playerId: true, seasonId: true, delta: true },
+  });
+  if (entries.length === 0) return 0;
+
+  for (const e of entries) {
+    await tx.playerRating.updateMany({
+      where: { seasonId: e.seasonId, playerId: e.playerId },
+      data: { points: { decrement: e.delta } },
+    });
+  }
+
+  await tx.ratingEntry.deleteMany({
+    where: { id: { in: entries.map((e) => e.id) } },
+  });
+  return entries.length;
+}
+
 export type HistoryRow = {
   id: string;
   playerName: string;

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { parseCzkToCents } from "@/lib/money";
 import { parseMinutes } from "@/lib/training-slots";
+import { checkboxOn } from "@/lib/form-values";
 
 function revalidateTrainings() {
   revalidatePath("/treninky");
@@ -79,7 +80,7 @@ export async function updateTrainingSlot(slotId: string, formData: FormData) {
       endMinutes,
       priceCents,
       kind: formData.get("gym") === "on" ? "GYM" : "TRAINING",
-      active: formData.get("active") !== "off",
+      active: checkboxOn(formData.get("active")),
     },
   });
   revalidateTrainings();

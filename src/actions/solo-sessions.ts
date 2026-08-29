@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { parseDateInput } from "@/lib/prepaid";
+import { MAX_SOLO_PER_DAY } from "@/lib/rating-limits";
 
 function revalidateSolo(payToken?: string) {
   revalidatePath("/rating");
@@ -14,10 +15,6 @@ function revalidateSolo(payToken?: string) {
 /**
  * Hráč si zapíše individuální trénink — házení, posilovna, běh.
  * Počítá se stejně jako účast na klubovém tréninku: +1 do ratingu.
- *
- * Jeden zápis na den. Rating za docházku má odměňovat pravidelnost,
- * ne to, kdo si nakliká víc řádků; bez toho by šel žebříček obejít
- * bez jediného duelu.
  */
 export async function logSoloSession(formData: FormData) {
   const payToken = String(formData.get("payToken") ?? "").trim();
@@ -43,18 +40,19 @@ export async function logSoloSession(formData: FormData) {
   const todayKey = today.toISOString().slice(0, 10);
   if (performedOn.toISOString().slice(0, 10) > todayKey) return;
 
-  await prisma.soloSession.upsert({
-    where: {
-      playerId_performedOn: { playerId: String(player.id), performedOn },
-    },
-    create: {
+  // Za den se dá zapsat víc tréninků — dopoledne házení, večer fitko —
+  // a počítají se všechny. Dřív tu byl upsert a druhý zápis ten první
+  // přepsal, takže hráč o bod přišel.
+  const dnes = await prisma.soloSession.count({
+    where: { playerId: String(player.id), performedOn },
+  });
+  if (dnes >= MAX_SOLO_PER_DAY) return;
+
+  await prisma.soloSession.create({
+    data: {
       userId: String(player.userId),
       playerId: String(player.id),
       performedOn,
-      name,
-      note: String(formData.get("note") ?? "").trim() || null,
-    },
-    update: {
       name,
       note: String(formData.get("note") ?? "").trim() || null,
     },

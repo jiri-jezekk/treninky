@@ -11,7 +11,8 @@ import {
   getRatingHistory,
   getSoloSessions,
 } from "@/lib/rating";
-import { duelOutcome } from "@/lib/elo";
+import { averageRating, duelOutcome, teamDeltas } from "@/lib/elo";
+import { standings, type Attempt } from "@/lib/challenge-attempts";
 import { toDateInputValue } from "@/lib/prepaid";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
@@ -114,27 +115,83 @@ export default async function RatingPage() {
     };
   });
 
-  const matchRows: MatchRow[] = matches.map((m) => ({
-    id: m.id,
-    name: m.name,
-    description: m.description,
-    weightPercent: m.weightPercent,
-    playedOn: toDateInputValue(m.playedOn),
-    closed: m.closedAt != null,
-    teams: m.teams.map((t) => ({
-      id: t.id,
-      name: t.name,
-      score: t.score,
-      delta: t.delta,
-      playerNames: t.members.map((mm) => mm.player.name),
-    })),
-  }));
+  // Náhled u zápasů, které ještě nejsou vyhodnocené: kdo kolik dostane.
+  // Bez toho bylo tlačítko „Vyhodnotit“ skok do tmy — rating se rozdal
+  // a teprve pak bylo vidět kolik komu.
+  const openMatches = matches.filter((m) => m.closedAt == null);
+  const matchRatings = await getEffectiveRatings(
+    openMatches.flatMap((m) =>
+      m.teams.flatMap((t) => t.members.map((mm) => String(mm.playerId))),
+    ),
+    season,
+  );
+
+  const matchRows: MatchRow[] = matches.map((m) => {
+    const teamRating = new Map(
+      m.teams.map((t) => [
+        String(t.id),
+        averageRating(
+          t.members.map((mm) => matchRatings.get(String(mm.playerId)) ?? 1000),
+        ),
+      ]),
+    );
+
+    // Stejná funkce jako při vyhodnocení, aby náhled a skutečnost
+    // nemohly říct každý něco jiného.
+    const previewByTeam =
+      m.closedAt == null && m.teams.length >= 2
+        ? new Map(
+            teamDeltas(
+              m.teams.map((t) => ({
+                teamId: String(t.id),
+                rating: teamRating.get(String(t.id)) ?? 1000,
+                score: t.score,
+              })),
+              m.weightPercent,
+            ).map((d) => [d.teamId, d]),
+          )
+        : null;
+
+    return {
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      weightPercent: m.weightPercent,
+      playedOn: toDateInputValue(m.playedOn),
+      closed: m.closedAt != null,
+      teams: m.teams.map((t) => {
+        const p = previewByTeam?.get(String(t.id)) ?? null;
+        return {
+          id: t.id,
+          name: t.name,
+          score: t.score,
+          delta: t.delta,
+          rating: p ? (teamRating.get(String(t.id)) ?? null) : null,
+          rank: p?.rank ?? null,
+          previewDelta: p?.delta ?? null,
+          playerNames: t.members.map((mm) => mm.player.name),
+        };
+      }),
+    };
+  });
 
   const challengeRows: ChallengeRow[] = challenges.map((c) => {
-    // Pořadí se počítá stejně jako při uzavření — u času vede nižší číslo.
-    const sorted = [...c.entries].sort((a, b) =>
-      c.higherWins ? b.value - a.value : a.value - b.value,
+    // Stejná funkce jako při uzavření — u času vede nižší číslo a do
+    // pořadí jde nejlepší pokus, ne poslední.
+    const poradi = standings(
+      c.entries.map(
+        (e): Attempt => ({
+          id: String(e.id),
+          playerId: String(e.playerId),
+          playerName: e.player.name,
+          value: e.value,
+          note: e.note,
+          createdAt: e.createdAt,
+        }),
+      ),
+      c.higherWins,
     );
+
     return {
       id: c.id,
       name: c.name,
@@ -145,12 +202,20 @@ export default async function RatingPage() {
       startsOn: toDateInputValue(c.startsOn),
       endsOn: toDateInputValue(c.endsOn),
       closed: c.closedAt != null,
-      entries: sorted.map((e, i) => ({
-        id: e.id,
-        playerName: e.player.name,
-        value: e.value,
-        note: e.note,
-        rank: i + 1,
+      attemptCount: c.entries.length,
+      standings: poradi.map((r) => ({
+        playerId: r.playerId,
+        playerName: r.playerName,
+        best: r.best,
+        bestAttemptId: r.bestAttemptId,
+        rank: r.rank,
+        improvement: r.improvement,
+        attempts: r.attempts.map((a) => ({
+          id: a.id,
+          value: a.value,
+          note: a.note,
+          when: formatDateDdMmYyyy(a.createdAt).slice(0, 5),
+        })),
       })),
     };
   });

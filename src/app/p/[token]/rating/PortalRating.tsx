@@ -7,7 +7,11 @@ import {
   reportDuelResult,
   respondToDuel,
 } from "@/actions/duels";
-import { submitChallengeEntry } from "@/actions/challenges";
+import {
+  deleteChallengeEntry,
+  submitChallengeEntry,
+  updateChallengeEntry,
+} from "@/actions/challenges";
 import { deleteSoloSession, logSoloSession } from "@/actions/solo-sessions";
 import { initials } from "@/lib/czech";
 
@@ -62,7 +66,18 @@ type ChallengeRow = {
   description: string | null;
   unit: string | null;
   endsOn: string;
-  myValue: number | null;
+  /** Pořadí ve výzvě — vidí ho všichni, ne jen svoje číslo. */
+  standings: {
+    playerId: string;
+    playerName: string;
+    best: number;
+    rank: number;
+    improvement: number;
+    isMe: boolean;
+  }[];
+  /** Moje pokusy. Zapsat jich můžu víc, počítá se nejlepší. */
+  myAttempts: { id: string; value: number; when: string; isBest: boolean }[];
+  higherWins: boolean;
 };
 
 const label =
@@ -386,28 +401,112 @@ export function PortalRating({
                 {c.description && (
                   <p className="mt-1 text-xs text-slate-500">{c.description}</p>
                 )}
-                <p className="mt-1 text-xs text-slate-500">do {c.endsOn}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  do {c.endsOn}
+                  {c.unit ? ` · ${c.unit}` : ""}
+                  {!c.higherWins && " · vyhrává nižší"}
+                </p>
 
                 <form action={submitChallengeEntry.bind(null, c.id)} className="mt-3">
                   <input type="hidden" name="payToken" value={payToken} />
                   <div className="flex items-end gap-2">
                     <label className="block flex-1">
                       <span className={label}>
-                        Můj výsledek{c.unit ? ` (${c.unit})` : ""}
+                        Nový pokus{c.unit ? ` (${c.unit})` : ""}
                       </span>
                       <input
                         name="value"
                         required
                         inputMode="decimal"
-                        defaultValue={c.myValue ?? ""}
                         className={`${field} tabular-nums`}
                       />
                     </label>
                     <button type="submit" className={`${btnPrimary} ${btnSm} mb-0.5`}>
-                      {c.myValue == null ? "Zapsat" : "Upravit"}
+                      Zapsat
                     </button>
                   </div>
+                  <p className="mt-1.5 text-xs italic text-slate-500">
+                    Pokusů můžeš mít kolik chceš — do pořadí se počítá ten
+                    nejlepší, takže horší pokus tě nesrazí.
+                  </p>
                 </form>
+
+                {c.myAttempts.length > 0 && (
+                  <ul className="mt-3 space-y-1 border-t border-slate-200 pt-2">
+                    {c.myAttempts.map((a) => (
+                      <li key={a.id} className="flex items-center gap-2 text-xs">
+                        <span className="w-12 shrink-0 tabular-nums text-slate-500">
+                          {a.when}
+                        </span>
+                        <form
+                          action={updateChallengeEntry.bind(null, a.id)}
+                          className="flex shrink-0 items-center gap-1.5"
+                        >
+                          <input type="hidden" name="payToken" value={payToken} />
+                          <input
+                            name="value"
+                            defaultValue={String(a.value)}
+                            inputMode="decimal"
+                            aria-label="Hodnota pokusu"
+                            className="w-20 rounded border border-slate-200 px-2 py-0.5 text-right tabular-nums text-slate-900"
+                          />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-600"
+                          >
+                            Opravit
+                          </button>
+                        </form>
+                        {a.isBest && (
+                          <span className="shrink-0 font-heading text-[10px] font-bold uppercase tracking-wider text-club">
+                            nejlepší
+                          </span>
+                        )}
+                        <form
+                          action={deleteChallengeEntry.bind(null, a.id, payToken)}
+                          className="ml-auto shrink-0"
+                        >
+                          <button
+                            type="submit"
+                            className="text-slate-400 hover:text-red-800"
+                            aria-label="Smazat pokus"
+                          >
+                            ✕
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {c.standings.length > 0 && (
+                  <ol className="mt-3 space-y-1 border-t border-slate-200 pt-2">
+                    {c.standings.map((r) => (
+                      <li
+                        key={r.playerId}
+                        className={`flex items-center gap-2 rounded-lg px-2 py-1 text-xs ${
+                          r.isMe ? "bg-club-soft font-medium text-slate-900" : ""
+                        }`}
+                      >
+                        <span className="w-4 shrink-0 text-center font-heading font-extrabold tabular-nums text-slate-500">
+                          {r.rank}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-slate-700">
+                          {r.playerName}
+                        </span>
+                        {r.improvement > 0 && (
+                          <span className="shrink-0 whitespace-nowrap text-emerald-800">
+                            ↑ {r.improvement}
+                          </span>
+                        )}
+                        <span className="shrink-0 tabular-nums text-slate-800">
+                          {r.best}
+                          {c.unit ? ` ${c.unit}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </li>
             ))}
           </ul>
@@ -420,7 +519,8 @@ export function PortalRating({
           <div className="min-w-0">
             <h2 className={label}>Trénoval jsem sám</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Házení, posilovna, běh — každý den +1 jako za trénink.
+              Házení, posilovna, běh — každý zápis +1 jako za trénink. Za den
+              jich můžeš zapsat víc.
             </p>
           </div>
           {!loggingSolo && (

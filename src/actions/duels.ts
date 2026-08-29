@@ -5,7 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { duelOutcome } from "@/lib/elo";
-import { applyRatingChange, getActiveSeason, getEffectiveRating } from "@/lib/rating";
+import {
+  applyRatingChange,
+  getActiveSeason,
+  getEffectiveRating,
+  revertRatingChanges,
+} from "@/lib/rating";
+import type { ActionResult } from "@/lib/action-result";
+import { checkboxOn } from "@/lib/form-values";
 
 function revalidateRating(payToken?: string) {
   revalidatePath("/rating");
@@ -100,7 +107,7 @@ export async function createDuel(formData: FormData) {
       seasonId: season.id,
       name,
       description: String(formData.get("description") ?? "").trim() || null,
-      higherWins: formData.get("higherWins") !== "off",
+      higherWins: checkboxOn(formData.get("higherWins")),
       challengerId,
       opponentId,
       note: String(formData.get("note") ?? "").trim() || null,
@@ -251,8 +258,56 @@ export async function confirmDuel(duelId: string, payToken?: string) {
 }
 
 /**
- * Smaže duel. Potvrzený se nemaže — rating už je rozdaný a smazáním
- * by v žebříčku zůstala díra, kterou nejde dohledat.
+ * Vrátí potvrzený duel zpátky k opravě.
+ *
+ * Rating se oběma odečte a duel se vrátí do stavu „domluveno“, takže
+ * jde zapsat správný výsledek. Bez tohohle byl překlep ve skóre
+ * nevratný — jediná cesta zpět vedla přes ruční úpravu ratingu, což
+ * v historii vypadá, jako by trenér někomu nadržoval.
+ *
+ * Smí to jen trenér: kdyby si duel mohl otevřít kterýkoli účastník,
+ * dal by se prohraný výsledek rušit tak dlouho, dokud nevyjde.
+ */
+export async function reopenDuel(duelId: string): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId();
+    const duel = await prisma.duel.findFirst({
+      where: { id: duelId, userId, status: "CONFIRMED" },
+      select: { id: true },
+    });
+    if (!duel) return { ok: false, error: "Duel není potvrzený." };
+
+    let vraceno = 0;
+    await prisma.$transaction(async (tx) => {
+      vraceno = await revertRatingChanges(tx, { duelId });
+      await tx.duel.updateMany({
+        where: { id: duelId, userId },
+        data: {
+          status: "ACCEPTED",
+          confirmedAt: null,
+          challengerDelta: null,
+          opponentDelta: null,
+        },
+      });
+    });
+
+    revalidateRating();
+    return {
+      ok: true,
+      message: `Vráceno zpět, rating odebrán ${vraceno} hráčům. Zapiš výsledek znovu.`,
+    };
+  } catch (e) {
+    console.error("[reopenDuel]", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Vrácení se nepovedlo.",
+    };
+  }
+}
+
+/**
+ * Smaže duel. Potvrzený se nejdřív musí vrátit — rating je rozdaný
+ * a smazáním by v žebříčku zůstala díra, kterou nejde dohledat.
  */
 export async function deleteDuel(duelId: string) {
   const userId = await requireUserId();

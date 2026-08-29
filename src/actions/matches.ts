@@ -5,7 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import { averageRating, teamDeltas } from "@/lib/elo";
 import { parseDateInput } from "@/lib/prepaid";
-import { applyRatingChange, getActiveSeason, getEffectiveRating } from "@/lib/rating";
+import { parseDecimal } from "@/lib/form-values";
+import type { ActionResult, MatchPreviewTeam } from "@/lib/action-result";
+import {
+  applyRatingChange,
+  getActiveSeason,
+  getEffectiveRatings,
+  revertRatingChanges,
+} from "@/lib/rating";
 
 function revalidateMatches() {
   revalidatePath("/rating");
@@ -19,8 +26,7 @@ function parseWeight(raw: unknown, fallback: number): number {
 }
 
 function parseScore(raw: unknown): number {
-  const n = Number(String(raw ?? "").trim().replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
+  return parseDecimal(raw) ?? 0;
 }
 
 /**
@@ -123,89 +129,223 @@ export async function updateMatchScores(matchId: string, formData: FormData) {
 }
 
 /**
- * Uzavře zápas a rozdá rating.
+ * Co udělá vyhodnocení s ratingem, ještě než se na něj klikne.
  *
- * Tým vystupuje jako jeden hráč s průměrným ratingem svých členů;
- * spočítaná změna pak platí pro každého z nich. Jde to jen jednou —
- * hlídá to podmínka na `closedAt` uvnitř transakce.
+ * Bez tohohle bylo tlačítko „Vyhodnotit“ skok do tmy: rating se rozdal
+ * a teprve pak bylo vidět kolik komu. Počítá se toutéž funkcí jako
+ * samotné uzavření, aby náhled a skutečnost nemohly říct každý něco
+ * jiného.
  */
-export async function closeMatch(matchId: string) {
+export async function previewMatch(
+  matchId: string,
+): Promise<MatchPreviewTeam[] | null> {
   const userId = await requireUserId();
-
   const match = await prisma.match.findFirst({
-    where: { id: matchId, userId, closedAt: null },
+    where: { id: matchId, userId },
     include: {
       season: true,
       teams: {
         orderBy: { sortOrder: "asc" },
-        include: { members: true },
+        include: { members: { include: { player: { select: { name: true } } } } },
       },
     },
   });
-  if (!match) return;
-  if (match.teams.length < 2) return;
+  if (!match || match.teams.length < 2) return null;
 
-  // Rating každého člena včetně docházkové části, ať tým vychází
-  // ze stejných čísel, jaká hráči vidí v žebříčku.
-  const ratingByPlayer = new Map<string, number>();
-  for (const team of match.teams) {
-    for (const m of team.members) {
-      const id = String(m.playerId);
-      if (!ratingByPlayer.has(id)) {
-        ratingByPlayer.set(id, await getEffectiveRating(id, match.season));
-      }
-    }
-  }
+  const ratings = await getEffectiveRatings(
+    match.teams.flatMap((t) => t.members.map((m) => String(m.playerId))),
+    match.season,
+  );
 
   const deltas = teamDeltas(
     match.teams.map((t) => ({
       teamId: String(t.id),
       rating: averageRating(
-        t.members.map((m) => ratingByPlayer.get(String(m.playerId)) ?? 1000),
+        t.members.map((m) => ratings.get(String(m.playerId)) ?? 1000),
       ),
       score: t.score,
     })),
     match.weightPercent,
   );
-  const deltaByTeam = new Map(deltas.map((d) => [d.teamId, d]));
+  const byTeam = new Map(deltas.map((d) => [d.teamId, d]));
 
-  await prisma.$transaction(async (tx) => {
-    const claimed = await tx.match.updateMany({
-      where: { id: matchId, closedAt: null },
-      data: { closedAt: new Date() },
-    });
-    if (claimed.count === 0) return;
-
-    for (const team of match.teams) {
-      const d = deltaByTeam.get(String(team.id));
-      if (!d) continue;
-
-      await tx.matchTeam.update({
-        where: { id: team.id },
-        data: { delta: d.delta },
-      });
-      if (d.delta === 0) continue;
-
-      for (const m of team.members) {
-        await applyRatingChange(tx, {
-          userId,
-          seasonId: match.seasonId,
-          playerId: String(m.playerId),
-          delta: d.delta,
-          source: "MATCH",
-          label: `${match.name} — ${team.name}, ${d.rank}. místo`,
-          matchId,
-        });
-      }
-    }
+  return match.teams.map((t) => {
+    const d = byTeam.get(String(t.id));
+    return {
+      teamId: String(t.id),
+      teamName: t.name,
+      rank: d?.rank ?? 1,
+      rating: averageRating(
+        t.members.map((m) => ratings.get(String(m.playerId)) ?? 1000),
+      ),
+      delta: d?.delta ?? 0,
+      members: t.members.map((m) => ({
+        playerId: String(m.playerId),
+        playerName: m.player.name,
+        rating: ratings.get(String(m.playerId)) ?? 1000,
+      })),
+    };
   });
-
-  revalidateMatches();
 }
 
 /**
- * Smaže zápas. Uzavřený se nemaže — rating už je rozdaný a v historii
- * by zůstal záznam, ke kterému nevede cesta.
+ * Uzavře zápas a rozdá rating.
+ *
+ * Tým vystupuje jako jeden hráč s průměrným ratingem svých členů;
+ * spočítaná změna pak platí pro každého z nich. Jde to jen jednou —
+ * hlídá to podmínka na `closedAt` uvnitř transakce.
+ *
+ * Nevyhazuje. Co se nepovede, vrátí textem — viz ActionResult.
+ */
+export async function closeMatch(matchId: string): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId();
+
+    const match = await prisma.match.findFirst({
+      where: { id: matchId, userId, closedAt: null },
+      include: {
+        season: true,
+        teams: {
+          orderBy: { sortOrder: "asc" },
+          include: { members: true },
+        },
+      },
+    });
+    if (!match) {
+      return { ok: false, error: "Zápas nenalezen, nebo je už vyhodnocený." };
+    }
+    if (match.teams.length < 2) {
+      return { ok: false, error: "Zápas potřebuje aspoň dva týmy." };
+    }
+
+    // Tým bez hráčů by šel do průměru jako začátečnický a bral by
+    // ostatním rating za nikoho.
+    const empty = match.teams.filter((t) => t.members.length === 0);
+    if (empty.length > 0) {
+      return {
+        ok: false,
+        error: `Tým bez hráčů: ${empty.map((t) => t.name).join(", ")}. Doplň hráče, nebo zápas smaž.`,
+      };
+    }
+
+    // Remíza je legitimní výsledek, samé nuly ale znamenají, že skóre
+    // nikdo nezapsal — a vyhodnocovat prázdný zápas nemá smysl.
+    if (match.teams.every((t) => t.score === 0)) {
+      return {
+        ok: false,
+        error: "Skóre je všude nula — nejdřív zapiš výsledek a ulož ho.",
+      };
+    }
+
+    // Jedním dotazem, ne jedním na hráče: v transakci pak zbývá jen
+    // zápis a nehrozí, že vyprší, než se vůbec začne psát.
+    const ratings = await getEffectiveRatings(
+      match.teams.flatMap((t) => t.members.map((m) => String(m.playerId))),
+      match.season,
+    );
+
+    const deltas = teamDeltas(
+      match.teams.map((t) => ({
+        teamId: String(t.id),
+        rating: averageRating(
+          t.members.map((m) => ratings.get(String(m.playerId)) ?? 1000),
+        ),
+        score: t.score,
+      })),
+      match.weightPercent,
+    );
+    const deltaByTeam = new Map(deltas.map((d) => [d.teamId, d]));
+
+    await prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.match.updateMany({
+          where: { id: matchId, closedAt: null },
+          data: { closedAt: new Date() },
+        });
+        if (claimed.count === 0) return;
+
+        for (const team of match.teams) {
+          const d = deltaByTeam.get(String(team.id));
+          if (!d) continue;
+
+          await tx.matchTeam.update({
+            where: { id: team.id },
+            data: { delta: d.delta },
+          });
+          if (d.delta === 0) continue;
+
+          for (const m of team.members) {
+            await applyRatingChange(tx, {
+              userId,
+              seasonId: match.seasonId,
+              playerId: String(m.playerId),
+              delta: d.delta,
+              source: "MATCH",
+              label: `${match.name} — ${team.name}, ${d.rank}. místo`,
+              matchId,
+            });
+          }
+        }
+      },
+      // Velký zápas je hodně zápisů za sebou. Výchozích 5 s je málo,
+      // jakmile je databáze dál nebo je hráčů přes dvacet.
+      { timeout: 20000, maxWait: 10000 },
+    );
+
+    revalidateMatches();
+    return { ok: true, message: "Zápas vyhodnocen, rating rozdaný." };
+  } catch (e) {
+    console.error("[closeMatch]", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Vyhodnocení se nepovedlo.",
+    };
+  }
+}
+
+/**
+ * Vrátí vyhodnocení zpátky — rating se odečte a zápas se dá opravit.
+ *
+ * Bez tohohle byl špatně zapsaný výsledek nevratný: rating zůstal
+ * v žebříčku a jediná cesta zpět vedla přes ruční úpravu trenérem,
+ * což v historii vypadá jako svévole.
+ */
+export async function reopenMatch(matchId: string): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId();
+    const match = await prisma.match.findFirst({
+      where: { id: matchId, userId, closedAt: { not: null } },
+      select: { id: true },
+    });
+    if (!match) return { ok: false, error: "Zápas není vyhodnocený." };
+
+    let vraceno = 0;
+    await prisma.$transaction(
+      async (tx) => {
+        vraceno = await revertRatingChanges(tx, { matchId });
+        await tx.matchTeam.updateMany({ where: { matchId }, data: { delta: null } });
+        await tx.match.updateMany({
+          where: { id: matchId, userId },
+          data: { closedAt: null },
+        });
+      },
+      { timeout: 20000, maxWait: 10000 },
+    );
+
+    revalidateMatches();
+    return { ok: true, message: `Vráceno zpět, rating odebrán ${vraceno} hráčům.` };
+  } catch (e) {
+    console.error("[reopenMatch]", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Vrácení se nepovedlo.",
+    };
+  }
+}
+
+/**
+ * Smaže zápas. Vyhodnocený se nejdřív musí vrátit — jinak by rating
+ * zůstal rozdaný a v historii by visel záznam, ke kterému nevede cesta.
  */
 export async function deleteMatch(matchId: string) {
   const userId = await requireUserId();
