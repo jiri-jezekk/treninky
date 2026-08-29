@@ -37,6 +37,7 @@ import {
   type ScoreMode,
 } from "@/lib/duration";
 import { MeasuredInput } from "@/components/MeasuredInput";
+import { RATING_PER_ATTENDANCE } from "@/lib/rating-limits";
 const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type DuelRow = {
@@ -1288,7 +1289,7 @@ function History({
         <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
           <h2 className={label}>Individuální tréninky</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Co si hráči zapsali sami. Každý den +1, stejně jako za klubový
+            Co si hráči zapsali sami. Počítá se stejně jako klubový
             trénink. Kdyby něco nesedělo, smaž to křížkem.
           </p>
         </div>
@@ -1310,7 +1311,7 @@ function History({
                 </span>
               </span>
               <span className="shrink-0 font-heading text-sm font-bold text-emerald-800">
-                +1
+                {`+${RATING_PER_ATTENDANCE}`}
               </span>
               <form action={deleteSoloSession.bind(null, so.id, undefined)}>
                 <button

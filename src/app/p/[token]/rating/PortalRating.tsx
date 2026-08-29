@@ -23,6 +23,7 @@ import {
 } from "@/lib/duration";
 import { MeasuredInput } from "@/components/MeasuredInput";
 import Link from "next/link";
+import { RATING_PER_ATTENDANCE } from "@/lib/rating-limits";
 const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type PortalDuel = {
@@ -568,8 +569,8 @@ export function PortalRating({
           <div className="min-w-0">
             <h2 className={label}>Trénoval jsem sám</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Házení, posilovna, běh — každý zápis +1 jako za trénink. Za den
-              jich můžeš zapsat víc.
+              Házení, posilovna, běh — každý zápis se počítá jako trénink.
+              Za den jich můžeš zapsat víc.
             </p>
           </div>
           {!loggingSolo && (
@@ -644,7 +645,7 @@ export function PortalRating({
                   {so.name}
                 </span>
                 <span className="shrink-0 font-heading text-sm font-bold text-emerald-800">
-                  +1
+                  {`+${RATING_PER_ATTENDANCE}`}
                 </span>
                 <form action={deleteSoloSession.bind(null, so.id, payToken)}>
                   <button
@@ -707,8 +708,8 @@ export function PortalRating({
       </section>
 
       <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
-        Za každý trénink je +1 (klubový, individuální). Zbytek si vybojuješ
-        v duelech a výzvách.
+        Za každý trénink je +{RATING_PER_ATTENDANCE} (klubový, individuální).
+        Zbytek si vybojuješ v duelech a výzvách.
       </p>
     </>
   );

@@ -23,3 +23,17 @@ export const MAX_SOLO_PER_DAY = 4;
  * je jen proto, aby se historie výzvy nezaplnila stovkou řádků.
  */
 export const MAX_ATTEMPTS_PER_CHALLENGE = 30;
+
+/**
+ * Kolik ratingu přidá jedna účast — klubový trénink, posilovna
+ * i individuální trénink.
+ *
+ * Jediné místo, kde se to nastavuje: docházková část se nikam
+ * neukládá, dopočítává se, takže změna téhle konstanty se hned
+ * projeví všude i zpětně.
+ *
+ * Pět bodů je vědomá volba trenéra: pravidelná docházka má na
+ * žebříček viditelný vliv, ne jen symbolický. Deset tréninků tak
+ * vydá zhruba za dva vyhrané duely.
+ */
+export const RATING_PER_ATTENDANCE = 5;

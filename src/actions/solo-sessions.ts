@@ -14,7 +14,7 @@ function revalidateSolo(payToken?: string) {
 
 /**
  * Hráč si zapíše individuální trénink — házení, posilovna, běh.
- * Počítá se stejně jako účast na klubovém tréninku: +1 do ratingu.
+ * Počítá se stejně jako účast na klubovém tréninku.
  */
 export async function logSoloSession(formData: FormData) {
   const payToken = String(formData.get("payToken") ?? "").trim();

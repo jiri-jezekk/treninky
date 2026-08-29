@@ -225,7 +225,7 @@ function SlotFields({ slot }: { slot?: SlotRow }) {
       </label>
       <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700 sm:col-span-4">
         <input type="checkbox" name="gym" defaultChecked={slot?.isGym ?? false} />
-        Posilovna — neúčtuje se, ale za účast je +1 do ratingu
+        Posilovna — neúčtuje se, ale za účast se počítá do ratingu
       </label>
     </div>
   );

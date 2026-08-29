@@ -17,6 +17,7 @@ import { toDateInputValue } from "@/lib/prepaid";
 import { formatDateDdMmYyyy } from "@/lib/date-display";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
+import { RATING_PER_ATTENDANCE } from "@/lib/rating-limits";
 
 export default async function RatingPage() {
   const userId = await requireUserId();
@@ -252,7 +253,7 @@ export default async function RatingPage() {
           jdou po sobě: <b className="text-slate-700">duel 100 %</b>,{" "}
           <b className="text-slate-700">zápas 150 %</b>,{" "}
           <b className="text-slate-700">měsíční výzva 200 %</b>. Za každý trénink
-          je +1 (klubový, individuální).
+          je +{RATING_PER_ATTENDANCE} (klubový, individuální).
         </p>
       </div>
 

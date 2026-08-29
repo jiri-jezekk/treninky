@@ -1,15 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { STARTING_RATING } from "@/lib/elo";
-
-/**
- * Kolik ratingu přidá jedna účast — trénink i posilovna.
- *
- * Schválně málo. Docházka má být znát, ale nesmí přebít duely —
- * jinak by se dalo šplhat žebříčkem tím, že člověk jen chodí
- * a nikdy nikoho nevyzve.
- */
-export const RATING_PER_ATTENDANCE = 1;
+import { RATING_PER_ATTENDANCE } from "@/lib/rating-limits";
 
 export type SeasonInfo = {
   id: string;
