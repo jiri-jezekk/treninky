@@ -28,7 +28,14 @@ import { ActionButton } from "./ActionButton";
 import { czPlural, initials } from "@/lib/czech";
 import { deleteSoloSession } from "@/actions/solo-sessions";
 import type { RatingRow } from "@/lib/rating";
-import { formatMeasured, SCORE_MODE_LABELS, type Measure, type ScoreMode } from "@/lib/duration";
+import {
+  formatMeasured,
+  measureHint,
+  SCORE_MODE_LABELS,
+  type Measure,
+  type ScoreMode,
+} from "@/lib/duration";
+import { MeasuredInput } from "@/components/MeasuredInput";
 const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type DuelRow = {
@@ -563,23 +570,30 @@ function Duels({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className={label}>{d.challengerName}</span>
-                      <input
-                        name="challengerValue"
-                        required
-                        inputMode="decimal"
-                        className={`${field} tabular-nums`}
-                      />
+                      <span className="mt-1.5 block">
+                        <MeasuredInput
+                          name="challengerValue"
+                          measure={d.measure}
+                          defaultValue={d.challengerValue}
+                          required
+                        />
+                      </span>
                     </label>
                     <label className="block">
                       <span className={label}>{d.opponentName}</span>
-                      <input
-                        name="opponentValue"
-                        required
-                        inputMode="decimal"
-                        className={`${field} tabular-nums`}
-                      />
+                      <span className="mt-1.5 block">
+                        <MeasuredInput
+                          name="opponentValue"
+                          measure={d.measure}
+                          defaultValue={d.opponentValue}
+                          required
+                        />
+                      </span>
                     </label>
                   </div>
+                  <p className="mt-2 text-xs italic text-slate-500">
+                    {measureHint(d.measure)}
+                  </p>
                   <button type="submit" className={`${btnPrimary} mt-3`}>
                     Zapsat
                   </button>
@@ -1114,12 +1128,11 @@ function Challenges({
                                 action={updateChallengeEntry.bind(null, a.id)}
                                 className="flex shrink-0 items-center gap-1.5"
                               >
-                                <input
+                                <MeasuredInput
                                   name="value"
-                                  defaultValue={String(a.value)}
-                                  inputMode="decimal"
-                                  aria-label="Hodnota pokusu"
-                                  className="w-20 rounded border border-slate-200 px-2 py-0.5 text-right tabular-nums text-slate-900"
+                                  measure={c.measure}
+                                  defaultValue={a.value}
+                                  compact
                                 />
                                 <button type="submit" className={mini}>
                                   Opravit

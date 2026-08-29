@@ -21,6 +21,7 @@ import {
   type Measure,
   type ScoreMode,
 } from "@/lib/duration";
+import { MeasuredInput } from "@/components/MeasuredInput";
 const SCORE_MODES: ScoreMode[] = ["points-high", "points-low", "time"];
 
 export type PortalDuel = {
@@ -306,10 +307,12 @@ export function PortalRating({
                         <ScoreInput
                           name="challengerValue"
                           player={d.iAmChallenger ? myName : d.opponentName}
+                          measure={d.measure}
                         />
                         <ScoreInput
                           name="opponentValue"
                           player={d.iAmChallenger ? d.opponentName : myName}
+                          measure={d.measure}
                         />
                       </div>
                       <p className="mt-2 text-xs text-slate-500">
@@ -435,12 +438,13 @@ export function PortalRating({
                       <span className={label}>
                         Nový pokus{c.measure === "TIME" ? " (čas)" : c.unit ? ` (${c.unit})` : ""}
                       </span>
-                      <input
-                        name="value"
-                        required
-                        inputMode="decimal"
-                        className={`${field} tabular-nums`}
-                      />
+                      <span className="mt-1.5 block">
+                        <MeasuredInput
+                          name="value"
+                          measure={c.measure}
+                          required
+                        />
+                      </span>
                     </label>
                     <button type="submit" className={`${btnPrimary} ${btnSm} mb-0.5`}>
                       Zapsat
@@ -465,12 +469,11 @@ export function PortalRating({
                           className="flex shrink-0 items-center gap-1.5"
                         >
                           <input type="hidden" name="payToken" value={payToken} />
-                          <input
+                          <MeasuredInput
                             name="value"
-                            defaultValue={String(a.value)}
-                            inputMode="decimal"
-                            aria-label="Hodnota pokusu"
-                            className="w-20 rounded border border-slate-200 px-2 py-0.5 text-right tabular-nums text-slate-900"
+                            measure={c.measure}
+                            defaultValue={a.value}
+                            compact
                           />
                           <button
                             type="submit"
@@ -714,17 +717,19 @@ export function PortalRating({
 }
 
 /** Jeden řádek zadání skóre: jméno vlevo, políčko vpravo. */
-function ScoreInput({ name, player }: { name: string; player: string }) {
+function ScoreInput({
+  name,
+  player,
+  measure,
+}: {
+  name: string;
+  player: string;
+  measure: Measure;
+}) {
   return (
     <label className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0">
       <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{player}</span>
-      <input
-        name={name}
-        required
-        inputMode="decimal"
-        placeholder="0"
-        className="w-16 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-sm tabular-nums text-slate-900 outline-none focus:border-club"
-      />
+      <MeasuredInput name={name} measure={measure} required compact />
     </label>
   );
 }

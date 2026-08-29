@@ -12,7 +12,7 @@ import {
   revertRatingChanges,
 } from "@/lib/rating";
 import type { ActionResult } from "@/lib/action-result";
-import { parseMeasured, parseScoreMode } from "@/lib/duration";
+import { parseScoreMode, readMeasuredValue } from "@/lib/duration";
 
 function revalidateRating(payToken?: string) {
   revalidatePath("/rating");
@@ -159,11 +159,8 @@ export async function reportDuelResult(duelId: string, formData: FormData) {
   if (!isParticipant) return;
 
   // Čte se podle druhu měření — na čas projde i „1:23,45“.
-  const challengerValue = parseMeasured(
-    formData.get("challengerValue"),
-    duel.measure,
-  );
-  const opponentValue = parseMeasured(formData.get("opponentValue"), duel.measure);
+  const challengerValue = readMeasuredValue(formData, "challengerValue", duel.measure);
+  const opponentValue = readMeasuredValue(formData, "opponentValue", duel.measure);
   if (challengerValue == null || opponentValue == null) return;
 
   await prisma.duel.update({

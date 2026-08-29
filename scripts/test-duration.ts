@@ -11,8 +11,15 @@ import {
   parseDuration,
   parseMeasured,
   parseScoreMode,
+  readMeasuredValue,
   scoreModeOf,
+  splitDuration,
 } from "../src/lib/duration.ts";
+
+/** Náhrada FormData pro test. */
+function form(data: Record<string, string>) {
+  return { get: (k: string) => (k in data ? data[k] : null) };
+}
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -89,6 +96,36 @@ console.log("\nTam a zpátky přes volbu:");
 for (const mode of ["time", "points-high", "points-low"] as const) {
   const { measure, higherWins } = parseScoreMode(mode);
   check(`„${mode}“ přežije kolečko`, scoreModeOf(measure, higherWins), mode);
+}
+
+console.log("\nČas ze dvou polí (mobil nemá dvojtečku):");
+check("minuty a sekundy", readMeasuredValue(form({ vMin: "1", vSec: "23" }), "v", "TIME"), 83);
+check("se setinami", readMeasuredValue(form({ vMin: "1", vSec: "23,45" }), "v", "TIME"), 83.45);
+// Kdo běžel 43 vteřin, nemá do minut psát nulu.
+check("prázdné minuty = 0", readMeasuredValue(form({ vMin: "", vSec: "43" }), "v", "TIME"), 43);
+check("prázdné sekundy = 0", readMeasuredValue(form({ vMin: "2", vSec: "" }), "v", "TIME"), 120);
+check("dlouhý běh", readMeasuredValue(form({ vMin: "38", vSec: "24" }), "v", "TIME"), 2304);
+check("překlep v sekundách neprojde", readMeasuredValue(form({ vMin: "1", vSec: "70" }), "v", "TIME"), null);
+check("obě prázdná → padá na jedno pole", readMeasuredValue(form({ vMin: "", vSec: "" }), "v", "TIME"), null);
+
+console.log("\nJedno pole pořád funguje (počítač):");
+check("dvojtečka", readMeasuredValue(form({ v: "1:23,45" }), "v", "TIME"), 83.45);
+check("holé sekundy", readMeasuredValue(form({ v: "83" }), "v", "TIME"), 83);
+check("body", readMeasuredValue(form({ v: "12" }), "v", "POINTS"), 12);
+// U bodů se dvojice polí ignoruje — minuty tam nedávají smysl.
+check("u bodů se dvojice neuplatní", readMeasuredValue(form({ vMin: "1", vSec: "23", v: "12" }), "v", "POINTS"), 12);
+
+console.log("\nRozpad na dvě pole:");
+check("83,45 s", splitDuration(83.45), { min: "1", sec: "23,45" });
+check("pod minutu", splitDuration(43), { min: "0", sec: "43" });
+check("celé minuty", splitDuration(120), { min: "2", sec: "0" });
+check("nic", splitDuration(null), { min: "", sec: "" });
+{
+  // Načíst, rozpadnout, poslat zpátky — musí vyjít totéž.
+  for (const s of [83.45, 43, 120, 2304, 0]) {
+    const { min, sec } = splitDuration(s);
+    check(`${s} s přežije kolečko`, readMeasuredValue(form({ vMin: min, vSec: sec }), "v", "TIME"), s);
+  }
 }
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\nNEPROŠLO: ${failures}`);

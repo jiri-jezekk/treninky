@@ -13,7 +13,7 @@ import {
   revertRatingChanges,
 } from "@/lib/rating";
 import { STARTING_RATING } from "@/lib/elo";
-import { parseMeasured, parseScoreMode } from "@/lib/duration";
+import { parseScoreMode, readMeasuredValue } from "@/lib/duration";
 import { MAX_ATTEMPTS_PER_CHALLENGE } from "@/lib/rating-limits";
 import { standings, type Attempt } from "@/lib/challenge-attempts";
 import type { ActionResult } from "@/lib/action-result";
@@ -94,7 +94,7 @@ export async function submitChallengeEntry(challengeId: string, formData: FormDa
   if (!challenge || challenge.closedAt) return;
 
   // Na čas projde i „38:24“ — dřív se muselo psát 2304.
-  const value = parseMeasured(formData.get("value"), challenge.measure);
+  const value = readMeasuredValue(formData, "value", challenge.measure);
   if (value == null) return;
 
   const note = String(formData.get("note") ?? "").trim() || null;
@@ -130,7 +130,7 @@ export async function updateChallengeEntry(entryId: string, formData: FormData) 
     select: { challenge: { select: { measure: true } } },
   });
   if (!entry) return;
-  const value = parseMeasured(formData.get("value"), entry.challenge.measure);
+  const value = readMeasuredValue(formData, "value", entry.challenge.measure);
   if (value == null) return;
   const note = String(formData.get("note") ?? "").trim() || null;
 

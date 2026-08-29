@@ -133,3 +133,44 @@ export function scoreModeOf(measure: Measure, higherWins: boolean): ScoreMode {
   if (measure === "TIME") return "time";
   return higherWins ? "points-high" : "points-low";
 }
+
+/**
+ * Hodnota z formuláře, kde se čas zadává po částech.
+ *
+ * Na mobilu má číselná klávesnice jen čárku — dvojtečka na ní není,
+ * takže „1:23,45“ tam nešlo napsat. Čas se proto zadává do dvou polí
+ * (minuty a sekundy) a skládá se až tady. Jedno pole s dvojtečkou
+ * zůstává funkční pro počítač.
+ *
+ * Pořadí: nejdřív dvojice `<base>Min` / `<base>Sec`, jinak `<base>`.
+ */
+export function readMeasuredValue(
+  form: { get(name: string): unknown },
+  base: string,
+  measure: Measure,
+): number | null {
+  if (measure === "TIME") {
+    const min = String(form.get(`${base}Min`) ?? "").trim();
+    const sec = String(form.get(`${base}Sec`) ?? "").trim();
+    if (min !== "" || sec !== "") {
+      // Prázdná půlka znamená nulu, ne chybu — kdo běžel 43 vteřin,
+      // nemá do minut psát nulu.
+      return parseDuration(`${min === "" ? "0" : min}:${sec === "" ? "0" : sec}`);
+    }
+  }
+  return parseMeasured(form.get(base), measure);
+}
+
+/** Minuty a sekundy zvlášť — pro předvyplnění dvou polí. */
+export function splitDuration(seconds: number | null | undefined): {
+  min: string;
+  sec: string;
+} {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) {
+    return { min: "", sec: "" };
+  }
+  const celkem = Math.round(seconds * 100) / 100;
+  const min = Math.floor(celkem / 60);
+  const sec = Math.round((celkem - min * 60) * 100) / 100;
+  return { min: String(min), sec: String(sec).replace(".", ",") };
+}
