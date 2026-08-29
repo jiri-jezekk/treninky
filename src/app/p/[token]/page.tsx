@@ -7,6 +7,8 @@ import { SessionRefresh } from "./SessionRefresh";
 import { getPlayerBalance } from "@/lib/player-balance";
 import { hasPortalSession } from "@/lib/player-portal-session";
 import { formatCzkFromCents } from "@/lib/money";
+import { countSharedReviews } from "@/lib/reviews";
+import { czPlural } from "@/lib/czech";
 import { prisma } from "@/lib/prisma";
 import { PortalShell } from "./PortalShell";
 
@@ -68,6 +70,11 @@ export default async function PortalPage({
     player.user.playerVisibleFrom,
   );
   if (!balance) notFound();
+
+  const rozboru = await countSharedReviews(
+    String(player.user.id),
+    String(player.id),
+  );
 
   const firstName = player.name.split(" ")[0];
 
@@ -170,6 +177,25 @@ export default async function PortalPage({
           </span>
           <span className="shrink-0 text-club">→</span>
         </a>
+
+        {/* Odkaz jen když je co ukázat — prázdná stránka by mátla. */}
+        {rozboru > 0 && (
+          <a
+            href={`/p/${token}/rozbory`}
+            className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 px-5 py-4 transition hover:border-club"
+          >
+            <span className="min-w-0">
+              <span className="block font-heading text-sm font-bold text-slate-800">
+                Rozbory zápasů
+              </span>
+              <span className="block text-xs text-slate-600">
+                {rozboru} {czPlural(rozboru, "rozbor", "rozbory", "rozborů")} od
+                trenéra
+              </span>
+            </span>
+            <span className="shrink-0 text-club">→</span>
+          </a>
+        )}
 
         <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
           Naskenuj QR v bankovní aplikaci.
