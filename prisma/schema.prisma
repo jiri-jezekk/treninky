@@ -69,6 +69,8 @@ model User {
   soloSessions SoloSession[]
   ratingEntries RatingEntry[]
   ratingSeasons RatingSeason[]
+  videoReviews  VideoReview[]
+  reviewEventTypes ReviewEventType[]
 }
 
 /**
@@ -122,6 +124,8 @@ model Player {
   challengeEntries ChallengeEntry[]
   matchTeams   MatchTeamMember[]
   soloSessions SoloSession[]
+  reviewEvents ReviewEvent[]
+  reviewShares ReviewShare[]
   /** Vypnuté = hráč se do ratingu nepočítá a v žebříčku není. */
   inRating     Boolean                   @default(true)
 
@@ -325,6 +329,7 @@ model Match {
   closedAt      DateTime?
   createdAt     DateTime     @default(now())
   teams         MatchTeam[]
+  videoReviews  VideoReview[]
 
   @@index([userId, playedOn])
   @@index([seasonId])
@@ -644,4 +649,92 @@ model SharedPaymentParticipant {
   paidAt          DateTime?
 
   @@unique([sharedPaymentId, playerId])
+}
+
+/** Jak se akce počítá — do našeho sloupce, soupeřova, nebo mimo. */
+enum ReviewSide {
+  FOR
+  AGAINST
+  NEUTRAL
+}
+
+/**
+ * Rozbor zápasu z videa. Proti modelu Match nerozdává rating —
+ * je to poznámkový blok navázaný na časovou osu záznamu. Proto je
+ * to samostatná věc a ne příznak u zápasu: rozebírá se i to, co se
+ * nehrálo na tréninku, a naopak zápas z tréninku rozbor mít nemusí.
+ */
+model VideoReview {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  opponent  String?
+  playedOn  DateTime @db.Date
+  /** Jedenáctiznakové ID z odkazu. Ukládá se rozparsované, ne celá URL. */
+  videoId   String?
+  notes     String?
+  /** Nepovinná vazba, když se rozebírá zápas odehraný na tréninku. */
+  matchId   String?
+  match     Match?   @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  /** Zkratka pro „vidí to celý tým“ — jinak rozhodují záznamy v shares. */
+  sharedAll Boolean  @default(false)
+  createdAt DateTime @default(now())
+  events    ReviewEvent[]
+  shares    ReviewShare[]
+
+  @@index([userId, playedOn])
+}
+
+/**
+ * Tlačítko počítadla. Definuje se pro celý klub, ne pro jeden rozbor —
+ * jinak by stejná akce měla v každém zápase jiný název a statistika
+ * napříč zápasy by nedávala smysl.
+ */
+model ReviewEventType {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  /** Hex z klubové palety, vybírá se ze seznamu, nepíše se ručně. */
+  color     String
+  side      ReviewSide @default(NEUTRAL)
+  sortOrder Int        @default(0)
+  /**
+   * Smazané tlačítko se jen archivuje. Kdyby se mazalo doopravdy,
+   * ztratily by smysl všechny zápisy, které na něj odkazují.
+   */
+  archived  Boolean    @default(false)
+  events    ReviewEvent[]
+
+  @@index([userId, archived])
+}
+
+/** Jedno kliknutí: čas ve videu, typ akce, volitelně hráč a poznámka. */
+model ReviewEvent {
+  id         String          @id @default(cuid())
+  reviewId   String
+  review     VideoReview     @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  typeId     String
+  type       ReviewEventType @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  /** Sekunda ve videu. Celé číslo stačí, přesnost na desetiny je zbytečná. */
+  atSeconds  Int
+  playerId   String?
+  player     Player?         @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  note       String?
+  createdAt  DateTime        @default(now())
+
+  @@index([reviewId, atSeconds])
+  @@index([playerId])
+}
+
+/** Komu je rozbor zpřístupněný v hráčském portálu. */
+model ReviewShare {
+  reviewId String
+  review   VideoReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, playerId])
+  @@index([playerId])
 }
