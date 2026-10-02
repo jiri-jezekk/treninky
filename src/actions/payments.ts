@@ -161,6 +161,43 @@ export async function setPaymentItemHidden(
 }
 
 /**
+ * Nastaví dohodnutou splatnost položky („RRRR-MM-DD“), prázdná hodnota
+ * ji zruší. Do toho dne hráč položku vidí jako „později“.
+ */
+export async function setPaymentItemDue(
+  playerId: string,
+  key: string,
+  dueOn: string,
+) {
+  const userId = await requireUserId();
+  if (!parseItemKey(key)) return;
+
+  const player = await prisma.player.findFirst({
+    where: { id: playerId, userId },
+    select: { id: true, payToken: true },
+  });
+  if (!player) return;
+
+  if (dueOn === "") {
+    await prisma.paymentItemDue.deleteMany({ where: { userId, playerId, key } });
+  } else {
+    if (!/^20\d{2}-\d{2}-\d{2}$/.test(dueOn)) return;
+    const date = new Date(`${dueOn}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dueOn) {
+      return;
+    }
+    await prisma.paymentItemDue.upsert({
+      where: { playerId_key: { playerId, key } },
+      create: { userId, playerId, key, dueOn: date },
+      update: { dueOn: date },
+    });
+  }
+
+  revalidatePayments();
+  revalidatePath(`/p/${player.payToken}`);
+}
+
+/**
  * Označí vše, co hráč dluží, jako zaplacené — měsíce i akce najednou.
  * Používá stejný výpočet jako přehled dlužníků, aby se označilo přesně to,
  * co je tam vidět.
@@ -172,6 +209,8 @@ export async function markPlayerAllPaid(playerId: string) {
   const balance = await getPlayerBalance(userId, playerId);
   if (!balance) return;
 
+  // Jen splatné. Položka s pozdější splatností zůstává otevřená —
+  // hráč zaplatil to, co po něm teď chceme, a zbytek se zaškrtne sám.
   const months = balance.unpaid.filter((i) => i.kind === "monthly");
   const events = balance.unpaid.filter((i) => i.kind === "event");
   const prepaid = balance.unpaid.filter((i) => i.kind === "prepaid");

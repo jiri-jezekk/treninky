@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   markPlayerAllPaid,
   setMonthPaid,
+  setPaymentItemDue,
   setPaymentItemHidden,
   setPaymentItemPaid,
 } from "@/actions/payments";
@@ -20,6 +21,10 @@ export type DebtItem = {
   kind: "monthly" | "event" | "prepaid";
   /** Hráč ji v odkazu nevidí a výzva k platbě ji vynechá. */
   hidden: boolean;
+  /** Dohodnutá splatnost „RRRR-MM-DD“, nebo null. */
+  dueOn: string | null;
+  /** Splatnost ještě nenastala — do výzvy nepatří. */
+  later: boolean;
   sortKey: number;
   year?: number;
   month?: number;
@@ -29,7 +34,10 @@ export type Debtor = {
   playerId: string;
   playerName: string;
   payToken: string;
+  /** Splatné teď. */
   totalCents: number;
+  /** Dohodnuto na později. */
+  laterCents: number;
   items: DebtItem[];
 };
 
@@ -112,13 +120,15 @@ export function PaymentsView({
     });
   }
 
-  // Výzva k platbě obsahuje jen to, co hráč v odkazu opravdu uvidí.
-  const visibleItems = (d: Debtor) => d.items.filter((i) => !i.hidden);
+  // Výzva k platbě obsahuje jen to, co hráč v odkazu uvidí jako splatné.
+  const visibleItems = (d: Debtor) => d.items.filter((i) => !i.hidden && !i.later);
   const visibleTotal = (d: Debtor) =>
     visibleItems(d).reduce((s, i) => s + i.amountCents, 0);
   const remindable = debtors.filter((d) => visibleItems(d).length > 0);
 
   const owedTotal = debtors.reduce((s, d) => s + d.totalCents, 0);
+  // Kdo má jen dohodnutou pozdější splatnost, ten zatím nedluží.
+  const owingCount = debtors.filter((d) => d.totalCents > 0).length;
   const monthTotal = monthly.reduce((s, r) => s + r.totalCents, 0);
   const monthPaid = monthly.filter((r) => r.paid).reduce((s, r) => s + r.totalCents, 0);
   const openEvents = events.filter((e) => e.paidCount < e.participantCount).length;
@@ -126,7 +136,9 @@ export function PaymentsView({
   const oldest = useMemo(() => {
     const months = debtors
       .flatMap((d) => d.items)
-      .filter((i) => i.kind === "monthly" && i.year != null && i.month != null)
+      .filter(
+        (i) => !i.later && i.kind === "monthly" && i.year != null && i.month != null,
+      )
       .sort((a, b) => a.sortKey - b.sortKey);
     const first = months[0];
     return first ? formatMonthLabelCs(first.year!, first.month!) : "—";
@@ -211,7 +223,7 @@ export function PaymentsView({
         <Stat title="K inkasu celkem" value={formatCzkFromCents(owedTotal)} tone="bad" />
         <Stat
           title="Dlužníků"
-          value={String(debtors.length)}
+          value={String(owingCount)}
           note={`z ${monthly.length || debtors.length}`}
         />
         <Stat
@@ -224,7 +236,7 @@ export function PaymentsView({
       </dl>
 
       <nav className="mb-6 flex flex-wrap gap-2 border-b border-slate-100 pb-5">
-        <TabLink current={tab} value="dluznici" year={year} month={month} count={debtors.length}>
+        <TabLink current={tab} value="dluznici" year={year} month={month} count={owingCount}>
           Dlužníci
         </TabLink>
         <TabLink current={tab} value="mesicni" year={year} month={month}>
@@ -263,8 +275,19 @@ export function PaymentsView({
                         {open ? "▲" : "▼"}
                       </span>
                     </span>
-                    <span className="font-heading text-lg font-extrabold tabular-nums text-red-800">
-                      {formatCzkFromCents(d.totalCents)}
+                    <span className="text-right">
+                      <span
+                        className={`block font-heading text-lg font-extrabold tabular-nums ${
+                          d.totalCents > 0 ? "text-red-800" : "text-slate-500"
+                        }`}
+                      >
+                        {formatCzkFromCents(d.totalCents)}
+                      </span>
+                      {d.laterCents > 0 && (
+                        <span className="block text-xs text-slate-500">
+                          + {formatCzkFromCents(d.laterCents)} později
+                        </span>
+                      )}
                     </span>
                   </button>
 
@@ -285,8 +308,25 @@ export function PaymentsView({
                                 Skryto hráči
                               </span>
                             )}
+                            {i.dueOn && <DueBadge dueOn={i.dueOn} later={i.later} />}
                           </span>
-                          <span className="flex flex-wrap gap-2">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                              Splatné do
+                              <input
+                                type="date"
+                                defaultValue={i.dueOn ?? ""}
+                                disabled={pending}
+                                onChange={(e) => {
+                                  const value = e.currentTarget.value;
+                                  // Při psaní roku ručně chodí i „0002-01-31“ —
+                                  // ukládá se až celé datum, nebo smazání.
+                                  if (value !== "" && value < "2000-01-01") return;
+                                  run(() => setPaymentItemDue(d.playerId, i.key, value));
+                                }}
+                                className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-800 outline-none focus:border-club"
+                              />
+                            </label>
                             <button
                               type="button"
                               className={mini}
@@ -320,6 +360,12 @@ export function PaymentsView({
                           </b>{" "}
                           · {i.label}
                           {i.hidden && <span className="italic"> (skryto hráči)</span>}
+                          {i.dueOn && (
+                            <span className="italic">
+                              {" "}
+                              ({i.later ? "splatné do" : "splatnost"} {formatDueCs(i.dueOn)})
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -631,6 +677,24 @@ export function PaymentsView({
 }
 
 /* ---------------------------------------------------------------- pomocné */
+
+/** „2027-01-31“ → „31. 1. 2027“. */
+function formatDueCs(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d}. ${m}. ${y}`;
+}
+
+function DueBadge({ dueOn, later }: { dueOn: string; later: boolean }) {
+  return (
+    <span
+      className={`ml-2 inline-flex rounded-full px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${
+        later ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800"
+      }`}
+    >
+      {later ? "Splatné do" : "Splatnost"} {formatDueCs(dueOn)}
+    </span>
+  );
+}
 
 function Stat({
   title,

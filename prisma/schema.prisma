@@ -59,6 +59,7 @@ model User {
   sharedPayments SharedPayment[]
   monthlyPaymentMarks MonthlyPaymentMark[]
   hiddenPaymentItems HiddenPaymentItem[]
+  paymentItemDues PaymentItemDue[]
   paymentBatches PaymentBatch[]
   seasons      Season[]
   prepayments  Prepayment[]
@@ -114,6 +115,7 @@ model Player {
   groupMembers PlayerGroupMembership[]
   monthlyPaymentMarks MonthlyPaymentMark[]
   hiddenPaymentItems HiddenPaymentItem[]
+  paymentItemDues PaymentItemDue[]
   paymentBatches PaymentBatch[]
   prepayments  Prepayment[]
   /**
@@ -501,6 +503,25 @@ model HiddenPaymentItem {
   playerId  String
   player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
   key       String
+  createdAt DateTime @default(now())
+
+  @@unique([playerId, key])
+  @@index([userId])
+}
+
+/**
+ * Dohodnutá splatnost položky. Do toho dne ji hráč vidí jako „později“
+ * a nepočítá se do toho, co má zaplatit teď; od toho dne je to běžný
+ * dluh. Klíč je `BalanceItem.key` jako u HiddenPaymentItem.
+ */
+model PaymentItemDue {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  key       String
+  dueOn     DateTime @db.Date
   createdAt DateTime @default(now())
 
   @@unique([playerId, key])

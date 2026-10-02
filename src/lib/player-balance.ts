@@ -36,6 +36,13 @@ export type BalanceItem = {
    * v hráčově pohledu nezaplacená skrytá položka chybí úplně.
    */
   hidden: boolean;
+  /** Dohodnutá splatnost jako „RRRR-MM-DD“, nebo null. */
+  dueOn: string | null;
+  /**
+   * Splatnost ještě nenastala. Položka se nepočítá do toho, co má hráč
+   * zaplatit teď, a nejde do výzev ani do souhrnné platby.
+   */
+  later: boolean;
   /** Řazení od nejstaršího dluhu; akce jdou nakonec. */
   sortKey: number;
   /**
@@ -54,10 +61,26 @@ export type PlayerBalance = {
   playerId: string;
   playerName: string;
   playerNumber: number;
+  /** Nezaplacené a splatné — to, co má hráč zaplatit teď. */
   unpaid: BalanceItem[];
+  /** Nezaplacené s dohodnutou splatností, která ještě nenastala. */
+  later: BalanceItem[];
   paid: BalanceItem[];
+  /** Součet `unpaid`. */
   totalCents: number;
+  /** Součet `later`. */
+  laterCents: number;
 };
+
+/** Dnešní datum v Česku jako „RRRR-MM-DD“ — server běží v UTC. */
+export function todayIsoPrague(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Prague",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
 
 type PlayerForBalance = {
   id: string;
@@ -115,7 +138,11 @@ export async function getPlayerBalance(
     );
   }
 
-  const unpaid = items.filter((i) => !i.paid).sort((a, b) => a.sortKey - b.sortKey);
+  const open = items.filter((i) => !i.paid);
+  const unpaid = open.filter((i) => !i.later).sort((a, b) => a.sortKey - b.sortKey);
+  const later = open
+    .filter((i) => i.later)
+    .sort((a, b) => (a.dueOn ?? "").localeCompare(b.dueOn ?? "") || a.sortKey - b.sortKey);
   const paid = items.filter((i) => i.paid).sort((a, b) => b.sortKey - a.sortKey);
 
   return {
@@ -123,8 +150,10 @@ export async function getPlayerBalance(
     playerName: player.name,
     playerNumber: player.number,
     unpaid,
+    later,
     paid,
     totalCents: unpaid.reduce((sum, i) => sum + i.amountCents, 0),
+    laterCents: later.reduce((sum, i) => sum + i.amountCents, 0),
   };
 }
 
@@ -150,14 +179,26 @@ async function buildItems(
   monthlyIncomeKind: IncomeKind,
 ): Promise<BalanceItem[]> {
   const items: BalanceItem[] = [];
-  const hiddenKeys = new Set(
-    (
-      await prisma.hiddenPaymentItem.findMany({
-        where: { userId, playerId: player.id },
-        select: { key: true },
-      })
-    ).map((h) => h.key),
+  const [hidden, dues] = await Promise.all([
+    prisma.hiddenPaymentItem.findMany({
+      where: { userId, playerId: player.id },
+      select: { key: true },
+    }),
+    prisma.paymentItemDue.findMany({
+      where: { userId, playerId: player.id },
+      select: { key: true, dueOn: true },
+    }),
+  ]);
+  const hiddenKeys = new Set(hidden.map((h) => h.key));
+  const dueByKey = new Map(
+    dues.map((d) => [d.key, d.dueOn.toISOString().slice(0, 10)]),
   );
+  const today = todayIsoPrague();
+  // V den splatnosti už se platí — „později“ je jen to, co ještě nenastalo.
+  const dueFor = (key: string): { dueOn: string | null; later: boolean } => {
+    const dueOn = dueByKey.get(key) ?? null;
+    return { dueOn, later: dueOn != null && dueOn > today };
+  };
   const discount = discountPriceCentsFor(player.groupMembers.map((m) => m.group));
 
   // --- předplacená období ---
@@ -185,6 +226,7 @@ async function buildItems(
       incomeKind: p.incomeKind as IncomeKind,
       paid: p.paidAt != null,
       hidden: hiddenKeys.has(`p-${p.id}`),
+      ...dueFor(`p-${p.id}`),
       // Řadí se podle začátku období, aby stálo mezi měsíci na svém místě.
       sortKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
       monthKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
@@ -228,6 +270,7 @@ async function buildItems(
         incomeKind: monthlyIncomeKind,
         paid: paidMonths.has(`${year}-${month}`),
         hidden: hiddenKeys.has(`m-${year}-${month}`),
+        ...dueFor(`m-${year}-${month}`),
         sortKey: year * 12 + month,
         monthKey: year * 12 + month,
         year,
@@ -255,6 +298,7 @@ async function buildItems(
       incomeKind: sp.incomeKind as IncomeKind,
       paid: p.paidAt != null,
       hidden: hiddenKeys.has(`e-${sp.id}`),
+      ...dueFor(`e-${sp.id}`),
       sortKey: 100000 + sp.number,
       // Akce se ořezává podle toho, kdy vznikla — loňský turnaj
       // hráči v nové sezóně ukazovat nemá smysl.
@@ -292,7 +336,12 @@ export async function getDebtors(userId: string): Promise<PlayerBalance[]> {
     players.map((p) => getPlayerBalance(userId, p.id, kind)),
   );
 
+  // Hráč jen s dohodnutou pozdější splatností v seznamu zůstává, aby šlo
+  // splatnost upravit — řadí se ale až za ty, kdo dluží teď.
   return balances
-    .filter((b): b is PlayerBalance => b != null && b.totalCents > 0)
-    .sort((a, b) => b.totalCents - a.totalCents);
+    .filter(
+      (b): b is PlayerBalance =>
+        b != null && (b.totalCents > 0 || b.laterCents > 0),
+    )
+    .sort((a, b) => b.totalCents - a.totalCents || b.laterCents - a.laterCents);
 }

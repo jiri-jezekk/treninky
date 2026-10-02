@@ -93,9 +93,13 @@ export default async function PortalPage({
           <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-8 text-center">
             <p className="font-heading text-3xl font-extrabold text-emerald-800">0 Kč</p>
             <p className="mt-2 font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
-              Nic nedlužíš
+              {balance.later.length > 0 ? "Teď nic nedlužíš" : "Nic nedlužíš"}
             </p>
-            <p className="mt-4 text-sm text-slate-600">Máš vše vyrovnané. Díky!</p>
+            <p className="mt-4 text-sm text-slate-600">
+              {balance.later.length > 0
+                ? "Splatné máš vyrovnané. Co je domluvené na později, najdeš níž."
+                : "Máš vše vyrovnané. Díky!"}
+            </p>
           </div>
         ) : (
           <>
@@ -126,6 +130,11 @@ export default async function PortalPage({
                     {item.label}
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-500">{item.meta}</p>
+                  {item.dueOn && (
+                    <p className="mt-1 text-xs font-semibold text-red-800">
+                      Splatné do {formatDueCs(item.dueOn)}
+                    </p>
+                  )}
 
                   <div className="mt-4 flex items-center justify-between gap-4">
                     <span className="font-heading text-xl font-extrabold text-slate-800">
@@ -147,6 +156,50 @@ export default async function PortalPage({
               ))}
             </div>
           </>
+        )}
+
+        {/* Domluvená pozdější splatnost. Hráč o ní ví a může zaplatit
+            i dřív, jen se nepočítá do toho, co má zaplatit teď. */}
+        {balance.later.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-amber-800">
+              Později — {formatCzkFromCents(balance.laterCents)}
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">
+              Domluvená splatnost. Zaplatit můžeš i dřív.
+            </p>
+            <div className="mt-3 flex flex-col gap-3">
+              {balance.later.map((item) => (
+                <div
+                  key={item.key}
+                  className="rounded-xl border border-amber-200 bg-white p-4"
+                >
+                  <h3 className="font-heading text-sm font-bold text-slate-800">
+                    {item.label}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500">{item.meta}</p>
+                  <p className="mt-1 text-xs font-semibold text-amber-800">
+                    Splatné do {formatDueCs(item.dueOn!)}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <span className="font-heading text-lg font-extrabold text-slate-800">
+                      {formatCzkFromCents(item.amountCents)}
+                    </span>
+                    <PortalQr
+                      iban={player.user.bankIban}
+                      amountCents={item.amountCents}
+                      message={`${item.label} - ${player.name}`}
+                      variableSymbol={item.variableSymbol}
+                    />
+                  </div>
+                  <p className="mt-3 text-center text-xs tabular-nums text-slate-500">
+                    Variabilní symbol{" "}
+                    <b className="text-slate-800">{item.variableSymbol}</b>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {balance.paid.length > 0 && (
@@ -206,4 +259,10 @@ export default async function PortalPage({
       </div>
     </PortalShell>
   );
+}
+
+/** „2027-01-31“ → „31. 1. 2027“. */
+function formatDueCs(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d}. ${m}. ${y}`;
 }

@@ -20,7 +20,7 @@ export default async function PrehledPage() {
       orderBy: { startsAt: "asc" },
       select: { id: true, startsAt: true, notes: true },
     }),
-    getDebtors(userId),
+    getDebtors(userId).then((list) => list.filter((d) => d.totalCents > 0)),
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { bankIban: true },

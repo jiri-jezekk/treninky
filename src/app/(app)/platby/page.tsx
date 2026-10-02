@@ -106,12 +106,15 @@ export default async function PlatbyPage({
         playerName: d.playerName,
         payToken: tokenById.get(d.playerId) ?? "",
         totalCents: d.totalCents,
-        items: d.unpaid.map((i) => ({
+        laterCents: d.laterCents,
+        items: [...d.unpaid, ...d.later].map((i) => ({
           key: i.key,
           label: i.label,
           amountCents: i.amountCents,
           kind: i.kind,
           hidden: i.hidden,
+          dueOn: i.dueOn,
+          later: i.later,
           sortKey: i.sortKey,
           year: i.year,
           month: i.month,
