@@ -100,6 +100,61 @@ export async function createSharedPayment(formData: FormData) {
   redirect(`/platby/akce/${sp.id}`);
 }
 
+const singleSchema = z.object({
+  playerId: z.string().min(1, "Vyberte hráče."),
+  title: z.string().trim().min(1, "Zadejte název platby.").max(200),
+  description: z.string().max(2000).optional(),
+  amountKc: z.string().min(1, "Zadejte částku."),
+});
+
+/**
+ * Jednorázová platba jednomu hráči — registrace, startovné. Je to akce
+ * s jediným účastníkem, takže dostane vlastní VS, QR v odkazu hráče
+ * i místo v sestavě pro účetní stejně jako hromadná akce. Částka se
+ * nedělí, platí se celá.
+ */
+export async function createSinglePayment(formData: FormData) {
+  const userId = await requireUserId();
+  const parsed = singleSchema.safeParse({
+    playerId: formData.get("playerId") ?? "",
+    title: formData.get("title") ?? "",
+    description: formData.get("description") ?? undefined,
+    amountKc: formData.get("amountKc") ?? "",
+  });
+  if (!parsed.success) {
+    const { formErrors, fieldErrors } = parsed.error.flatten();
+    const first = [...formErrors, ...Object.values(fieldErrors).flat()][0];
+    throw new Error(first || "Neplatný vstup.");
+  }
+  const amountCents = parseCzkToCentsCeilWholeKoruny(
+    parsed.data.amountKc.replace(",", "."),
+  );
+  if (amountCents === null || amountCents <= 0) {
+    throw new Error("Zadejte platnou částku.");
+  }
+
+  const player = await prisma.player.findFirst({
+    where: { id: parsed.data.playerId, userId },
+    select: { id: true },
+  });
+  if (!player) throw new Error("Hráč nenalezen.");
+
+  const sp = await prisma.sharedPayment.create({
+    data: {
+      userId,
+      title: parsed.data.title,
+      description: parsed.data.description?.trim() || null,
+      totalAmountCents: amountCents,
+      number: await nextEventNumber(userId),
+      incomeKind: incomeKindFromForm(formData),
+      participants: { create: { playerId: player.id, amountCents } },
+    },
+  });
+
+  revalidatePath("/platby");
+  redirect(`/platby/akce/${sp.id}`);
+}
+
 /** Uloží částky všech účastníků a přepočítá celkový součet platby. */
 export async function updateSharedPaymentAmounts(formData: FormData) {
   const userId = await requireUserId();

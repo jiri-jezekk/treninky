@@ -44,6 +44,8 @@ export type EventRow = {
   archived: boolean;
   createdAt: string;
   participantCount: number;
+  /** Vyplněné = akce má jediného účastníka, typicky platba jednomu hráči. */
+  singlePlayerName: string | null;
   paidCount: number;
   totalCents: number;
   collectedCents: number;
@@ -159,6 +161,9 @@ export function PaymentsView({
           >
             Výzvy všem dlužníkům
           </button>
+          <Link href="/platby/akce/platba-hraci" className={btnOutline}>
+            + Platba hráči
+          </Link>
           <Link href="/platby/akce/nova" className={btnPrimary}>
             + Nová akce
           </Link>
@@ -404,14 +409,22 @@ export function PaymentsView({
                     />
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span>
-                      {e.paidCount} z {e.participantCount} zaplatilo
-                    </span>
+                    {e.singlePlayerName != null ? (
+                      <span className="min-w-0 truncate">{e.singlePlayerName}</span>
+                    ) : (
+                      <span>
+                        {e.paidCount} z {e.participantCount} zaplatilo
+                      </span>
+                    )}
                     {done ? (
-                      <Badge tone="ok">Vyrovnáno</Badge>
+                      <Badge tone="ok">
+                        {e.singlePlayerName != null ? "Zaplaceno" : "Vyrovnáno"}
+                      </Badge>
                     ) : (
                       <Badge tone="due">
-                        {e.participantCount - e.paidCount} chybí
+                        {e.singlePlayerName != null
+                          ? "K úhradě"
+                          : `${e.participantCount - e.paidCount} chybí`}
                       </Badge>
                     )}
                   </div>

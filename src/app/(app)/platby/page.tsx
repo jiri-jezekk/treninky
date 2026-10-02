@@ -45,7 +45,9 @@ export default async function PlatbyPage({
         number: true,
         archived: true,
         createdAt: true,
-        participants: { select: { amountCents: true, paidAt: true } },
+        participants: {
+          select: { amountCents: true, paidAt: true, player: { select: { name: true } } },
+        },
       },
     }),
     prisma.player.findMany({
@@ -83,6 +85,9 @@ export default async function PlatbyPage({
       archived: e.archived,
       createdAt: e.createdAt.toISOString(),
       participantCount: e.participants.length,
+      // Platba jednomu hráči — v přehledu má být vidět komu, ne „1 z 1“.
+      singlePlayerName:
+        e.participants.length === 1 ? e.participants[0]!.player.name : null,
       paidCount: e.participants.filter((p) => p.paidAt != null).length,
       totalCents: total,
       collectedCents: collected,
