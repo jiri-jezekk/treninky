@@ -161,8 +161,8 @@ export default async function PortalPage({
         {/* Domluvená pozdější splatnost. Hráč o ní ví a může zaplatit
             i dřív, jen se nepočítá do toho, co má zaplatit teď. */}
         {balance.later.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-            <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-amber-800">
+          <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+            <h2 className="font-heading text-xs font-bold uppercase tracking-wider text-amber-600">
               Později — {formatCzkFromCents(balance.laterCents)}
             </h2>
             <p className="mt-1 text-xs text-slate-600">
@@ -172,13 +172,13 @@ export default async function PortalPage({
               {balance.later.map((item) => (
                 <div
                   key={item.key}
-                  className="rounded-xl border border-amber-200 bg-white p-4"
+                  className="rounded-xl border border-amber-300 bg-white p-4"
                 >
                   <h3 className="font-heading text-sm font-bold text-slate-800">
                     {item.label}
                   </h3>
                   <p className="mt-0.5 text-xs text-slate-500">{item.meta}</p>
-                  <p className="mt-1 text-xs font-semibold text-amber-800">
+                  <p className="mt-1 text-xs font-semibold text-amber-600">
                     Splatné do {formatDueCs(item.dueOn!)}
                   </p>
                   <div className="mt-3 flex items-center justify-between gap-4">

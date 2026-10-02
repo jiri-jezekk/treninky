@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createSinglePayment } from "@/actions/shared-payments";
 import { INCOME_KINDS } from "@/lib/accounting";
 import { INCOME_KIND_LABELS } from "@/lib/player-balance";
+import { PlayerPicker } from "@/components/PlayerPicker";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 
@@ -51,21 +52,12 @@ export default async function PlatbaHraciPage({
       >
         <label className="block">
           <span className={label}>Hráč</span>
-          <select
+          <PlayerPicker
+            players={players}
             name="playerId"
-            required
-            defaultValue={preselected}
+            defaultId={preselected}
             className={field}
-          >
-            <option value="" disabled>
-              Vyberte hráče…
-            </option>
-            {players.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} (č. {p.number})
-              </option>
-            ))}
-          </select>
+          />
         </label>
 
         <label className="block">

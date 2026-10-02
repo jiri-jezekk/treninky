@@ -28,7 +28,7 @@ export default async function PlatbyPage({
   const sp = await searchParams;
   const { year, month } = parseMonth(sp);
 
-  const [user, debtors, monthly, events, tokens] = await Promise.all([
+  const [user, debtors, monthly, events, tokens, activePlayerCount] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { bankIban: true, clubName: true },
@@ -54,6 +54,7 @@ export default async function PlatbyPage({
       where: { userId },
       select: { id: true, payToken: true },
     }),
+    prisma.player.count({ where: { userId, active: true } }),
   ]);
 
   const tokenById = new Map<string, string>(
@@ -100,6 +101,7 @@ export default async function PlatbyPage({
       year={year}
       month={month}
       hasIban={Boolean(user.bankIban)}
+      activePlayerCount={activePlayerCount}
       clubName={user.clubName?.trim() || "DC Liberec"}
       debtors={debtors.map((d) => ({
         playerId: d.playerId,

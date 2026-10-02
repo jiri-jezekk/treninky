@@ -71,9 +71,9 @@ type Tab = "dluznici" | "mesicni" | "akce";
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
 const mini =
-  "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
+  "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50";
 const miniPay =
-  "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-800";
+  "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-50";
 const btnPrimary =
   "inline-flex items-center justify-center gap-2 rounded-full border-2 border-club bg-club px-4 py-2 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover";
 const btnOutline =
@@ -88,6 +88,7 @@ export function PaymentsView({
   debtors,
   monthly,
   events,
+  activePlayerCount,
 }: {
   tab: Tab;
   year: number;
@@ -97,6 +98,8 @@ export function PaymentsView({
   debtors: Debtor[];
   monthly: MonthlyRow[];
   events: EventRow[];
+  /** Jmenovatel u počtu dlužníků — „3 z 24 hráčů“. */
+  activePlayerCount: number;
 }) {
   const [remind, setRemind] = useState<Debtor | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -224,7 +227,7 @@ export function PaymentsView({
         <Stat
           title="Dlužníků"
           value={String(owingCount)}
-          note={`z ${monthly.length || debtors.length}`}
+          note={`z ${activePlayerCount} ${czPlural(activePlayerCount, "hráče", "hráčů", "hráčů")}`}
         />
         <Stat
           title={`Vybráno ${formatMonthLabelCs(year, month).split(" ")[0]}`}
@@ -254,148 +257,18 @@ export function PaymentsView({
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <ul className="divide-y divide-slate-100">
-              {debtors.map((d) => {
-                const open = expanded.has(d.playerId);
-                return (
-                <li key={d.playerId} className="flex flex-col gap-3 p-4 sm:p-5">
-                  {/* Klik na hráče rozbalí položky s tlačítky — zaplatit
-                      nebo skrýt jde i jednu věc, ne jen všechno naráz. */}
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(d.playerId)}
-                    aria-expanded={open}
-                    className="-m-2 flex flex-wrap items-start justify-between gap-3 rounded-xl p-2 text-left transition hover:bg-slate-50"
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-club-line bg-club-soft font-heading text-[11px] font-extrabold text-club">
-                        {initials(d.playerName)}
-                      </span>
-                      <span className="min-w-0 font-medium text-slate-800">{d.playerName}</span>
-                      <span aria-hidden className="shrink-0 text-xs text-slate-400">
-                        {open ? "▲" : "▼"}
-                      </span>
-                    </span>
-                    <span className="text-right">
-                      <span
-                        className={`block font-heading text-lg font-extrabold tabular-nums ${
-                          d.totalCents > 0 ? "text-red-800" : "text-slate-500"
-                        }`}
-                      >
-                        {formatCzkFromCents(d.totalCents)}
-                      </span>
-                      {d.laterCents > 0 && (
-                        <span className="block text-xs text-slate-500">
-                          + {formatCzkFromCents(d.laterCents)} později
-                        </span>
-                      )}
-                    </span>
-                  </button>
-
-                  {open ? (
-                    <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-                      {d.items.map((i) => (
-                        <li
-                          key={i.key}
-                          className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
-                        >
-                          <span className={`min-w-0 text-sm ${i.hidden ? "text-slate-400" : "text-slate-600"}`}>
-                            <b className={i.hidden ? "text-slate-500" : "text-slate-800"}>
-                              {formatCzkFromCents(i.amountCents)}
-                            </b>{" "}
-                            · {i.label}
-                            {i.hidden && (
-                              <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                Skryto hráči
-                              </span>
-                            )}
-                            {i.dueOn && <DueBadge dueOn={i.dueOn} later={i.later} />}
-                          </span>
-                          <span className="flex flex-wrap items-center gap-2">
-                            <label className="flex items-center gap-1.5 text-xs text-slate-500">
-                              Splatné do
-                              <input
-                                type="date"
-                                defaultValue={i.dueOn ?? ""}
-                                disabled={pending}
-                                onChange={(e) => {
-                                  const value = e.currentTarget.value;
-                                  // Při psaní roku ručně chodí i „0002-01-31“ —
-                                  // ukládá se až celé datum, nebo smazání.
-                                  if (value !== "" && value < "2000-01-01") return;
-                                  run(() => setPaymentItemDue(d.playerId, i.key, value));
-                                }}
-                                className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-800 outline-none focus:border-club"
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className={mini}
-                              disabled={pending}
-                              onClick={() =>
-                                run(() => setPaymentItemHidden(d.playerId, i.key, !i.hidden))
-                              }
-                            >
-                              {i.hidden ? "Ukázat hráči" : "Skrýt hráči"}
-                            </button>
-                            <button
-                              type="button"
-                              className={miniPay}
-                              disabled={pending}
-                              onClick={() =>
-                                run(() => setPaymentItemPaid(d.playerId, i.key, true))
-                              }
-                            >
-                              Zaplaceno
-                            </button>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <ul className="flex flex-col gap-0.5 text-sm text-slate-500">
-                      {d.items.map((i) => (
-                        <li key={i.key} className={i.hidden ? "text-slate-400" : undefined}>
-                          <b className={i.hidden ? "text-slate-500" : "text-slate-800"}>
-                            {formatCzkFromCents(i.amountCents)}
-                          </b>{" "}
-                          · {i.label}
-                          {i.hidden && <span className="italic"> (skryto hráči)</span>}
-                          {i.dueOn && (
-                            <span className="italic">
-                              {" "}
-                              ({i.later ? "splatné do" : "splatnost"} {formatDueCs(i.dueOn)})
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={mini}
-                      onClick={() => setRemind(d)}
-                      disabled={visibleItems(d).length === 0}
-                      title={
-                        visibleItems(d).length === 0
-                          ? "Všechny položky jsou hráči skryté."
-                          : undefined
-                      }
-                    >
-                      Poslat výzvu
-                    </button>
-                    <button
-                      type="button"
-                      className={miniPay}
-                      onClick={() => void markPlayerAllPaid(d.playerId)}
-                    >
-                      Vše zaplaceno
-                    </button>
-                  </div>
-                </li>
-                );
-              })}
+              {debtors.map((d) => (
+                <DebtorRow
+                  key={d.playerId}
+                  debtor={d}
+                  open={expanded.has(d.playerId)}
+                  pending={pending}
+                  remindableCount={visibleItems(d).length}
+                  onToggle={() => toggleExpanded(d.playerId)}
+                  onRemind={() => setRemind(d)}
+                  run={run}
+                />
+              ))}
             </ul>
           </div>
         ))}
@@ -684,15 +557,230 @@ function formatDueCs(iso: string): string {
   return `${d}. ${m}. ${y}`;
 }
 
-function DueBadge({ dueOn, later }: { dueOn: string; later: boolean }) {
+function Tag({
+  tone,
+  children,
+}: {
+  tone: "muted" | "later" | "due";
+  children: React.ReactNode;
+}) {
+  const cls =
+    tone === "later"
+      ? "border-amber-300 bg-amber-50 text-amber-600"
+      : tone === "due"
+        ? "border-red-200 bg-red-50 text-red-800"
+        : "border-slate-200 bg-slate-100 text-slate-500";
   return (
     <span
-      className={`ml-2 inline-flex rounded-full px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${
-        later ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800"
-      }`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${cls}`}
     >
-      {later ? "Splatné do" : "Splatnost"} {formatDueCs(dueOn)}
+      {children}
     </span>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 20 20"
+      className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <path
+        d="M5 7.5 10 12.5 15 7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ItemTags({ item }: { item: DebtItem }) {
+  return (
+    <>
+      {item.hidden && <Tag tone="muted">Skryto hráči</Tag>}
+      {item.dueOn && (
+        <Tag tone={item.later ? "later" : "due"}>
+          {item.later ? "Splatné do" : "Splatnost"} {formatDueCs(item.dueOn)}
+        </Tag>
+      )}
+    </>
+  );
+}
+
+/**
+ * Jeden dlužník. Sbalený ukazuje, za co dluží; rozbalený nabízí
+ * u každé položky zaplacení, skrytí a splatnost zvlášť.
+ */
+function DebtorRow({
+  debtor: d,
+  open,
+  pending,
+  remindableCount,
+  onToggle,
+  onRemind,
+  run,
+}: {
+  debtor: Debtor;
+  open: boolean;
+  pending: boolean;
+  remindableCount: number;
+  onToggle: () => void;
+  onRemind: () => void;
+  run: (action: () => Promise<void>) => void;
+}) {
+  const hiddenCount = d.items.filter((i) => i.hidden).length;
+
+  return (
+    <li className={`transition ${open ? "bg-slate-50" : ""}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-slate-50 sm:px-5"
+      >
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-club-line bg-club-soft font-heading text-[11px] font-extrabold text-club">
+          {initials(d.playerName)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-slate-800">{d.playerName}</span>
+          <span className="block text-xs text-slate-500">
+            {d.items.length} {czPlural(d.items.length, "položka", "položky", "položek")}
+            {hiddenCount > 0 &&
+              ` · ${hiddenCount} ${czPlural(hiddenCount, "skrytá", "skryté", "skrytých")}`}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span
+            className={`block font-heading text-lg font-extrabold tabular-nums ${
+              d.totalCents > 0 ? "text-red-800" : "text-slate-500"
+            }`}
+          >
+            {formatCzkFromCents(d.totalCents)}
+          </span>
+          {d.laterCents > 0 && (
+            <span className="block text-xs tabular-nums text-amber-600">
+              + {formatCzkFromCents(d.laterCents)} později
+            </span>
+          )}
+        </span>
+        <Chevron open={open} />
+      </button>
+
+      {open ? (
+        <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+          <ul className="flex flex-col gap-2">
+            {d.items.map((i) => (
+              <li
+                key={i.key}
+                className={`rounded-xl border border-slate-200 bg-white p-3 sm:p-4 ${
+                  i.hidden ? "opacity-70" : ""
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{i.label}</p>
+                    {(i.hidden || i.dueOn) && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <ItemTags item={i} />
+                      </div>
+                    )}
+                  </div>
+                  <span className="shrink-0 font-heading text-base font-extrabold tabular-nums text-slate-800">
+                    {formatCzkFromCents(i.amountCents)}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                  <label className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                    <span className="font-heading text-[10px] font-bold uppercase tracking-wider">
+                      Splatné do
+                    </span>
+                    <input
+                      type="date"
+                      defaultValue={i.dueOn ?? ""}
+                      disabled={pending}
+                      onChange={(e) => {
+                        const value = e.currentTarget.value;
+                        // Při psaní roku ručně chodí i „0002-01-31“ —
+                        // ukládá se až celé datum, nebo smazání.
+                        if (value !== "" && value < "2000-01-01") return;
+                        run(() => setPaymentItemDue(d.playerId, i.key, value));
+                      }}
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-800 outline-none [color-scheme:dark] focus:border-club"
+                    />
+                  </label>
+                  <span className="ml-auto flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={mini}
+                      disabled={pending}
+                      onClick={() =>
+                        run(() => setPaymentItemHidden(d.playerId, i.key, !i.hidden))
+                      }
+                    >
+                      {i.hidden ? "Ukázat hráči" : "Skrýt hráči"}
+                    </button>
+                    <button
+                      type="button"
+                      className={miniPay}
+                      disabled={pending}
+                      onClick={() => run(() => setPaymentItemPaid(d.playerId, i.key, true))}
+                    >
+                      ✓ Zaplaceno
+                    </button>
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className={mini}
+              onClick={onRemind}
+              disabled={remindableCount === 0}
+              title={
+                remindableCount === 0
+                  ? "Hráč teď nemá nic splatného, co by viděl."
+                  : undefined
+              }
+            >
+              Poslat výzvu
+            </button>
+            <button
+              type="button"
+              className={miniPay}
+              disabled={pending || d.totalCents === 0}
+              onClick={() => run(() => markPlayerAllPaid(d.playerId))}
+            >
+              Vše splatné zaplaceno
+            </button>
+          </div>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-1.5 px-4 pb-4 pl-[4.25rem] text-sm sm:px-5 sm:pl-[4.5rem]">
+          {d.items.map((i) => (
+            <li
+              key={i.key}
+              className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${
+                i.hidden ? "text-slate-400" : "text-slate-600"
+              }`}
+            >
+              <b className={`tabular-nums ${i.hidden ? "text-slate-500" : "text-slate-800"}`}>
+                {formatCzkFromCents(i.amountCents)}
+              </b>
+              <span className="min-w-0">{i.label}</span>
+              <ItemTags item={i} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
