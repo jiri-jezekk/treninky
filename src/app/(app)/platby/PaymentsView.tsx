@@ -739,6 +739,14 @@ function DebtorRow({
           </ul>
 
           <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <a
+              href={`/p/${d.payToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={mini}
+            >
+              Náhled hráče ↗
+            </a>
             <button
               type="button"
               className={mini}

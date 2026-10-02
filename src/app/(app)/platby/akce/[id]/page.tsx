@@ -26,6 +26,17 @@ export default async function AkceDetailPage({
   });
   if (!sp) notFound();
 
+  // Kdo se dá do platby ještě přidat.
+  const candidates = await prisma.player.findMany({
+    where: {
+      userId,
+      active: true,
+      id: { notIn: sp.participants.map((p) => p.playerId) },
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, number: true },
+  });
+
   const participants = sp.participants
     .map((p) => ({
       id: p.id,
@@ -53,6 +64,7 @@ export default async function AkceDetailPage({
       iban={sp.user.bankIban}
       clubName={sp.user.clubName?.trim() || "DC Liberec"}
       participants={participants}
+      candidates={candidates}
     />
   );
 }

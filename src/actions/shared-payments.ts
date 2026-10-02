@@ -294,3 +294,109 @@ export async function setSharedPaymentIncomeKind(
   revalidatePath("/platby");
   revalidatePath(`/platby/akce/${sharedPaymentId}`);
 }
+
+const detailsSchema = z.object({
+  title: z.string().trim().min(1, "Zadejte název.").max(200),
+  description: z.string().max(2000).optional(),
+});
+
+/**
+ * Název, popis a účetní druh platby. Variabilní symboly se nemění —
+ * stojí na čísle akce, ne na názvu, takže už rozeslané QR platí dál.
+ */
+export async function updateSharedPaymentDetails(
+  sharedPaymentId: string,
+  formData: FormData,
+) {
+  const userId = await requireUserId();
+  const parsed = detailsSchema.safeParse({
+    title: formData.get("title") ?? "",
+    description: formData.get("description") ?? undefined,
+  });
+  if (!parsed.success) {
+    const { formErrors, fieldErrors } = parsed.error.flatten();
+    throw new Error(
+      [...formErrors, ...Object.values(fieldErrors).flat()][0] || "Neplatný vstup.",
+    );
+  }
+
+  await prisma.sharedPayment.updateMany({
+    where: { id: sharedPaymentId, userId },
+    data: {
+      title: parsed.data.title,
+      description: parsed.data.description?.trim() || null,
+      incomeKind: incomeKindFromForm(formData),
+    },
+  });
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${sharedPaymentId}`);
+}
+
+/**
+ * Po přidání nebo odebrání hráče srovná celkovou částku se součtem
+ * podílů a archiv s tím, jestli ještě někdo dluží.
+ */
+async function syncSharedPaymentTotals(sharedPaymentId: string) {
+  const parts = await prisma.sharedPaymentParticipant.findMany({
+    where: { sharedPaymentId },
+    select: { amountCents: true, paidAt: true },
+  });
+  await prisma.sharedPayment.update({
+    where: { id: sharedPaymentId },
+    data: {
+      totalAmountCents: parts.reduce((s, p) => s + p.amountCents, 0),
+      archived: parts.length > 0 && parts.every((p) => p.paidAt),
+    },
+  });
+}
+
+/** Přidá do existující platby dalšího hráče s vlastní částkou. */
+export async function addSharedPaymentParticipant(
+  sharedPaymentId: string,
+  formData: FormData,
+) {
+  const userId = await requireUserId();
+  const playerId = String(formData.get("playerId") ?? "");
+  const amountCents = parseCzkToCentsCeilWholeKoruny(
+    String(formData.get("amountKc") ?? "").trim().replace(",", "."),
+  );
+  if (!playerId) throw new Error("Vyberte hráče.");
+  if (amountCents === null || amountCents <= 0) {
+    throw new Error("Zadejte platnou částku.");
+  }
+
+  const [sp, player] = await Promise.all([
+    prisma.sharedPayment.findFirst({
+      where: { id: sharedPaymentId, userId },
+      select: { id: true },
+    }),
+    prisma.player.findFirst({ where: { id: playerId, userId }, select: { id: true } }),
+  ]);
+  if (!sp || !player) throw new Error("Záznam nenalezen.");
+
+  await prisma.sharedPaymentParticipant.upsert({
+    where: { sharedPaymentId_playerId: { sharedPaymentId, playerId } },
+    create: { sharedPaymentId, playerId, amountCents },
+    update: {},
+  });
+  await syncSharedPaymentTotals(sharedPaymentId);
+
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${sharedPaymentId}`);
+}
+
+/** Odebere hráče z platby — přidaný omylem, nebo nakonec nejel. */
+export async function removeSharedPaymentParticipant(participantId: string) {
+  const userId = await requireUserId();
+  const part = await prisma.sharedPaymentParticipant.findFirst({
+    where: { id: participantId, sharedPayment: { userId } },
+    select: { id: true, sharedPaymentId: true },
+  });
+  if (!part) return;
+
+  await prisma.sharedPaymentParticipant.delete({ where: { id: part.id } });
+  await syncSharedPaymentTotals(part.sharedPaymentId);
+
+  revalidatePath("/platby");
+  revalidatePath(`/platby/akce/${part.sharedPaymentId}`);
+}

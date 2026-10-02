@@ -1,16 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import {
+  addSharedPaymentParticipant,
   deleteSharedPayment,
   redistributeSharedPaymentEvenly,
+  removeSharedPaymentParticipant,
   setSharedPaymentArchived,
-  setSharedPaymentIncomeKind,
   toggleParticipantPaid,
   updateSharedPaymentAmounts,
+  updateSharedPaymentDetails,
 } from "@/actions/shared-payments";
+import { PlayerPicker } from "@/components/PlayerPicker";
 import { INCOME_KIND_LABELS, type IncomeKind } from "@/lib/player-balance";
 import { INCOME_KINDS } from "@/lib/accounting";
 import { formatCzkFromCents, formatKcInputFromCents } from "@/lib/money";
@@ -29,6 +32,8 @@ type Participant = {
 
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
+const field =
+  "mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-club";
 const mini =
   "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
 const miniPay =
@@ -48,6 +53,7 @@ export function EventDetail({
   iban,
   clubName,
   participants,
+  candidates,
 }: {
   id: string;
   number: number;
@@ -58,8 +64,14 @@ export function EventDetail({
   iban: string | null;
   clubName: string;
   participants: Participant[];
+  /** Aktivní hráči, kteří v platbě ještě nejsou. */
+  candidates: { id: string; name: string; number: number }[];
 }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  // Nový klíč po přidání hráče — formulář i našeptávač se vyprázdní.
+  const [addKey, setAddKey] = useState(0);
+  const [pending, startTransition] = useTransition();
 
   const total = participants.reduce((s, p) => s + p.amountCents, 0);
   const collected = participants
@@ -102,28 +114,81 @@ export function EventDetail({
         ← Zpět na Platby
       </Link>
 
-      <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="font-heading text-3xl font-extrabold uppercase tracking-wide text-slate-800">
-            {title}
-          </h1>
-          <div className="mt-3 h-1 w-14 rounded bg-club" />
-          {description && (
-            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">
-              {description}
-            </p>
-          )}
-          <p className="mt-2 text-xs text-slate-500">
-            Akce č. {number} · variabilní symboly začínají{" "}
-            <span className="font-heading tabular-nums">2</span>
+      {editing ? (
+        <form
+          action={async (fd) => {
+            await updateSharedPaymentDetails(id, fd);
+            setEditing(false);
+          }}
+          className="mt-4 mb-6 flex flex-col gap-5 rounded-2xl border border-club-line bg-white p-5 sm:p-6"
+        >
+          <h2 className={label}>Upravit platbu</h2>
+          <label className="block">
+            <span className={label}>Název</span>
+            <input name="title" required maxLength={120} defaultValue={title} className={field} />
+          </label>
+          <label className="block">
+            <span className={label}>Popis (nepovinné)</span>
+            <textarea
+              name="description"
+              rows={2}
+              maxLength={500}
+              defaultValue={description ?? ""}
+              className={`${field} resize-y`}
+            />
+          </label>
+          <label className="block sm:max-w-xs">
+            <span className={label}>Účetní druh příjmu</span>
+            <select name="incomeKind" defaultValue={incomeKind} className={field}>
+              {INCOME_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {INCOME_KIND_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs italic text-slate-500">
+            Variabilní symboly zůstávají stejné, už rozeslané QR kódy platí dál.
+            Částky jednotlivých hráčů se upravují níž v seznamu.
           </p>
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+            <button type="button" className={btnOutline} onClick={() => setEditing(false)}>
+              Zrušit
+            </button>
+            <button type="submit" className={btnPrimary}>
+              Uložit změny
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="font-heading text-3xl font-extrabold uppercase tracking-wide text-slate-800">
+              {title}
+            </h1>
+            <div className="mt-3 h-1 w-14 rounded bg-club" />
+            {description && (
+              <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">
+                {description}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-slate-500">
+              Akce č. {number} · {INCOME_KIND_LABELS[incomeKind]} · variabilní symboly
+              začínají <span className="font-heading tabular-nums">2</span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {archived && (
+              <span className="rounded-full bg-slate-50 px-3 py-1 font-heading text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Archiv
+              </span>
+            )}
+            <button type="button" className={btnOutline} onClick={() => setEditing(true)}>
+              Upravit
+            </button>
+          </div>
         </div>
-        {archived && (
-          <span className="rounded-full bg-slate-50 px-3 py-1 font-heading text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            Archiv
-          </span>
-        )}
-      </div>
+      )}
 
       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -144,33 +209,6 @@ export function EventDetail({
           />
         </div>
       </div>
-
-      <form
-        action={setSharedPaymentIncomeKind.bind(null, id)}
-        className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-5"
-      >
-        <label className="min-w-0 flex-1">
-          <span className={label}>Účetní druh příjmu</span>
-          <select
-            name="incomeKind"
-            defaultValue={incomeKind}
-            className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-club sm:max-w-xs"
-          >
-            {INCOME_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {INCOME_KIND_LABELS[k]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className={`${btnOutline} !py-1.5 !text-xs`}>
-          Uložit
-        </button>
-        <p className="w-full text-xs italic text-slate-500">
-          Určuje, kam částky spadnou v sestavě pro účetní. Členské příspěvky mají
-          jiný daňový režim než dresy nebo startovné.
-        </p>
-      </form>
 
       <form
         action={updateSharedPaymentAmounts}
@@ -206,7 +244,15 @@ export function EventDetail({
                 <span className="min-w-0">
                   <span className="block truncate text-slate-800">{p.playerName}</span>
                   <span className="block font-heading text-[11px] tabular-nums text-slate-500">
-                    VS {p.variableSymbol}
+                    VS {p.variableSymbol} ·{" "}
+                    <a
+                      href={`/p/${p.payToken}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-sans text-club underline decoration-club-line underline-offset-2"
+                    >
+                      náhled hráče ↗
+                    </a>
                   </span>
                 </span>
               </span>
@@ -250,6 +296,19 @@ export function EventDetail({
                 >
                   {p.paid ? "Zrušit" : "Zaplaceno"}
                 </button>
+                <button
+                  type="button"
+                  aria-label={`Odebrat ${p.playerName}`}
+                  title="Odebrat z platby"
+                  disabled={pending}
+                  className="grid h-7 w-7 place-items-center rounded-full border border-slate-200 text-xs text-slate-500 transition hover:border-red-600 hover:bg-red-50 hover:text-red-800 disabled:opacity-50"
+                  onClick={() => {
+                    if (!window.confirm(`Odebrat ${p.playerName} z této platby?`)) return;
+                    startTransition(() => removeSharedPaymentParticipant(p.id));
+                  }}
+                >
+                  ✕
+                </button>
               </span>
             </li>
           ))}
@@ -260,6 +319,38 @@ export function EventDetail({
           )}
         </ul>
       </form>
+
+      {candidates.length > 0 && (
+        <form
+          key={addKey}
+          action={async (fd) => {
+            await addSharedPaymentParticipant(id, fd);
+            setAddKey((k) => k + 1);
+          }}
+          className="mt-4 rounded-2xl border border-slate-200 bg-white p-5"
+        >
+          <h2 className={label}>Přidat hráče</h2>
+          <div className="mt-1 grid gap-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
+            <label className="block min-w-0">
+              <span className="sr-only">Hráč</span>
+              <PlayerPicker players={candidates} name="playerId" className={field} />
+            </label>
+            <label className="block">
+              <span className="sr-only">Částka</span>
+              <input
+                name="amountKc"
+                required
+                inputMode="decimal"
+                placeholder="Částka Kč"
+                className={field}
+              />
+            </label>
+            <button type="submit" className={btnOutline}>
+              Přidat
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <form action={redistributeSharedPaymentEvenly.bind(null, id)}>

@@ -10,6 +10,7 @@ import { formatCzkFromCents } from "@/lib/money";
 import { countReviewsForPlayer } from "@/lib/reviews";
 import { czPlural } from "@/lib/czech";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 import { PortalShell } from "./PortalShell";
 
 export const metadata: Metadata = {
@@ -46,7 +47,12 @@ export default async function PortalPage({
 
   const clubName = player.user.clubName?.trim() || "DC Liberec";
 
-  if (!player.passwordHash) {
+  // Trenér přihlášený do aplikace vidí odkaz svého hráče bez hesla —
+  // chce zkontrolovat, co mu posílá. Hráčovo heslo kvůli tomu znát nemusí.
+  const session = await auth();
+  const coachPreview = session?.user?.id === player.user.id;
+
+  if (!coachPreview && !player.passwordHash) {
     return (
       <PortalShell clubName={clubName} token={token} home>
         <PortalGate payToken={token} mode="set" playerName={player.name} />
@@ -54,7 +60,7 @@ export default async function PortalPage({
     );
   }
 
-  if (!(await hasPortalSession(token))) {
+  if (!coachPreview && !(await hasPortalSession(token))) {
     return (
       <PortalShell clubName={clubName} token={token} home>
         <PortalGate payToken={token} mode="enter" playerName={player.name} />
@@ -81,7 +87,14 @@ export default async function PortalPage({
 
   return (
     <PortalShell clubName={clubName} token={token} home>
-      <SessionRefresh payToken={token} />
+      {coachPreview ? (
+        <div className="mx-auto mb-5 w-full max-w-md rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          <b>Náhled trenéra.</b> Takhle stránku vidí {player.name}. Heslo jsi
+          zadávat nemusel, protože jsi přihlášený v aplikaci.
+        </div>
+      ) : (
+        <SessionRefresh payToken={token} />
+      )}
 
       <div className="mx-auto w-full max-w-md">
         <h1 className="text-center font-heading text-2xl font-extrabold text-slate-800">
@@ -118,6 +131,7 @@ export default async function PortalPage({
               playerName={player.name}
               totalCents={balance.totalCents}
               itemCount={balance.unpaid.length}
+              preview={coachPreview}
             />
 
             <div className="mt-4 flex flex-col gap-4">

@@ -15,12 +15,18 @@ export function PayAllPanel({
   playerName,
   totalCents,
   itemCount,
+  preview = false,
 }: {
   payToken: string;
   iban: string | null;
   playerName: string;
   totalCents: number;
   itemCount: number;
+  /**
+   * Náhled trenéra. Souhrnná platba se ukládá a hráč by ji pak měl
+   * v historii, proto se v náhledu jen ukáže, že tu tlačítko je.
+   */
+  preview?: boolean;
 }) {
   const [state, setState] = useState<
     { status: "idle" } | { status: "loading" } | { status: "ready"; vs: string } | { status: "error"; message: string }
@@ -68,13 +74,18 @@ export function PayAllPanel({
           <button
             type="button"
             onClick={() => void prepare()}
-            disabled={state.status === "loading"}
+            disabled={preview || state.status === "loading"}
             className="mt-4 w-full rounded-full border-2 border-club bg-club px-4 py-2.5 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover disabled:opacity-60"
           >
             {state.status === "loading"
               ? "Připravuji…"
               : `Vytvořit jedno QR na ${formatCzkFromCents(totalCents)}`}
           </button>
+          {preview && (
+            <p className="mt-3 text-center text-xs italic text-slate-500">
+              V náhledu se souhrnná platba nevytváří.
+            </p>
+          )}
           {state.status === "error" && (
             <p className="mt-3 text-center text-xs text-red-900">{state.message}</p>
           )}
