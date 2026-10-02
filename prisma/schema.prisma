@@ -58,6 +58,7 @@ model User {
   trainings    Training[]
   sharedPayments SharedPayment[]
   monthlyPaymentMarks MonthlyPaymentMark[]
+  hiddenPaymentItems HiddenPaymentItem[]
   paymentBatches PaymentBatch[]
   seasons      Season[]
   prepayments  Prepayment[]
@@ -112,6 +113,7 @@ model Player {
   sharedParts  SharedPaymentParticipant[]
   groupMembers PlayerGroupMembership[]
   monthlyPaymentMarks MonthlyPaymentMark[]
+  hiddenPaymentItems HiddenPaymentItem[]
   paymentBatches PaymentBatch[]
   prepayments  Prepayment[]
   /**
@@ -484,6 +486,25 @@ model PaymentBatchItem {
   prepaymentId    String?
 
   @@index([batchId])
+}
+
+/**
+ * Položka, kterou trenér hráči zatím neukazuje — v odkazu ji nevidí
+ * a nezaplatí ji ani souhrnnou platbou. Dluhem zůstává, trenér ji
+ * má ve výpisu dál. Klíč je `BalanceItem.key` („m-2026-9“, „e-<id>“,
+ * „p-<id>“), protože měsíční tréninky vlastní řádek nemají.
+ */
+model HiddenPaymentItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  key       String
+  createdAt DateTime @default(now())
+
+  @@unique([playerId, key])
+  @@index([userId])
 }
 
 /** Označení „platba za měsíc dorazila“ — jeden záznam na hráče a kalendářní měsíc. */

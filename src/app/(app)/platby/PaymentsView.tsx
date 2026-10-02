@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { markPlayerAllPaid, setMonthPaid } from "@/actions/payments";
+import { useMemo, useState, useTransition } from "react";
+import {
+  markPlayerAllPaid,
+  setMonthPaid,
+  setPaymentItemHidden,
+  setPaymentItemPaid,
+} from "@/actions/payments";
 import { buildReminderMessage } from "@/lib/reminder-message";
 import { formatCzkFromCents } from "@/lib/money";
 import { formatMonthLabelCs } from "@/lib/training-pricing";
@@ -13,6 +18,8 @@ export type DebtItem = {
   label: string;
   amountCents: number;
   kind: "monthly" | "event" | "prepaid";
+  /** Hráč ji v odkazu nevidí a výzva k platbě ji vynechá. */
+  hidden: boolean;
   sortKey: number;
   year?: number;
   month?: number;
@@ -87,6 +94,29 @@ export function PaymentsView({
   const [showAll, setShowAll] = useState(false);
   const [monthFilter, setMonthFilter] = useState<"all" | "due" | "paid">("all");
   const [copied, setCopied] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [pending, startTransition] = useTransition();
+
+  function toggleExpanded(playerId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  }
+
+  function run(action: () => Promise<void>) {
+    startTransition(async () => {
+      await action();
+    });
+  }
+
+  // Výzva k platbě obsahuje jen to, co hráč v odkazu opravdu uvidí.
+  const visibleItems = (d: Debtor) => d.items.filter((i) => !i.hidden);
+  const visibleTotal = (d: Debtor) =>
+    visibleItems(d).reduce((s, i) => s + i.amountCents, 0);
+  const remindable = debtors.filter((d) => visibleItems(d).length > 0);
 
   const owedTotal = debtors.reduce((s, d) => s + d.totalCents, 0);
   const monthTotal = monthly.reduce((s, r) => s + r.totalCents, 0);
@@ -117,8 +147,8 @@ export function PaymentsView({
     return buildReminderMessage({
       playerName: d.playerName,
       clubName,
-      items: d.items,
-      totalCents: d.totalCents,
+      items: visibleItems(d),
+      totalCents: visibleTotal(d),
       url,
     });
   }
@@ -157,7 +187,7 @@ export function PaymentsView({
             type="button"
             className={btnOutline}
             onClick={() => setShowAll(true)}
-            disabled={debtors.length === 0}
+            disabled={remindable.length === 0}
           >
             Výzvy všem dlužníkům
           </button>
@@ -212,31 +242,101 @@ export function PaymentsView({
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <ul className="divide-y divide-slate-100">
-              {debtors.map((d) => (
+              {debtors.map((d) => {
+                const open = expanded.has(d.playerId);
+                return (
                 <li key={d.playerId} className="flex flex-col gap-3 p-4 sm:p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                  {/* Klik na hráče rozbalí položky s tlačítky — zaplatit
+                      nebo skrýt jde i jednu věc, ne jen všechno naráz. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(d.playerId)}
+                    aria-expanded={open}
+                    className="-m-2 flex flex-wrap items-start justify-between gap-3 rounded-xl p-2 text-left transition hover:bg-slate-50"
+                  >
                     <span className="flex min-w-0 items-center gap-3">
                       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-club-line bg-club-soft font-heading text-[11px] font-extrabold text-club">
                         {initials(d.playerName)}
                       </span>
-                      <span className="font-medium text-slate-800">{d.playerName}</span>
+                      <span className="min-w-0 font-medium text-slate-800">{d.playerName}</span>
+                      <span aria-hidden className="shrink-0 text-xs text-slate-400">
+                        {open ? "▲" : "▼"}
+                      </span>
                     </span>
                     <span className="font-heading text-lg font-extrabold tabular-nums text-red-800">
                       {formatCzkFromCents(d.totalCents)}
                     </span>
-                  </div>
+                  </button>
 
-                  <ul className="flex flex-col gap-0.5 text-sm text-slate-500">
-                    {d.items.map((i) => (
-                      <li key={i.key}>
-                        <b className="text-slate-800">{formatCzkFromCents(i.amountCents)}</b>{" "}
-                        · {i.label}
-                      </li>
-                    ))}
-                  </ul>
+                  {open ? (
+                    <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                      {d.items.map((i) => (
+                        <li
+                          key={i.key}
+                          className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
+                        >
+                          <span className={`min-w-0 text-sm ${i.hidden ? "text-slate-400" : "text-slate-600"}`}>
+                            <b className={i.hidden ? "text-slate-500" : "text-slate-800"}>
+                              {formatCzkFromCents(i.amountCents)}
+                            </b>{" "}
+                            · {i.label}
+                            {i.hidden && (
+                              <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                Skryto hráči
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className={mini}
+                              disabled={pending}
+                              onClick={() =>
+                                run(() => setPaymentItemHidden(d.playerId, i.key, !i.hidden))
+                              }
+                            >
+                              {i.hidden ? "Ukázat hráči" : "Skrýt hráči"}
+                            </button>
+                            <button
+                              type="button"
+                              className={miniPay}
+                              disabled={pending}
+                              onClick={() =>
+                                run(() => setPaymentItemPaid(d.playerId, i.key, true))
+                              }
+                            >
+                              Zaplaceno
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <ul className="flex flex-col gap-0.5 text-sm text-slate-500">
+                      {d.items.map((i) => (
+                        <li key={i.key} className={i.hidden ? "text-slate-400" : undefined}>
+                          <b className={i.hidden ? "text-slate-500" : "text-slate-800"}>
+                            {formatCzkFromCents(i.amountCents)}
+                          </b>{" "}
+                          · {i.label}
+                          {i.hidden && <span className="italic"> (skryto hráči)</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" className={mini} onClick={() => setRemind(d)}>
+                    <button
+                      type="button"
+                      className={mini}
+                      onClick={() => setRemind(d)}
+                      disabled={visibleItems(d).length === 0}
+                      title={
+                        visibleItems(d).length === 0
+                          ? "Všechny položky jsou hráči skryté."
+                          : undefined
+                      }
+                    >
                       Poslat výzvu
                     </button>
                     <button
@@ -248,7 +348,8 @@ export function PaymentsView({
                     </button>
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </div>
         ))}
@@ -437,7 +538,7 @@ export function PaymentsView({
       {/* --------------------------------------------------- výzva jednomu */}
       {remind && (
         <Modal onClose={() => setRemind(null)} title={remind.playerName}
-          subtitle={`${formatCzkFromCents(remind.totalCents)} · ${remind.items.length} ${czPlural(remind.items.length, "položka", "položky", "položek")}`}>
+          subtitle={`${formatCzkFromCents(visibleTotal(remind))} · ${visibleItems(remind).length} ${czPlural(visibleItems(remind).length, "položka", "položky", "položek")}`}>
           <div className="flex flex-col gap-4">
             <label className="block">
               <span className={label}>Zpráva k odeslání</span>
@@ -481,14 +582,14 @@ export function PaymentsView({
         <Modal
           onClose={() => setShowAll(false)}
           title="Výzvy všem dlužníkům"
-          subtitle={`${debtors.length} ${czPlural(debtors.length, "dlužník", "dlužníci", "dlužníků")} · celkem ${formatCzkFromCents(owedTotal)}`}
+          subtitle={`${remindable.length} ${czPlural(remindable.length, "dlužník", "dlužníci", "dlužníků")} · celkem ${formatCzkFromCents(remindable.reduce((s, d) => s + visibleTotal(d), 0))}`}
         >
           <p className="text-sm text-slate-600">
             Každému patří jedna zpráva s jeho vlastním odkazem. Zkopíruj je najednou,
             nebo po jedné.
           </p>
           <ul className="mt-4 flex flex-col gap-2">
-            {debtors.map((d) => (
+            {remindable.map((d) => (
               <li
                 key={d.playerId}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
@@ -496,7 +597,7 @@ export function PaymentsView({
                 <span className="min-w-0">
                   <span className="font-medium text-slate-800">{d.playerName}</span>{" "}
                   <span className="font-heading font-bold text-red-800">
-                    {formatCzkFromCents(d.totalCents)}
+                    {formatCzkFromCents(visibleTotal(d))}
                   </span>
                 </span>
                 <button
@@ -515,7 +616,7 @@ export function PaymentsView({
               className={btnPrimary}
               onClick={() =>
                 void copy(
-                  debtors.map((d) => messageFor(d)).join("\n\n———\n\n"),
+                  remindable.map((d) => messageFor(d)).join("\n\n———\n\n"),
                   "all",
                 )
               }

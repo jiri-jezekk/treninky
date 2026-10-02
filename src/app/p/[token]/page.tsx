@@ -68,7 +68,7 @@ export default async function PortalPage({
     player.user.id,
     player.id,
     undefined,
-    player.user.playerVisibleFrom,
+    { visibleFrom: player.user.playerVisibleFrom },
   );
   if (!balance) notFound();
 

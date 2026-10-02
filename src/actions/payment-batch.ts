@@ -80,7 +80,7 @@ export async function ensurePaymentBatch(payToken: string): Promise<BatchResult>
     player.userId,
     player.id,
     undefined,
-    player.user.playerVisibleFrom,
+    { visibleFrom: player.user.playerVisibleFrom },
   );
   if (!balance || balance.unpaid.length === 0) {
     return { ok: false, error: "Není co platit." };

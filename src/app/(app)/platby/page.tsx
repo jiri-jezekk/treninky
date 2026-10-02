@@ -111,6 +111,7 @@ export default async function PlatbyPage({
           label: i.label,
           amountCents: i.amountCents,
           kind: i.kind,
+          hidden: i.hidden,
           sortKey: i.sortKey,
           year: i.year,
           month: i.month,

@@ -31,6 +31,11 @@ export type BalanceItem = {
   variableSymbol: string;
   incomeKind: IncomeKind;
   paid: boolean;
+  /**
+   * Trenér položku hráči zatím neukazuje. Ve výpisu trenéra zůstává,
+   * v hráčově pohledu nezaplacená skrytá položka chybí úplně.
+   */
+  hidden: boolean;
   /** Řazení od nejstaršího dluhu; akce jdou nakonec. */
   sortKey: number;
   /**
@@ -75,10 +80,11 @@ export async function getPlayerBalance(
   /** Předané, když se počítá víc hráčů najednou — ušetří dotaz na uživatele. */
   monthlyIncomeKind?: IncomeKind,
   /**
-   * Hráčův pohled: starší položky se skryjí. Trenér volá bez tohohle,
-   * takže ve výpisu vidí všechno včetně loňských dluhů.
+   * Hráčův pohled: starší položky a ty, které trenér skryl, chybí.
+   * Trenér volá bez tohohle, takže ve výpisu vidí všechno včetně
+   * loňských dluhů.
    */
-  visibleFrom?: Date | null,
+  playerView?: { visibleFrom: Date | null },
 ): Promise<PlayerBalance | null> {
   const player = await prisma.player.findFirst({
     where: { id: playerId, userId },
@@ -101,7 +107,13 @@ export async function getPlayerBalance(
       })
     ).monthlyIncomeKind as IncomeKind);
 
-  const items = filterFrom(await buildItems(userId, player, kind), visibleFrom);
+  let items = await buildItems(userId, player, kind);
+  if (playerView) {
+    // Zaplacené skryté se ukazují dál — skrývá se dluh, ne historie.
+    items = filterFrom(items, playerView.visibleFrom).filter(
+      (i) => i.paid || !i.hidden,
+    );
+  }
 
   const unpaid = items.filter((i) => !i.paid).sort((a, b) => a.sortKey - b.sortKey);
   const paid = items.filter((i) => i.paid).sort((a, b) => b.sortKey - a.sortKey);
@@ -138,6 +150,14 @@ async function buildItems(
   monthlyIncomeKind: IncomeKind,
 ): Promise<BalanceItem[]> {
   const items: BalanceItem[] = [];
+  const hiddenKeys = new Set(
+    (
+      await prisma.hiddenPaymentItem.findMany({
+        where: { userId, playerId: player.id },
+        select: { key: true },
+      })
+    ).map((h) => h.key),
+  );
   const discount = discountPriceCentsFor(player.groupMembers.map((m) => m.group));
 
   // --- předplacená období ---
@@ -164,6 +184,7 @@ async function buildItems(
       variableSymbol: p.vs,
       incomeKind: p.incomeKind as IncomeKind,
       paid: p.paidAt != null,
+      hidden: hiddenKeys.has(`p-${p.id}`),
       // Řadí se podle začátku období, aby stálo mezi měsíci na svém místě.
       sortKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
       monthKey: p.startsOn.getUTCFullYear() * 12 + p.startsOn.getUTCMonth() + 1,
@@ -206,6 +227,7 @@ async function buildItems(
         variableSymbol: variableSymbolMonthly(player.number, year, month),
         incomeKind: monthlyIncomeKind,
         paid: paidMonths.has(`${year}-${month}`),
+        hidden: hiddenKeys.has(`m-${year}-${month}`),
         sortKey: year * 12 + month,
         monthKey: year * 12 + month,
         year,
@@ -232,6 +254,7 @@ async function buildItems(
       variableSymbol: variableSymbolEvent(player.number, sp.number),
       incomeKind: sp.incomeKind as IncomeKind,
       paid: p.paidAt != null,
+      hidden: hiddenKeys.has(`e-${sp.id}`),
       sortKey: 100000 + sp.number,
       // Akce se ořezává podle toho, kdy vznikla — loňský turnaj
       // hráči v nové sezóně ukazovat nemá smysl.
