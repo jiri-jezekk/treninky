@@ -92,6 +92,30 @@ export function sortDrillsForGroup<T extends { groupIds: string[] }>(
     .map((x) => x.d);
 }
 
+/* ------------------------------------------------------ deník (DDM) */
+
+/**
+ * Shrnutí plánu do deníku DDM — jeden bod na řádek, „název - zaměření“.
+ * Bez data, časů a minut: deník má na náplň jedno textové pole a trenér
+ * do něj píše jen, co se dělalo.
+ *
+ * Když zaměření už v názvu je („Hra - protiútok“ se zaměřením „protiútok“),
+ * znovu se nepřidává.
+ */
+export function diarySummary(
+  blocks: { title: string; focus: string | null }[],
+): string {
+  return blocks
+    .map((b) => {
+      const title = b.title.trim();
+      const focus = b.focus?.trim() ?? "";
+      if (!focus || title.toLowerCase().includes(focus.toLowerCase())) return title;
+      return `${title} - ${focus}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 /* ------------------------------------------------------------ časování */
 
 export type PlanBlock = {

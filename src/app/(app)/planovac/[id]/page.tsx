@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DiarySummary } from "@/components/DiarySummary";
 import { PlanEditor } from "@/components/PlanEditor";
 import { listGroups } from "@/lib/groups";
 import {
@@ -8,6 +9,7 @@ import {
   formatTime24h,
 } from "@/lib/date-display";
 import { loadPlanEditor } from "@/lib/plan-editor-data";
+import { diarySummary } from "@/lib/training-plan";
 import { DAY_NAMES } from "@/lib/training-slots";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
@@ -93,6 +95,8 @@ export default async function PlanDetailPage({
       </div>
 
       <PlanEditor planId={plan.id} {...editor} players={players} />
+
+      <DiarySummary summary={diarySummary(editor.blocks)} />
     </>
   );
 }

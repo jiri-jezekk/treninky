@@ -102,6 +102,9 @@ export function PlanHeader({
           <button type="button" className={mini} onClick={() => setEditing(true)}>
             Upravit
           </button>
+          <a href="#denik" className={mini}>
+            Do deníku
+          </a>
           <form
             action={deletePlan.bind(null, planId)}
             onSubmit={(e) => {

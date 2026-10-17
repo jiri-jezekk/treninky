@@ -5,6 +5,7 @@
  */
 import {
   moveToNextTeam,
+  diarySummary,
   parseTags,
   parseTeams,
   sortDrillsForGroup,
@@ -244,6 +245,25 @@ console.log("\nCvičení podle kategorie:");
   eq("cizí kategorie se nehodí", suitsGroup({ groupIds: ["u18"] }, "u12"), false);
   eq("bez filtru se hodí vše", suitsGroup({ groupIds: ["u18"] }, null), true);
 }
+
+console.log("\nShrnutí do deníku:");
+eq(
+  "řádek na bod, zaměření za pomlčkou",
+  diarySummary([
+    { title: "Pohybová hra", focus: "rychlost obratnost" },
+    { title: "Rozcvička a rozházení", focus: null },
+    { title: "Herní cvičení", focus: " protiútok " },
+    { title: "Hra", focus: "" },
+    { title: "Závěrečné uvolnění", focus: null },
+  ]),
+  "Pohybová hra - rychlost obratnost\nRozcvička a rozházení\nHerní cvičení - protiútok\nHra\nZávěrečné uvolnění",
+);
+eq("prázdný plán", diarySummary([]), "");
+eq(
+  "zaměření už v názvu se neopakuje",
+  diarySummary([{ title: "Hra - Protiútok", focus: "protiútok" }]),
+  "Hra - Protiútok",
+);
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\n${failures} KONTROL NEPROŠLO`);
 process.exit(failures === 0 ? 0 : 1);
