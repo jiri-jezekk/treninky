@@ -72,7 +72,7 @@ Ujisti se, že **necommituješ** soubor `.env` (má být ignorovaný).
 ## Krok 4: Vercel
 
 1. Jdi na [https://vercel.com](https://vercel.com), přihlas se, **Add New → Project**, importuj **stejný** GitHub repozitář.
-2. **Framework Preset:** Next.js (detekuje se sám). Build příkaz nech výchozí — v `package.json` je `build`, který spustí `prisma generate`, `prisma migrate deploy` a `next build`.
+2. **Framework Preset:** Next.js (detekuje se sám). Build příkaz nech výchozí — v `package.json` je `build`, který spustí `prisma generate`, `next build` a na produkci `prisma migrate deploy`.
 3. **Environment Variables** (při importu nebo **Settings → Environment Variables**):
 
    | Jméno | Hodnota | Kdy |
@@ -86,6 +86,8 @@ Ujisti se, že **necommituješ** soubor `.env` (má být ignorovaný).
 
 4. **Deploy**. Migrace se na Vercelu spustí v rámci buildu a vytvoří tabulky v Neonu.
 
+   Migrace běží **jen při produkčním nasazení** (`VERCEL_ENV=production`, viz `scripts/migrate-deploy.ts`). Náhledy pull requestů (Preview) je přeskočí — jinak by nové migrace z PR doběhly na ostrou databázi ještě před mergem. **Nedávej proto do Preview `DIRECT_URL` s produkční databází** s tím, že se tím „opraví build“; build náhledu projde i bez ní.
+
 5. Nastav **`AUTH_URL`** na produkční adresu, **Redeploy**. Zaregistruj se na **`https://…/registrace`**, pak nastav **`ALLOW_REGISTRATION=false`** a znovu **Redeploy**.
 
 ## Krok 5: Bezpečnost navíc (doporučení)
@@ -97,6 +99,7 @@ Ujisti se, že **necommituješ** soubor `.env` (má být ignorovaný).
 
 ## Problémy
 
-- **Build fail na `prisma migrate deploy`:** zkontroluj `DATABASE_URL` na Vercelu (včetně `sslmode=require` pokud Neon vyžaduje).
+- **Build fail na `prisma migrate deploy`:** zkontroluj `DATABASE_URL` a `DIRECT_URL` v Production na Vercelu (včetně `sslmode=require` pokud Neon vyžaduje).
+- **Náhled PR:** build projde, migrace se přeskočí. Pokud má Preview `DATABASE_URL` na produkční databázi, náhled kódu s novými tabulkami na nich spadne, dokud se PR nemergne — to je v pořádku. Pro plnohodnotné náhledy patří do Preview vlastní databáze (např. větev v Neonu).
 - **Přihlášení na produkci nefunguje:** zkontroluj `AUTH_SECRET` (musí být nastavený) a `AUTH_URL` (shoda s reálnou URL v prohlížeči).
 - **Lokálně po přechodu z SQLite:** starý `dev.db` už se nepoužívá; data přesuň ručně nebo založ účet znovu proti Neonu.
