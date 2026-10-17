@@ -7,5 +7,6 @@ export const DRILL_KIND_CLASS: Record<DrillKind, string> = {
   GAME_DRILL: "bg-club-soft text-club",
   PREP_GAME: "bg-emerald-50 text-emerald-800",
   PREP_DRILL: "bg-violet-50 text-violet-800",
+  GAME: "bg-sky-50 text-sky-900",
   COOLDOWN: "bg-slate-100 text-slate-600",
 };

@@ -618,6 +618,8 @@ enum DrillKind {
   GAME_DRILL
   PREP_GAME
   PREP_DRILL
+  /** Hra podle pravidel (utkání) — vrchol hodiny. */
+  GAME
   COOLDOWN
 }
 
