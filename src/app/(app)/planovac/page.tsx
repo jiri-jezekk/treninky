@@ -28,7 +28,7 @@ type PlanListRow = {
 export default async function PlanovacPage({
   searchParams,
 }: {
-  searchParams: Promise<{ skupina?: string; vse?: string }>;
+  searchParams: Promise<{ skupina?: string; vse?: string; sablona?: string }>;
 }) {
   const userId = await requireUserId();
   const sp = await searchParams;
@@ -49,7 +49,7 @@ export default async function PlanovacPage({
     blocks: { select: { minutes: true } },
   };
 
-  const [upcoming, past, pastCount, sources] = await Promise.all([
+  const [upcoming, past, pastCount, sources, templates] = await Promise.all([
     prisma.trainingPlan.findMany({
       where: { ...where, startsAt: { gte: today } },
       orderBy: { startsAt: "asc" },
@@ -74,7 +74,21 @@ export default async function PlanovacPage({
         _count: { select: { blocks: true } },
       },
     }),
+    prisma.planTemplate.findMany({
+      where: { userId },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        groupId: true,
+        durationMinutes: true,
+        group: { select: { name: true } },
+      },
+    }),
   ]);
+  const initialTemplateId = templates.some((t) => t.id === sp.sablona)
+    ? sp.sablona!
+    : null;
 
   return (
     <>
@@ -100,6 +114,13 @@ export default async function PlanovacPage({
                 .join(" · "),
               blockCount: p._count.blocks,
             }))}
+            templates={templates.map((t) => ({
+              id: t.id,
+              label: t.group && !t.name.includes(t.group.name) ? `${t.name} (${t.group.name})` : t.name,
+              groupId: t.groupId,
+              durationMinutes: t.durationMinutes,
+            }))}
+            initialTemplateId={initialTemplateId}
           />
         </div>
         <GroupFilterNav groups={groups} basePath="/planovac" current={skupina} />

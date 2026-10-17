@@ -191,6 +191,7 @@ export default async function TrainingDetailPage({
             planId={plan.id}
             {...editor}
             roster={roster}
+            afterTraining={training.startsAt <= new Date()}
           />
         </>
       ) : (

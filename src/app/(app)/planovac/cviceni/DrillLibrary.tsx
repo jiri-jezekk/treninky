@@ -8,6 +8,13 @@ import {
   updateDrill,
 } from "@/actions/drills";
 import { czPlural } from "@/lib/czech";
+import {
+  STALE_DAYS,
+  formatLastUsed,
+  isStale,
+  summarizeDrillUsage,
+  type DrillUsage,
+} from "@/lib/drill-usage";
 import type { GroupOption } from "@/lib/groups";
 import { DRILL_KIND_CLASS } from "@/components/drill-kind-styles";
 import {
@@ -55,19 +62,45 @@ const miniActive =
   "inline-flex min-h-9 items-center rounded-full border border-club-line bg-club-soft px-3 py-1 text-sm text-slate-900";
 
 
+/** Použití cvičení v plánech — datum jako text, ať projde ze serveru. */
+export type UsageRow = {
+  drillId: string;
+  startsAt: string;
+  groupId: string | null;
+  rating: number | null;
+};
+
 export function DrillLibrary({
   drills,
   groups,
+  usageRows,
+  nowIso,
 }: {
   drills: DrillRow[];
   groups: GroupOption[];
+  usageRows: UsageRow[];
+  /** „Teď“ ze serveru — stejné při vykreslení i v prohlížeči. */
+  nowIso: string;
 }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<DrillKind | null>(null);
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [onlyStale, setOnlyStale] = useState(false);
   const [query, setQuery] = useState("");
+
+  const now = useMemo(() => new Date(nowIso), [nowIso]);
+  // „Naposledy“ podle vybrané kategorie, hodnocení vždy ze všech.
+  const usage = useMemo(
+    () =>
+      summarizeDrillUsage(
+        usageRows.map((r) => ({ ...r, startsAt: new Date(r.startsAt) })),
+        now,
+        groupFilter,
+      ),
+    [usageRows, now, groupFilter],
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,6 +108,7 @@ export function DrillLibrary({
       if (!showArchived && d.archived) return false;
       if (kindFilter && d.kind !== kindFilter) return false;
       if (groupFilter && !suitsGroup(d, groupFilter)) return false;
+      if (onlyStale && !isStale(usage.get(d.id)?.lastUsed ?? null, now)) return false;
       if (q) {
         // Hledá se v názvu, zaměření i štítcích.
         const haystack = [d.name, d.focus ?? "", ...d.tags].join(" ").toLowerCase();
@@ -82,7 +116,7 @@ export function DrillLibrary({
       }
       return true;
     });
-  }, [drills, kindFilter, groupFilter, showArchived, query]);
+  }, [drills, kindFilter, groupFilter, showArchived, onlyStale, usage, now, query]);
 
   const groupById = new Map(groups.map((g) => [g.id, g]));
   const allTags = useMemo(
@@ -150,6 +184,14 @@ export function DrillLibrary({
               </select>
             </label>
           )}
+          <button
+            type="button"
+            onClick={() => setOnlyStale((v) => !v)}
+            aria-pressed={onlyStale}
+            className={`${onlyStale ? miniActive : mini} col-span-2 justify-center sm:col-span-1`}
+          >
+            Dlouho nepoužité (přes {STALE_DAYS} dní)
+          </button>
           {archivedCount > 0 && (
             <button
               type="button"
@@ -272,6 +314,7 @@ export function DrillLibrary({
                           <span className="text-xs text-slate-500">· archiv</span>
                         )}
                       </div>
+                      <UsageLine usage={usage.get(d.id)} now={now} />
                       {d.description && (
                         <p className="mt-1.5 text-sm text-slate-600">{d.description}</p>
                       )}
@@ -337,6 +380,19 @@ export function DrillLibrary({
         )}
       </div>
     </>
+  );
+}
+
+function UsageLine({ usage, now }: { usage: DrillUsage | undefined; now: Date }) {
+  const lastUsed = usage?.lastUsed ?? null;
+  return (
+    <p
+      className={`mt-1 text-xs ${isStale(lastUsed, now) ? "text-amber-900" : "text-slate-500"}`}
+    >
+      Naposledy {formatLastUsed(lastUsed, now)}
+      {usage && usage.up > 0 && <span className="text-slate-500"> · 👍 {usage.up}</span>}
+      {usage && usage.down > 0 && <span className="text-slate-500"> · 👎 {usage.down}</span>}
+    </p>
   );
 }
 

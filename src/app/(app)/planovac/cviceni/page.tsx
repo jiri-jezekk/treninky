@@ -1,5 +1,6 @@
 import { DrillLibrary, type DrillRow } from "./DrillLibrary";
 import { listGroups } from "@/lib/groups";
+import { loadDrillUsage } from "@/lib/plan-editor-data";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
 import type { DrillKind } from "@/lib/training-plan";
@@ -7,13 +8,14 @@ import type { DrillKind } from "@/lib/training-plan";
 export default async function CviceniPage() {
   const userId = await requireUserId();
 
-  const [drills, groups] = await Promise.all([
+  const [drills, groups, usage] = await Promise.all([
     prisma.drill.findMany({
       where: { userId },
       orderBy: [{ archived: "asc" }, { kind: "asc" }, { name: "asc" }],
       include: { _count: { select: { blocks: true } } },
     }),
     listGroups(userId),
+    loadDrillUsage(userId),
   ]);
 
   // Id smazané kategorie v cvičení zůstat může — tady se zahodí.
@@ -43,7 +45,12 @@ export default async function CviceniPage() {
         v plánu sem dostaneš tlačítkem „Do knihovny“.
       </p>
 
-      <DrillLibrary drills={rows} groups={groups} />
+      <DrillLibrary
+        drills={rows}
+        groups={groups}
+        usageRows={usage.map((u) => ({ ...u, startsAt: u.startsAt.toISOString() }))}
+        nowIso={new Date().toISOString()}
+      />
     </>
   );
 }

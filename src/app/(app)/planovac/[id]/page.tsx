@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DiarySummary } from "@/components/DiarySummary";
 import { PlanEditor } from "@/components/PlanEditor";
+import { PlanReflection, PreviousReflection } from "@/components/PlanReflection";
 import { listGroups } from "@/lib/groups";
 import {
   formatDateDdMmYyyy,
@@ -30,14 +31,29 @@ export default async function PlanDetailPage({
   if (!plan) notFound();
 
   const roster = await loadPlanRoster(userId, plan);
-  const [groups, editor] = await Promise.all([
+  const [groups, editor, previous] = await Promise.all([
     listGroups(userId),
     loadPlanEditor(
       userId,
       plan,
       roster ? new Set(roster.members.map((m) => m.id)) : undefined,
     ),
+    // Poznámka z posledního dřívějšího tréninku stejné kategorie.
+    plan.groupId
+      ? prisma.trainingPlan.findFirst({
+          where: {
+            userId,
+            groupId: plan.groupId,
+            id: { not: plan.id },
+            startsAt: { lt: plan.startsAt },
+            reflection: { not: null },
+          },
+          orderBy: { startsAt: "desc" },
+          select: { id: true, startsAt: true, reflection: true },
+        })
+      : null,
   ]);
+  const afterTraining = plan.startsAt <= new Date();
 
   const endsAt =
     plan.durationMinutes == null
@@ -70,10 +86,29 @@ export default async function PlanDetailPage({
             topic: plan.topic,
           }}
           groups={groups}
+          templateName={[plan.group?.name, plan.topic].filter(Boolean).join(" – ") || "Moje šablona"}
+          canSaveTemplate={editor.blocks.length > 0}
         />
       </div>
 
-      <PlanEditor planId={plan.id} {...editor} roster={roster} />
+      {previous?.reflection && (
+        <PreviousReflection
+          href={`/planovac/${previous.id}`}
+          dateLabel={formatDateDdMmYyyy(previous.startsAt)}
+          text={previous.reflection}
+        />
+      )}
+
+      <PlanEditor
+        planId={plan.id}
+        {...editor}
+        roster={roster}
+        afterTraining={afterTraining}
+      />
+
+      {afterTraining && (
+        <PlanReflection planId={plan.id} reflection={plan.reflection} />
+      )}
 
       <DiarySummary summary={diarySummary(editor.blocks)} />
     </>

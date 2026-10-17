@@ -1,4 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import {
+  formatLastUsed,
+  summarizeDrillUsage,
+  type DrillUsageRow,
+} from "@/lib/drill-usage";
 import { formatDateTimeDdMmYyyy24h } from "@/lib/date-display";
 import type {
   CopySource,
@@ -33,7 +38,7 @@ export async function loadPlanEditor(
   plan: PlanForEditor,
   knownPlayerIds?: Set<string>,
 ) {
-  const [blocks, drills, sources] = await Promise.all([
+  const [blocks, drills, sources, usage] = await Promise.all([
     prisma.trainingBlock.findMany({
       where: { planId: plan.id },
       orderBy: { sortOrder: "asc" },
@@ -64,7 +69,10 @@ export async function loadPlanEditor(
         _count: { select: { blocks: true } },
       },
     }),
+    loadDrillUsage(userId),
   ]);
+  const now = new Date();
+  const usageByDrill = summarizeDrillUsage(usage, now, plan.groupId);
 
   const timed = withTimes(
     blocks.map((b) => ({
@@ -76,6 +84,7 @@ export async function loadPlanEditor(
       notes: b.notes,
       kind: b.kind as DrillKind,
       teams: parseTeams(b.teams, knownPlayerIds),
+      rating: b.rating,
     })),
     plan.startsAt,
   );
@@ -90,6 +99,7 @@ export async function loadPlanEditor(
     startLabel: b.startLabel,
     endLabel: b.endLabel,
     teams: b.teams,
+    rating: b.rating,
   }));
 
   const endsAt =
@@ -106,6 +116,9 @@ export async function loadPlanEditor(
       defaultMinutes: d.defaultMinutes,
       focus: d.focus,
       description: d.description,
+      lastUsedLabel: formatLastUsed(usageByDrill.get(d.id)?.lastUsed ?? null, now),
+      up: usageByDrill.get(d.id)?.up ?? 0,
+      down: usageByDrill.get(d.id)?.down ?? 0,
       forPlanGroup: plan.groupId != null && d.groupIds.includes(plan.groupId),
     }),
   );
@@ -155,4 +168,22 @@ export async function loadPlanRoster(
     // Smazaní ze soupisky se přeskočí.
     attendeeIds: plan.attendeeIds.filter((id) => known.has(id)),
   };
+}
+
+/** Všechna použití cvičení z knihovny v plánech trenéra — pro „kdy naposledy“. */
+export async function loadDrillUsage(userId: string): Promise<DrillUsageRow[]> {
+  const rows = await prisma.trainingBlock.findMany({
+    where: { drillId: { not: null }, plan: { userId } },
+    select: {
+      drillId: true,
+      rating: true,
+      plan: { select: { startsAt: true, groupId: true } },
+    },
+  });
+  return rows.map((r) => ({
+    drillId: r.drillId!,
+    startsAt: r.plan.startsAt,
+    groupId: r.plan.groupId,
+    rating: r.rating,
+  }));
 }

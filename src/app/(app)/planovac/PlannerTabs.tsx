@@ -8,6 +8,7 @@ const TABS = [
   { href: "/planovac/cviceni", label: "Cvičení" },
   { href: "/planovac/soupisky", label: "Soupisky" },
   { href: "/planovac/tymy", label: "Týmy" },
+  { href: "/planovac/sablony", label: "Šablony" },
 ];
 
 const tabClass = (active: boolean) =>

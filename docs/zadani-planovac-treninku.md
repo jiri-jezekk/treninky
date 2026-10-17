@@ -153,7 +153,7 @@ Podsekce (záložky): **Plány** · **Cvičení** · **Soupisky** · **Šablony*
    (Migrace `20261017090000_planovac_treninku`; „kdy naposledy“ z kap. 2 patří do kroku 4.)
 2. ✅ Shrnutí do deníku.
 3. ✅ Soupisky a generátor vyrovnaných týmů (záložky Soupisky a Týmy, u plánu „Kdo dnes přišel“).
-4. Šablony, „kdy naposledy“, poznámka po tréninku.
+4. ✅ Šablony, „kdy naposledy“, poznámka po tréninku.
 
 Každý krok jde nasadit samostatně.
 

@@ -10,6 +10,7 @@ import {
   movePlanBlock,
   nudgeBlockMinutes,
   saveBlockToLibrary,
+  setBlockRating,
   updatePlanBlock,
 } from "@/actions/training-plan";
 import { DRILL_KIND_CLASS } from "@/components/drill-kind-styles";
@@ -37,6 +38,8 @@ export type PlanBlockRow = {
   startLabel: string;
   endLabel: string;
   teams: TeamAssignment[];
+  /** Po tréninku: 1 = fungovalo, -1 = nefungovalo. */
+  rating: number | null;
 };
 
 export type DrillOption = {
@@ -46,6 +49,10 @@ export type DrillOption = {
   defaultMinutes: number | null;
   focus: string | null;
   description: string | null;
+  /** „před 7 dny“, „ještě ne“ — pro kategorii plánu. */
+  lastUsedLabel: string;
+  up: number;
+  down: number;
   /** Je určené přímo pro kategorii plánu — v nabídce se zvýrazní. */
   forPlanGroup: boolean;
 };
@@ -89,6 +96,7 @@ export function PlanEditor({
   blocks,
   drills,
   roster,
+  afterTraining = false,
   sources,
   plannedMinutes,
   differenceMinutes,
@@ -98,6 +106,8 @@ export function PlanEditor({
   drills: DrillOption[];
   /** Soupiska kategorie plánu. Null = plán nemá kategorii, týmy se nenabízí. */
   roster: PlanRoster | null;
+  /** Trénink už proběhl — u bodů se nabízí hodnocení. */
+  afterTraining?: boolean;
   sources: CopySource[];
   plannedMinutes: number;
   differenceMinutes: number | null;
@@ -157,6 +167,7 @@ export function PlanEditor({
                   isFirst={i === 0}
                   isLast={i === blocks.length - 1}
                   roster={roster}
+                  afterTraining={afterTraining}
                   onEdit={() => {
                     setAdding(false);
                     setEditing(b.id);
@@ -232,6 +243,18 @@ export function PlanEditor({
   );
 }
 
+/** Text položky v nabídce — jméno, kdy naposledy a jak dopadlo. */
+function drillOptionLabel(d: DrillOption): string {
+  return [
+    `${d.forPlanGroup ? "★ " : ""}${d.name}`,
+    `naposledy ${d.lastUsedLabel}`,
+    d.up > 0 ? `👍${d.up}` : "",
+    d.down > 0 ? `👎${d.down}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** Kolik je naplánováno z délky tréninku — číslem i proužkem. */
 function PlanProgress({
   planned,
@@ -287,12 +310,14 @@ function BlockCard({
   isFirst,
   isLast,
   roster,
+  afterTraining,
   onEdit,
 }: {
   block: PlanBlockRow;
   isFirst: boolean;
   isLast: boolean;
   roster: PlanRoster | null;
+  afterTraining: boolean;
   onEdit: () => void;
 }) {
   return (
@@ -356,6 +381,7 @@ function BlockCard({
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2">
+        {afterTraining && <RatingButtons blockId={b.id} rating={b.rating} />}
         <button type="button" className={`${btnOutline} flex-1 sm:flex-none`} onClick={onEdit}>
           Upravit
         </button>
@@ -390,6 +416,32 @@ function BlockCard({
         />
       )}
     </>
+  );
+}
+
+/** Po tréninku: fungovalo / nefungovalo. Druhé klepnutí hodnocení zruší. */
+function RatingButtons({ blockId, rating }: { blockId: string; rating: number | null }) {
+  return (
+    <span className="inline-flex gap-1" role="group" aria-label="Jak to fungovalo">
+      {([1, -1] as const).map((r) => (
+        <form key={r} action={setBlockRating.bind(null, blockId, r)}>
+          <button
+            type="submit"
+            aria-pressed={rating === r}
+            aria-label={r === 1 ? "Fungovalo" : "Nefungovalo"}
+            className={`grid h-10 w-10 place-items-center rounded-full border text-base transition ${
+              rating === r
+                ? r === 1
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-red-200 bg-red-50"
+                : "border-slate-200 opacity-60 hover:opacity-100"
+            }`}
+          >
+            {r === 1 ? "👍" : "👎"}
+          </button>
+        </form>
+      ))}
+    </span>
   );
 }
 
@@ -460,8 +512,7 @@ function AddBlockForm({
               <optgroup key={k} label={DRILL_KIND_LABELS[k]}>
                 {ofKind.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.forPlanGroup ? "★ " : ""}
-                    {d.name}
+                    {drillOptionLabel(d)}
                   </option>
                 ))}
               </optgroup>

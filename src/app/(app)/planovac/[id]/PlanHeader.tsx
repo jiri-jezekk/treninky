@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { deletePlan, updatePlan } from "@/actions/training-plan";
+import { deletePlan, savePlanAsTemplate, updatePlan } from "@/actions/training-plan";
 import type { GroupOption } from "@/lib/groups";
 import {
   PlanFields,
   btnOutline,
   btnPrimary,
   btnSm,
+  field,
   label,
   mini,
   type PlanFieldValues,
@@ -22,6 +23,8 @@ export function PlanHeader({
   trainingHref,
   values,
   groups,
+  templateName,
+  canSaveTemplate,
 }: {
   planId: string;
   /** „17/10/2026 · pátek 17:00–18:30“ */
@@ -31,8 +34,13 @@ export function PlanHeader({
   trainingHref: string | null;
   values: PlanFieldValues;
   groups: GroupOption[];
+  /** Předvyplněný název šablony. */
+  templateName: string;
+  canSaveTemplate: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [templating, setTemplating] = useState(false);
+  const [templateSaved, setTemplateSaved] = useState(false);
 
   if (editing) {
     return (
@@ -105,6 +113,18 @@ export function PlanHeader({
           <a href="#denik" className={mini}>
             Do deníku
           </a>
+          {canSaveTemplate && (
+            <button
+              type="button"
+              className={mini}
+              onClick={() => {
+                setTemplating((v) => !v);
+                setTemplateSaved(false);
+              }}
+            >
+              {templateSaved ? "Šablona uložena ✓" : "Jako šablona"}
+            </button>
+          )}
           <form
             action={deletePlan.bind(null, planId)}
             onSubmit={(e) => {
@@ -120,6 +140,28 @@ export function PlanHeader({
           </form>
         </div>
       </div>
+
+      {templating && (
+        <form
+          action={savePlanAsTemplate.bind(null, planId)}
+          onSubmit={() => {
+            setTemplating(false);
+            setTemplateSaved(true);
+          }}
+          className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-end"
+        >
+          <label className="block min-w-0 flex-1">
+            <span className={label}>Název šablony</span>
+            <input name="name" required defaultValue={templateName} className={field} />
+            <span className="mt-1 block text-xs text-slate-500">
+              Stejný název přepíše starou šablonu.
+            </span>
+          </label>
+          <button type="submit" className={`${btnPrimary} ${btnSm}`}>
+            Uložit šablonu
+          </button>
+        </form>
+      )}
     </div>
   );
 }

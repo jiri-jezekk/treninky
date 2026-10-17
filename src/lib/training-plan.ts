@@ -92,6 +92,50 @@ export function sortDrillsForGroup<T extends { groupIds: string[] }>(
     .map((x) => x.d);
 }
 
+/* ------------------------------------------------------------ šablony */
+
+export type TemplateBlock = {
+  title: string;
+  focus: string | null;
+  notes: string | null;
+  minutes: number;
+  kind: DrillKind;
+  /** Cvičení z knihovny; při použití se ověří, že pořád existuje. */
+  drillId: string | null;
+};
+
+/**
+ * Přečte body šablony z JSON sloupce. Píše ho aplikace, ale čte se
+ * opatrně — nesmyslné položky se vynechají, chybějící hodnoty doplní.
+ */
+export function parseTemplateBlocks(raw: unknown): TemplateBlock[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TemplateBlock[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const o = item as Record<string, unknown>;
+    const title = typeof o.title === "string" ? o.title.trim() : "";
+    if (!title) continue;
+    const minutes = Number(o.minutes);
+    out.push({
+      title,
+      focus: typeof o.focus === "string" && o.focus.trim() ? o.focus.trim() : null,
+      notes: typeof o.notes === "string" && o.notes.trim() ? o.notes.trim() : null,
+      minutes:
+        Number.isFinite(minutes) && minutes > 0 ? Math.min(600, Math.round(minutes)) : 10,
+      kind: parseDrillKind(o.kind),
+      drillId: typeof o.drillId === "string" && o.drillId ? o.drillId : null,
+    });
+  }
+  return out;
+}
+
+/** Hodnocení bodu z formuláře: 1, -1, jinak bez hodnocení. */
+export function parseRating(raw: unknown): 1 | -1 | null {
+  const n = Number(raw);
+  return n === 1 ? 1 : n === -1 ? -1 : null;
+}
+
 /* ------------------------------------------------------ deník (DDM) */
 
 /**

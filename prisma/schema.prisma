@@ -67,6 +67,7 @@ model User {
   drills       Drill[]
   trainingPlans TrainingPlan[]
   rosterMembers RosterMember[]
+  planTemplates PlanTemplate[]
   duels        Duel[]
   challenges   Challenge[]
   matches      Match[]
@@ -95,6 +96,7 @@ model Group {
   videoReviews VideoReview[]
   trainingPlans TrainingPlan[]
   rosterMembers RosterMember[]
+  planTemplates PlanTemplate[]
 
   @@unique([userId, name])
   @@index([userId])
@@ -684,6 +686,8 @@ model TrainingPlan {
    * smazaný ze soupisky se při čtení přeskočí.
    */
   attendeeIds     String[]  @default([])
+  /** Poznámka po tréninku — co fungovalo, co ne. Ukáže se u dalšího plánu kategorie. */
+  reflection      String?
   blocks          TrainingBlock[]
 
   @@index([userId, startsAt])
@@ -712,6 +716,28 @@ model RosterMember {
 }
 
 /**
+ * Šablona tréninku — typická stavba hodiny pro kategorii, ze které
+ * vzniká nový plán. Body jsou JSON: šablona je předloha, nic se přes
+ * ni nevykazuje a cvičení smazané z knihovny se při použití vynechá
+ * jako odkaz (bod zůstane s názvem).
+ */
+model PlanTemplate {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  groupId         String?
+  group           Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  durationMinutes Int?
+  /** [{ title, focus, notes, minutes, kind, drillId }] */
+  blocks          Json
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+/**
  * Jeden bod plánu tréninku. Buď odkazuje na cvičení z knihovny, nebo
  * stojí sám (jednorázová věc, kterou nemá smysl ukládat).
  */
@@ -737,6 +763,8 @@ model TrainingBlock {
    * při čtení přeskočí.
    */
   teams      Json?
+  /** Hodnocení po tréninku: 1 = fungovalo, -1 = nefungovalo, null = bez hodnocení. */
+  rating     Int?
 
   @@index([planId, sortOrder])
 }

@@ -9,8 +9,11 @@ import { combineDateInputAndTime } from "@/lib/date-display";
 import { checkboxOn } from "@/lib/form-values";
 import {
   parseDrillKind,
+  parseRating,
   parseTeams,
+  parseTemplateBlocks,
   type DrillKind,
+  type TemplateBlock,
   type TeamAssignment,
 } from "@/lib/training-plan";
 
@@ -150,6 +153,45 @@ async function appendBlocksFrom(sourceId: string, targetId: string) {
   }
 }
 
+/**
+ * Připojí body šablony. Odkaz na cvičení se zachová jen tehdy, když
+ * cvičení v knihovně pořád je — jinak zůstane bod s názvem bez odkazu.
+ */
+async function appendTemplateBlocks(userId: string, templateId: string, planId: string) {
+  const template = await prisma.planTemplate.findFirst({
+    where: { id: templateId, userId },
+    select: { blocks: true },
+  });
+  if (!template) return;
+
+  const blocks = parseTemplateBlocks(template.blocks);
+  const drillIds = blocks.map((b) => b.drillId).filter((id): id is string => id != null);
+  const existing = new Set(
+    (
+      await prisma.drill.findMany({
+        where: { userId, id: { in: drillIds } },
+        select: { id: true },
+      })
+    ).map((d) => d.id),
+  );
+
+  let order = await nextSortOrder(planId);
+  for (const b of blocks) {
+    await prisma.trainingBlock.create({
+      data: {
+        planId,
+        drillId: b.drillId && existing.has(b.drillId) ? b.drillId : null,
+        title: b.title,
+        focus: b.focus,
+        notes: b.notes,
+        minutes: b.minutes,
+        kind: b.kind,
+        sortOrder: order++,
+      },
+    });
+  }
+}
+
 /* --------------------------------------------------------------- plán */
 
 /** Založí plán a otevře ho. Volitelně rovnou s body jiného plánu. */
@@ -171,6 +213,9 @@ export async function createPlan(formData: FormData) {
     },
     select: { id: true },
   });
+
+  const templateId = String(formData.get("templateId") ?? "").trim();
+  if (templateId) await appendTemplateBlocks(userId, templateId, plan.id);
 
   const sourceId = String(formData.get("sourceId") ?? "").trim();
   if (sourceId) {
@@ -475,4 +520,91 @@ export async function clearTeams(blockId: string) {
     data: { teams: Prisma.DbNull },
   });
   revalidatePlan(block.plan);
+}
+
+/* ------------------------------------------------- po tréninku */
+
+/** Palec nahoru / dolů u bodu. Stejné klepnutí znovu hodnocení zruší. */
+export async function setBlockRating(blockId: string, rating: number) {
+  const userId = await requireUserId();
+  const block = await prisma.trainingBlock.findFirst({
+    where: { id: blockId, plan: { userId } },
+    select: { id: true, rating: true, drillId: true, plan: { select: { id: true, trainingId: true } } },
+  });
+  if (!block) return;
+
+  const wanted = parseRating(rating);
+  await prisma.trainingBlock.update({
+    where: { id: blockId },
+    data: { rating: block.rating === wanted ? null : wanted },
+  });
+  revalidatePlan(block.plan);
+  if (block.drillId) revalidatePath("/planovac/cviceni");
+}
+
+/** Poznámka po tréninku — co fungovalo, co ne. */
+export async function saveReflection(planId: string, formData: FormData) {
+  const userId = await requireUserId();
+  const plan = await ownedPlan(planId, userId);
+  if (!plan) return;
+
+  await prisma.trainingPlan.update({
+    where: { id: planId },
+    data: { reflection: text(formData.get("reflection")) },
+  });
+  revalidatePlan(plan);
+}
+
+/* --------------------------------------------------------- šablony */
+
+/**
+ * Uloží stavbu plánu jako šablonu. Stejný název přepíše starou
+ * šablonu — trenér si tak „Standardní U12“ jen aktualizuje.
+ */
+export async function savePlanAsTemplate(planId: string, formData: FormData) {
+  const userId = await requireUserId();
+  const plan = await prisma.trainingPlan.findFirst({
+    where: { id: planId, userId },
+    select: {
+      groupId: true,
+      durationMinutes: true,
+      blocks: { orderBy: { sortOrder: "asc" } },
+    },
+  });
+  if (!plan || plan.blocks.length === 0) return;
+
+  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
+  if (!name) return;
+
+  const blocks: TemplateBlock[] = plan.blocks.map((b) => ({
+    title: b.title,
+    focus: b.focus,
+    notes: b.notes,
+    minutes: b.minutes,
+    kind: b.kind as DrillKind,
+    drillId: b.drillId,
+  }));
+
+  await prisma.planTemplate.upsert({
+    where: { userId_name: { userId, name } },
+    create: {
+      userId,
+      name,
+      groupId: plan.groupId,
+      durationMinutes: plan.durationMinutes,
+      blocks,
+    },
+    update: {
+      groupId: plan.groupId,
+      durationMinutes: plan.durationMinutes,
+      blocks,
+    },
+  });
+  revalidatePath("/planovac", "layout");
+}
+
+export async function deleteTemplate(templateId: string) {
+  const userId = await requireUserId();
+  await prisma.planTemplate.deleteMany({ where: { id: templateId, userId } });
+  revalidatePath("/planovac", "layout");
 }
