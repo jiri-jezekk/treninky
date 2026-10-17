@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/session";
-import { parseDrillKind } from "@/lib/training-plan";
+import { sanitizeGroupIds } from "@/lib/groups";
+import { parseDrillKind, parseTags } from "@/lib/training-plan";
 
 function revalidateDrills() {
-  revalidatePath("/treninky/cviceni");
-  revalidatePath("/treninky");
+  revalidatePath("/planovac/cviceni");
+  revalidatePath("/planovac");
 }
 
 /** Minuty z formuláře. Prázdné pole i nesmysl znamenají „neurčeno“. */
@@ -17,6 +18,37 @@ function parseMinutes(raw: unknown): number | null {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0 || n > 600) return null;
   return Math.round(n);
+}
+
+/** Počet hráčů. Prázdné nebo nesmysl = bez omezení. */
+function parsePlayerCount(raw: unknown): number | null {
+  const value = String(raw ?? "").trim();
+  if (value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0 || n > 100) return null;
+  return n;
+}
+
+function text(raw: unknown): string | null {
+  return String(raw ?? "").trim() || null;
+}
+
+/** Společná pole formuláře cvičení. */
+async function drillData(userId: string, formData: FormData) {
+  return {
+    description: text(formData.get("description")),
+    equipment: text(formData.get("equipment")),
+    focus: text(formData.get("focus")),
+    link: text(formData.get("link")),
+    defaultMinutes: parseMinutes(formData.get("defaultMinutes")),
+    minPlayers: parsePlayerCount(formData.get("minPlayers")),
+    kind: parseDrillKind(formData.get("kind")),
+    tags: parseTags(formData.get("tags")),
+    groupIds: await sanitizeGroupIds(
+      userId,
+      formData.getAll("groupIds").map(String),
+    ),
+  };
 }
 
 export async function createDrill(formData: FormData) {
@@ -32,14 +64,7 @@ export async function createDrill(formData: FormData) {
   if (clash) return;
 
   await prisma.drill.create({
-    data: {
-      userId,
-      name,
-      description: String(formData.get("description") ?? "").trim() || null,
-      equipment: String(formData.get("equipment") ?? "").trim() || null,
-      defaultMinutes: parseMinutes(formData.get("defaultMinutes")),
-      kind: parseDrillKind(formData.get("kind")),
-    },
+    data: { userId, name, ...(await drillData(userId, formData)) },
   });
   revalidateDrills();
 }
@@ -63,13 +88,7 @@ export async function updateDrill(drillId: string, formData: FormData) {
 
   await prisma.drill.update({
     where: { id: drillId },
-    data: {
-      name,
-      description: String(formData.get("description") ?? "").trim() || null,
-      equipment: String(formData.get("equipment") ?? "").trim() || null,
-      defaultMinutes: parseMinutes(formData.get("defaultMinutes")),
-      kind: parseDrillKind(formData.get("kind")),
-    },
+    data: { name, ...(await drillData(userId, formData)) },
   });
   revalidateDrills();
 }

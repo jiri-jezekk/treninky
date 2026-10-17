@@ -5,20 +5,159 @@
  * a aby stejné rozdělení vyšlo na serveru i v prohlížeči.
  */
 
-export type DrillKind = "WARMUP" | "DRILL" | "GAME" | "COOLDOWN";
+/** Části tréninku v pořadí, v jakém jdou za sebou a píšou se do deníku. */
+export type DrillKind =
+  | "WARMUP"
+  | "MOVEMENT_GAME"
+  | "GAME_DRILL"
+  | "PREP_GAME"
+  | "PREP_DRILL"
+  | "COOLDOWN";
 
 export const DRILL_KIND_LABELS: Record<DrillKind, string> = {
   WARMUP: "Rozcvička",
-  DRILL: "Cvičení",
-  GAME: "Hra",
-  COOLDOWN: "Závěr",
+  MOVEMENT_GAME: "Pohybová hra",
+  GAME_DRILL: "Herní cvičení",
+  PREP_GAME: "Průpravná hra",
+  PREP_DRILL: "Průpravné cvičení",
+  COOLDOWN: "Závěrečné uvolnění",
 };
 
-export const DRILL_KINDS: DrillKind[] = ["WARMUP", "DRILL", "GAME", "COOLDOWN"];
+export const DRILL_KINDS: DrillKind[] = [
+  "WARMUP",
+  "MOVEMENT_GAME",
+  "GAME_DRILL",
+  "PREP_GAME",
+  "PREP_DRILL",
+  "COOLDOWN",
+];
+
+export const DEFAULT_DRILL_KIND: DrillKind = "GAME_DRILL";
 
 export function parseDrillKind(raw: unknown): DrillKind {
   const value = String(raw ?? "");
-  return (DRILL_KINDS as string[]).includes(value) ? (value as DrillKind) : "DRILL";
+  return (DRILL_KINDS as string[]).includes(value)
+    ? (value as DrillKind)
+    : DEFAULT_DRILL_KIND;
+}
+
+/** U her a herních cvičení se nabízí rozdělení do týmů. */
+export function isTeamKind(kind: DrillKind): boolean {
+  return kind === "MOVEMENT_GAME" || kind === "GAME_DRILL" || kind === "PREP_GAME";
+}
+
+/* ------------------------------------------------------------ knihovna */
+
+/**
+ * Štítky z formuláře — píšou se za čárku. Prázdné se zahodí a stejný
+ * štítek jinými písmeny („Hra“, „hra“) se nechá jen jednou.
+ */
+export function parseTags(raw: unknown): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const part of String(raw ?? "").split(",")) {
+    const tag = part.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!tag) continue;
+    const key = tag.toLocaleLowerCase("cs");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
+}
+
+/** Hodí se cvičení pro kategorii? Bez zadaných kategorií se hodí pro všechny. */
+export function suitsGroup(
+  drill: { groupIds: string[] },
+  groupId: string | null,
+): boolean {
+  return groupId == null || drill.groupIds.length === 0 || drill.groupIds.includes(groupId);
+}
+
+/**
+ * Pořadí nabídky při vkládání do plánu: nejdřív cvičení určená přímo
+ * pro kategorii plánu, pak obecná, nakonec ta pro jiné kategorie.
+ * Uvnitř skupiny zůstává pořadí, v jakém přišla (druh, název).
+ */
+export function sortDrillsForGroup<T extends { groupIds: string[] }>(
+  drills: T[],
+  groupId: string | null,
+): T[] {
+  if (groupId == null) return [...drills];
+  const rank = (d: T) =>
+    d.groupIds.includes(groupId) ? 0 : d.groupIds.length === 0 ? 1 : 2;
+  return drills
+    .map((d, i) => ({ d, i }))
+    .sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
+    .map((x) => x.d);
+}
+
+/* ------------------------------------------------------------ šablony */
+
+export type TemplateBlock = {
+  title: string;
+  focus: string | null;
+  notes: string | null;
+  minutes: number;
+  kind: DrillKind;
+  /** Cvičení z knihovny; při použití se ověří, že pořád existuje. */
+  drillId: string | null;
+};
+
+/**
+ * Přečte body šablony z JSON sloupce. Píše ho aplikace, ale čte se
+ * opatrně — nesmyslné položky se vynechají, chybějící hodnoty doplní.
+ */
+export function parseTemplateBlocks(raw: unknown): TemplateBlock[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TemplateBlock[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const o = item as Record<string, unknown>;
+    const title = typeof o.title === "string" ? o.title.trim() : "";
+    if (!title) continue;
+    const minutes = Number(o.minutes);
+    out.push({
+      title,
+      focus: typeof o.focus === "string" && o.focus.trim() ? o.focus.trim() : null,
+      notes: typeof o.notes === "string" && o.notes.trim() ? o.notes.trim() : null,
+      minutes:
+        Number.isFinite(minutes) && minutes > 0 ? Math.min(600, Math.round(minutes)) : 10,
+      kind: parseDrillKind(o.kind),
+      drillId: typeof o.drillId === "string" && o.drillId ? o.drillId : null,
+    });
+  }
+  return out;
+}
+
+/** Hodnocení bodu z formuláře: 1, -1, jinak bez hodnocení. */
+export function parseRating(raw: unknown): 1 | -1 | null {
+  const n = Number(raw);
+  return n === 1 ? 1 : n === -1 ? -1 : null;
+}
+
+/* ------------------------------------------------------ deník (DDM) */
+
+/**
+ * Shrnutí plánu do deníku DDM — jeden bod na řádek, „název - zaměření“.
+ * Bez data, časů a minut: deník má na náplň jedno textové pole a trenér
+ * do něj píše jen, co se dělalo.
+ *
+ * Když zaměření už v názvu je („Hra - protiútok“ se zaměřením „protiútok“),
+ * znovu se nepřidává.
+ */
+export function diarySummary(
+  blocks: { title: string; focus: string | null }[],
+): string {
+  return blocks
+    .map((b) => {
+      const title = b.title.trim();
+      const focus = b.focus?.trim() ?? "";
+      if (!focus || title.toLowerCase().includes(focus.toLowerCase())) return title;
+      return `${title} - ${focus}`;
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 /* ------------------------------------------------------------ časování */
@@ -129,70 +268,6 @@ export function parseTeams(
   }
 
   return teams;
-}
-
-export type SplitPlayer = {
-  id: string;
-  /** Kategorie hráče — rozdělení je rozprostře, ať nejsou junioři v jednom týmu. */
-  groupKey: string;
-};
-
-/**
- * Náhodné rozdělení do týmů, rovnoměrné napříč kategoriemi.
- *
- * Hráči se seřadí po kategoriích a rozdávají se „hadem“ (1-2-3-3-2-1).
- * Díky tomu vyjdou týmy stejně velké (±1) a žádná kategorie neskončí
- * celá v jednom z nich.
- *
- * `random` se dá podstrčit, aby šlo rozdělení otestovat.
- */
-export function splitIntoTeams(
-  players: SplitPlayer[],
-  teamCount: number,
-  random: () => number = Math.random,
-): TeamAssignment[] {
-  const count = Math.max(2, Math.min(4, Math.floor(teamCount)));
-  const teams: TeamAssignment[] = Array.from({ length: count }, (_, i) => ({
-    name: teamName(i),
-    playerIds: [],
-  }));
-  if (players.length === 0) return teams;
-
-  // Zamíchat v rámci kategorie, pak kategorie za sebe.
-  const byGroup = new Map<string, string[]>();
-  for (const p of players) {
-    const list = byGroup.get(p.groupKey);
-    if (list) list.push(p.id);
-    else byGroup.set(p.groupKey, [p.id]);
-  }
-
-  const ordered: string[] = [];
-  for (const ids of byGroup.values()) {
-    ordered.push(...shuffle(ids, random));
-  }
-
-  let index = 0;
-  for (const id of ordered) {
-    const round = Math.floor(index / count);
-    const withinRound = index % count;
-    // Had: liché kolo se rozdává odzadu, jinak by první tým dostal
-    // vždycky toho nejlepšího z každé kategorie.
-    const team = round % 2 === 0 ? withinRound : count - 1 - withinRound;
-    teams[team]!.playerIds.push(id);
-    index++;
-  }
-
-  return teams;
-}
-
-/** Fisher–Yates. */
-function shuffle<T>(items: T[], random: () => number): T[] {
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [out[i], out[j]] = [out[j]!, out[i]!];
-  }
-  return out;
 }
 
 /** Přesune hráče do dalšího týmu v pořadí; z posledního zpátky mimo týmy. */

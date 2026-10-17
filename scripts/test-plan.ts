@@ -5,11 +5,13 @@
  */
 import {
   moveToNextTeam,
+  diarySummary,
+  parseTags,
   parseTeams,
-  splitIntoTeams,
+  sortDrillsForGroup,
+  suitsGroup,
   summarizePlan,
   withTimes,
-  type SplitPlayer,
   type TeamAssignment,
 } from "../src/lib/training-plan.ts";
 
@@ -82,89 +84,6 @@ console.log("\nSouhrn proti délce tréninku:");
   eq("součet ale platí", s.plannedMinutes, 30);
 }
 
-console.log("\nDělení do týmů:");
-/** Předvídatelný „náhodný“ generátor, ať jde výsledek zkontrolovat. */
-function seeded(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 1664525 + 1013904223) % 4294967296;
-    return s / 4294967296;
-  };
-}
-
-const muzi = (n: number): SplitPlayer[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `m${i}`, groupKey: "muzi" }));
-const juniori = (n: number): SplitPlayer[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `j${i}`, groupKey: "juniori" }));
-
-{
-  const players = [...muzi(6), ...juniori(4)];
-  const teams = splitIntoTeams(players, 2, seeded(1));
-  eq("dva týmy", teams.length, 2);
-  eq(
-    "všech deset je rozdělených",
-    teams.flatMap((t) => t.playerIds).length,
-    10,
-  );
-  eq("po pěti", teams.map((t) => t.playerIds.length), [5, 5]);
-  const all = new Set(teams.flatMap((t) => t.playerIds));
-  eq("nikdo není dvakrát", all.size, 10);
-}
-{
-  // Tohle je ten důvod, proč se dělí po kategoriích: junioři se mají
-  // rozprostřít, ne skončit všichni v jednom týmu.
-  const players = [...muzi(6), ...juniori(4)];
-  const teams = splitIntoTeams(players, 2, seeded(7));
-  const juniorsPerTeam = teams.map(
-    (t) => t.playerIds.filter((id) => id.startsWith("j")).length,
-  );
-  eq("junioři rozprostření", juniorsPerTeam, [2, 2]);
-}
-{
-  // Na tom, který tým dostane přebývajícího, nezáleží — jen na tom,
-  // že se velikosti neliší o víc než o jednoho.
-  const teams = splitIntoTeams([...muzi(7)], 2, seeded(3));
-  const sizes = teams.map((t) => t.playerIds.length).sort();
-  eq("lichý počet se liší nejvýš o jednoho", sizes, [3, 4]);
-  eq("a nikdo nechybí", sizes[0]! + sizes[1]!, 7);
-}
-{
-  // Totéž napříč počty hráčů i týmů — vlastnost, ne konkrétní výsledek.
-  let worst = 0;
-  for (let n = 2; n <= 30; n++) {
-    for (let t = 2; t <= 4; t++) {
-      const teams = splitIntoTeams(muzi(n), t, seeded(n * 31 + t));
-      const sizes = teams.map((x) => x.playerIds.length);
-      worst = Math.max(worst, Math.max(...sizes) - Math.min(...sizes));
-      if (sizes.reduce((a, b) => a + b, 0) !== n) worst = 99;
-    }
-  }
-  eq("velikosti se nikdy neliší o víc než o jednoho", worst <= 1, true);
-}
-{
-  const teams = splitIntoTeams([...muzi(9)], 3, seeded(3));
-  eq("tři týmy po třech", teams.map((t) => t.playerIds.length), [3, 3, 3]);
-}
-{
-  const teams = splitIntoTeams([], 2, seeded(1));
-  eq("bez hráčů vzniknou prázdné týmy", teams.map((t) => t.playerIds.length), [0, 0]);
-}
-{
-  eq("míň než dva týmy nejde", splitIntoTeams(muzi(4), 1, seeded(1)).length, 2);
-  eq("víc než čtyři taky ne", splitIntoTeams(muzi(4), 9, seeded(1)).length, 4);
-}
-{
-  // Dvakrát po sobě se stejným semínkem musí vyjít totéž.
-  const a = splitIntoTeams(muzi(8), 2, seeded(42));
-  const b = splitIntoTeams(muzi(8), 2, seeded(42));
-  eq("stejné semínko, stejný výsledek", a, b);
-}
-{
-  const a = splitIntoTeams(muzi(8), 2, seeded(1));
-  const b = splitIntoTeams(muzi(8), 2, seeded(999));
-  eq("jiné semínko, jiné rozdělení", JSON.stringify(a) !== JSON.stringify(b), true);
-}
-
 console.log("\nRuční přesouvání:");
 {
   let teams: TeamAssignment[] = [
@@ -211,6 +130,54 @@ eq(
   "nesmysly v seznamu id se vyhodí",
   parseTeams([{ name: "T", playerIds: ["a", 5, null] }])[0]?.playerIds,
   ["a"],
+);
+
+console.log("\nŠtítky cvičení:");
+eq("prázdné pole", parseTags(""), []);
+eq("čárky a mezery", parseTags(" úvodní hra ,nahrávka,, "), ["úvodní hra", "nahrávka"]);
+eq("duplicita jinými písmeny", parseTags("Hra, hra, HRA"), ["Hra"]);
+eq("vnitřní mezery se slijí", parseTags("úvodní   hra"), ["úvodní hra"]);
+
+console.log("\nCvičení podle kategorie:");
+{
+  const drills = [
+    { id: "jine", groupIds: ["u18"] },
+    { id: "obecne", groupIds: [] },
+    { id: "pro-u12", groupIds: ["u12", "u15"] },
+    { id: "obecne2", groupIds: [] },
+  ];
+  eq(
+    "bez kategorie plánu zůstane pořadí",
+    sortDrillsForGroup(drills, null).map((d) => d.id),
+    ["jine", "obecne", "pro-u12", "obecne2"],
+  );
+  eq(
+    "nejdřív pro kategorii, pak obecná, nakonec ostatní",
+    sortDrillsForGroup(drills, "u12").map((d) => d.id),
+    ["pro-u12", "obecne", "obecne2", "jine"],
+  );
+  eq("obecné se hodí všem", suitsGroup({ groupIds: [] }, "u12"), true);
+  eq("cizí kategorie se nehodí", suitsGroup({ groupIds: ["u18"] }, "u12"), false);
+  eq("bez filtru se hodí vše", suitsGroup({ groupIds: ["u18"] }, null), true);
+}
+
+console.log("\nShrnutí do deníku:");
+eq(
+  "řádek na bod, zaměření za pomlčkou",
+  diarySummary([
+    { title: "Pohybová hra", focus: "rychlost obratnost" },
+    { title: "Rozcvička a rozházení", focus: null },
+    { title: "Herní cvičení", focus: " protiútok " },
+    { title: "Hra", focus: "" },
+    { title: "Závěrečné uvolnění", focus: null },
+  ]),
+  "Pohybová hra - rychlost obratnost\nRozcvička a rozházení\nHerní cvičení - protiútok\nHra\nZávěrečné uvolnění",
+);
+eq("prázdný plán", diarySummary([]), "");
+eq(
+  "zaměření už v názvu se neopakuje",
+  diarySummary([{ title: "Hra - Protiútok", focus: "protiútok" }]),
+  "Hra - Protiútok",
 );
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\n${failures} KONTROL NEPROŠLO`);

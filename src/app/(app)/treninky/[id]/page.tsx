@@ -17,14 +17,10 @@ import {
   setAttendanceBulkForTraining,
   setTrainingCancelled,
 } from "@/actions/trainings";
+import { createPlanForTraining } from "@/actions/training-plan";
 import { initials } from "@/lib/czech";
-import { PlanEditor, type PlanBlockRow } from "./PlanEditor";
-import {
-  parseTeams,
-  summarizePlan,
-  withTimes,
-  type DrillKind,
-} from "@/lib/training-plan";
+import { PlanEditor } from "@/components/PlanEditor";
+import { loadPlanEditor, loadPlanRoster } from "@/lib/plan-editor-data";
 
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
@@ -46,7 +42,7 @@ export default async function TrainingDetailPage({
   const groups = await listGroups(userId);
   const skupina = parseGroupFilter(sp.skupina, groups);
 
-  const [players, totalActive, prepaidByPlayer, blocks, drills, sources] =
+  const [players, totalActive, prepaidByPlayer, plan] =
     await Promise.all([
     prisma.player.findMany({
       where: {
@@ -62,24 +58,14 @@ export default async function TrainingDetailPage({
     }),
       prisma.player.count({ where: { userId, active: true } }),
       getPrepaidRangesByPlayer(userId),
-      prisma.trainingBlock.findMany({
+      prisma.trainingPlan.findUnique({
         where: { trainingId: id },
-        orderBy: { sortOrder: "asc" },
-      }),
-      prisma.drill.findMany({
-        where: { userId, archived: false },
-        orderBy: [{ kind: "asc" }, { name: "asc" }],
-        select: { id: true, name: true, kind: true, defaultMinutes: true },
-      }),
-      // Odkud se dá převzít plán — poslední tréninky, které nějaký mají.
-      prisma.training.findMany({
-        where: { userId, id: { not: id }, blocks: { some: {} } },
-        orderBy: { startsAt: "desc" },
-        take: 8,
         select: {
           id: true,
           startsAt: true,
-          _count: { select: { blocks: true } },
+          durationMinutes: true,
+          groupId: true,
+          attendeeIds: true,
         },
       }),
     ]);
@@ -112,29 +98,14 @@ export default async function TrainingDetailPage({
   const prepaidPresent = presentRows.filter((r) => r.prepaid).length;
 
   // --- plán tréninku ---
-  const knownPlayerIds = new Set(rows.map((r) => String(r.id)));
-  const timed = withTimes(
-    blocks.map((b) => ({
-      id: String(b.id),
-      minutes: b.minutes,
-      title: b.title,
-      notes: b.notes,
-      kind: b.kind as DrillKind,
-      teams: parseTeams(b.teams, knownPlayerIds),
-    })),
-    training.startsAt,
-  );
-  const planBlocks: PlanBlockRow[] = timed.map((b) => ({
-    id: b.id,
-    title: b.title,
-    notes: b.notes,
-    minutes: b.minutes,
-    kind: b.kind,
-    startLabel: b.startLabel,
-    endLabel: b.endLabel,
-    teams: b.teams,
-  }));
-  const planSummary = summarizePlan(planBlocks, training.startsAt, training.endsAt);
+  const roster = plan ? await loadPlanRoster(userId, plan) : null;
+  const editor = plan
+    ? await loadPlanEditor(
+        userId,
+        plan,
+        roster ? new Set(roster.members.map((m) => m.id)) : undefined,
+      )
+    : null;
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-4xl">
@@ -206,28 +177,36 @@ export default async function TrainingDetailPage({
         </div>
       </dl>
 
-      <PlanEditor
-        trainingId={id}
-        blocks={planBlocks}
-        drills={drills.map((d) => ({
-          id: d.id,
-          name: d.name,
-          kind: d.kind as DrillKind,
-          defaultMinutes: d.defaultMinutes,
-        }))}
-        players={rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          present: r.present,
-        }))}
-        sources={sources.map((t) => ({
-          id: t.id,
-          label: formatDateTimeDdMmYyyy24h(t.startsAt),
-          blockCount: t._count.blocks,
-        }))}
-        plannedMinutes={planSummary.plannedMinutes}
-        differenceMinutes={planSummary.differenceMinutes}
-      />
+      {plan && editor ? (
+        <>
+          <p className="mb-2 text-right text-xs">
+            <Link
+              href={`/planovac/${plan.id}`}
+              className="text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800"
+            >
+              Otevřít v Plánovači
+            </Link>
+          </p>
+          <PlanEditor
+            planId={plan.id}
+            {...editor}
+            roster={roster}
+            afterTraining={training.startsAt <= new Date()}
+          />
+        </>
+      ) : (
+        <section className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5">
+          <p className="min-w-0 text-sm text-slate-600">K tréninku zatím není plán.</p>
+          <form action={createPlanForTraining.bind(null, id)}>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-full border-2 border-slate-300 px-3 py-1.5 font-heading text-xs font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft"
+            >
+              + Založit plán
+            </button>
+          </form>
+        </section>
+      )}
 
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4">
         <GroupFilterNav

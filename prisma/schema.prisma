@@ -65,6 +65,9 @@ model User {
   prepayments  Prepayment[]
   trainingSlots TrainingSlot[]
   drills       Drill[]
+  trainingPlans TrainingPlan[]
+  rosterMembers RosterMember[]
+  planTemplates PlanTemplate[]
   duels        Duel[]
   challenges   Challenge[]
   matches      Match[]
@@ -91,6 +94,9 @@ model Group {
   createdAt DateTime @default(now())
   members   PlayerGroupMembership[]
   videoReviews VideoReview[]
+  trainingPlans TrainingPlan[]
+  rosterMembers RosterMember[]
+  planTemplates PlanTemplate[]
 
   @@unique([userId, name])
   @@index([userId])
@@ -595,17 +601,23 @@ model Training {
   /** Null = automatická cena podle dne. Není null = cena za tento trénink (z rozvrhu nebo ručně). */
   defaultPriceCents Int?
   attendances       Attendance[]
-  blocks            TrainingBlock[]
+  /** Plán tréninku, pokud ho trenér k tomuhle termínu připravil. */
+  plan              TrainingPlan?
   matches           Match[]
 
   @@index([userId, startsAt])
 }
 
-/** Druh cvičení — kvůli řazení a filtrování v knihovně. */
+/**
+ * Druh cvičení — kvůli řazení a filtrování v knihovně. Pořadí je pořadí
+ * částí tréninku, tak jak je trenér píše do deníku.
+ */
 enum DrillKind {
   WARMUP
-  DRILL
-  GAME
+  MOVEMENT_GAME
+  GAME_DRILL
+  PREP_GAME
+  PREP_DRILL
   COOLDOWN
 }
 
@@ -621,9 +633,22 @@ model Drill {
   description    String?
   /** Nabídne se jako délka při vložení do plánu. */
   defaultMinutes Int?
-  kind           DrillKind @default(DRILL)
+  kind           DrillKind @default(GAME_DRILL)
   /** Co je na cvičení potřeba — míče, kužely… */
   equipment      String?
+  /** Krátké zaměření („rychlost obratnost“) — jde do bodu plánu i do shrnutí do deníku. */
+  focus          String?
+  /**
+   * Pro které kategorie se cvičení hodí. Prázdné = pro všechny.
+   * Pole id místo vazební tabulky: slouží jen k filtru a řazení nabídky
+   * a id smazané kategorie se při čtení prostě přeskočí.
+   */
+  groupIds       String[]  @default([])
+  /** Volné štítky — „úvodní hra“, „nahrávka“… */
+  tags           String[]  @default([])
+  minPlayers     Int?
+  /** Video, obrázek nebo nákres. */
+  link           String?
   /** Archivované se nenabízí, ale zůstává v už hotových plánech. */
   archived       Boolean   @default(false)
   createdAt      DateTime  @default(now())
@@ -634,21 +659,102 @@ model Drill {
 }
 
 /**
+ * Plán tréninku. Stojí sám — děti a junioři nemají v aplikaci rozvrh,
+ * docházku ani platby, plánovat se ale dá pro všechny kategorie.
+ * U dospělých jde plán navázat na trénink z rozvrhu.
+ */
+model TrainingPlan {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startsAt        DateTime
+  /** Délka v minutách. Null = neurčeno, plán pak jen sčítá body. */
+  durationMinutes Int?
+  /** Kategorie (U12, U15…). Null = nevybraná nebo mezitím smazaná. */
+  groupId         String?
+  group           Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  /** Téma nebo cíl tréninku. */
+  topic           String?
+  /** Trénink z rozvrhu, ke kterému plán patří. Smazáním tréninku plán nezmizí. */
+  trainingId      String?   @unique
+  training        Training? @relation(fields: [trainingId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  /**
+   * Kdo z soupisky kategorie na trénink přišel — z nich se dělí týmy.
+   * Pole id místo tabulky: jde jen o výběr pro tento plán a člen
+   * smazaný ze soupisky se při čtení přeskočí.
+   */
+  attendeeIds     String[]  @default([])
+  /** Poznámka po tréninku — co fungovalo, co ne. Ukáže se u dalšího plánu kategorie. */
+  reflection      String?
+  blocks          TrainingBlock[]
+
+  @@index([userId, startsAt])
+}
+
+/**
+ * Soupiska kategorie pro dělení do týmů. Schválně oddělená od hráčů
+ * klubu: děti z DDM tu nemají platby ani docházku, stačí jméno
+ * a odhad, jak na tom kdo je.
+ */
+model RosterMember {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  /** Dovednost 1–3: 1 = začátečník, 3 = nejlepší. */
+  skill     Int      @default(2)
+  /** Neaktivní se nenabízí, ale zůstává v uložených týmech. */
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([groupId, name])
+  @@index([userId, groupId])
+}
+
+/**
+ * Šablona tréninku — typická stavba hodiny pro kategorii, ze které
+ * vzniká nový plán. Body jsou JSON: šablona je předloha, nic se přes
+ * ni nevykazuje a cvičení smazané z knihovny se při použití vynechá
+ * jako odkaz (bod zůstane s názvem).
+ */
+model PlanTemplate {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  groupId         String?
+  group           Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  durationMinutes Int?
+  /** [{ title, focus, notes, minutes, kind, drillId }] */
+  blocks          Json
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+/**
  * Jeden bod plánu tréninku. Buď odkazuje na cvičení z knihovny, nebo
  * stojí sám (jednorázová věc, kterou nemá smysl ukládat).
  */
 model TrainingBlock {
   id         String    @id @default(cuid())
-  trainingId String
-  training   Training  @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  planId     String
+  plan       TrainingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
   /** Null = bod mimo knihovnu, nebo cvičení mezitím smazané. */
   drillId    String?
   drill      Drill?    @relation(fields: [drillId], references: [id], onDelete: SetNull)
   /** Vlastní název bodu. Kopíruje se z cvičení, dá se přepsat. */
   title      String
+  /** Zaměření bodu — do deníku jde jako „název - zaměření“. */
+  focus      String?
   notes      String?
   minutes    Int
-  kind       DrillKind @default(DRILL)
+  kind       DrillKind @default(GAME_DRILL)
   sortOrder  Int
   /**
    * Rozdělení do týmů u herních bodů: [{ "name": "…", "playerIds": [...] }].
@@ -657,8 +763,10 @@ model TrainingBlock {
    * při čtení přeskočí.
    */
   teams      Json?
+  /** Hodnocení po tréninku: 1 = fungovalo, -1 = nefungovalo, null = bez hodnocení. */
+  rating     Int?
 
-  @@index([trainingId, sortOrder])
+  @@index([planId, sortOrder])
 }
 
 model Attendance {

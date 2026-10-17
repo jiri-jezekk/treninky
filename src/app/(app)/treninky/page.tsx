@@ -119,10 +119,10 @@ export default async function TreninkyPage({
         </div>
         <div className="flex items-center gap-3">
           <Link
-            href="/treninky/cviceni"
+            href="/planovac"
             className="inline-flex items-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft"
           >
-            Cvičení
+            Plánovač
           </Link>
           <Link
             href={`/treninky?mesic=${mesicQuery(prev.getFullYear(), prev.getMonth() + 1)}`}
