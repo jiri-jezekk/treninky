@@ -12,6 +12,7 @@ export type DrillKind =
   | "GAME_DRILL"
   | "PREP_GAME"
   | "PREP_DRILL"
+  | "GAME"
   | "COOLDOWN";
 
 export const DRILL_KIND_LABELS: Record<DrillKind, string> = {
@@ -20,6 +21,7 @@ export const DRILL_KIND_LABELS: Record<DrillKind, string> = {
   GAME_DRILL: "Herní cvičení",
   PREP_GAME: "Průpravná hra",
   PREP_DRILL: "Průpravné cvičení",
+  GAME: "Hra",
   COOLDOWN: "Závěrečné uvolnění",
 };
 
@@ -29,6 +31,7 @@ export const DRILL_KINDS: DrillKind[] = [
   "GAME_DRILL",
   "PREP_GAME",
   "PREP_DRILL",
+  "GAME",
   "COOLDOWN",
 ];
 
@@ -43,7 +46,12 @@ export function parseDrillKind(raw: unknown): DrillKind {
 
 /** U her a herních cvičení se nabízí rozdělení do týmů. */
 export function isTeamKind(kind: DrillKind): boolean {
-  return kind === "MOVEMENT_GAME" || kind === "GAME_DRILL" || kind === "PREP_GAME";
+  return (
+    kind === "MOVEMENT_GAME" ||
+    kind === "GAME_DRILL" ||
+    kind === "PREP_GAME" ||
+    kind === "GAME"
+  );
 }
 
 /* ------------------------------------------------------------ knihovna */

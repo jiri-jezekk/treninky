@@ -61,7 +61,7 @@ dál zůstane vidět.
 ## 2. Knihovna cvičení
 
 **Druhy cvičení** (části tréninku, v tomto pořadí): Rozcvička · Pohybová hra ·
-Herní cvičení · Průpravná hra · Průpravné cvičení · Závěrečné uvolnění.
+Herní cvičení · Průpravná hra · Průpravné cvičení · Hra · Závěrečné uvolnění.
 Dřívější „Cvičení“ se převede na herní cvičení, „Hra“ na průpravnou hru.
 
 K dnešním polím přibude:
