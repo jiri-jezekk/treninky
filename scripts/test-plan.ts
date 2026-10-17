@@ -5,8 +5,11 @@
  */
 import {
   moveToNextTeam,
+  parseTags,
   parseTeams,
+  sortDrillsForGroup,
   splitIntoTeams,
+  suitsGroup,
   summarizePlan,
   withTimes,
   type SplitPlayer,
@@ -212,6 +215,35 @@ eq(
   parseTeams([{ name: "T", playerIds: ["a", 5, null] }])[0]?.playerIds,
   ["a"],
 );
+
+console.log("\nŠtítky cvičení:");
+eq("prázdné pole", parseTags(""), []);
+eq("čárky a mezery", parseTags(" úvodní hra ,nahrávka,, "), ["úvodní hra", "nahrávka"]);
+eq("duplicita jinými písmeny", parseTags("Hra, hra, HRA"), ["Hra"]);
+eq("vnitřní mezery se slijí", parseTags("úvodní   hra"), ["úvodní hra"]);
+
+console.log("\nCvičení podle kategorie:");
+{
+  const drills = [
+    { id: "jine", groupIds: ["u18"] },
+    { id: "obecne", groupIds: [] },
+    { id: "pro-u12", groupIds: ["u12", "u15"] },
+    { id: "obecne2", groupIds: [] },
+  ];
+  eq(
+    "bez kategorie plánu zůstane pořadí",
+    sortDrillsForGroup(drills, null).map((d) => d.id),
+    ["jine", "obecne", "pro-u12", "obecne2"],
+  );
+  eq(
+    "nejdřív pro kategorii, pak obecná, nakonec ostatní",
+    sortDrillsForGroup(drills, "u12").map((d) => d.id),
+    ["pro-u12", "obecne", "obecne2", "jine"],
+  );
+  eq("obecné se hodí všem", suitsGroup({ groupIds: [] }, "u12"), true);
+  eq("cizí kategorie se nehodí", suitsGroup({ groupIds: ["u18"] }, "u12"), false);
+  eq("bez filtru se hodí vše", suitsGroup({ groupIds: ["u18"] }, null), true);
+}
 
 console.log(failures === 0 ? "\nVŠE PROŠLO" : `\n${failures} KONTROL NEPROŠLO`);
 process.exit(failures === 0 ? 0 : 1);

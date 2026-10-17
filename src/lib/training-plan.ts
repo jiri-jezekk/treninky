@@ -5,20 +5,91 @@
  * a aby stejné rozdělení vyšlo na serveru i v prohlížeči.
  */
 
-export type DrillKind = "WARMUP" | "DRILL" | "GAME" | "COOLDOWN";
+/** Části tréninku v pořadí, v jakém jdou za sebou a píšou se do deníku. */
+export type DrillKind =
+  | "WARMUP"
+  | "MOVEMENT_GAME"
+  | "GAME_DRILL"
+  | "PREP_GAME"
+  | "PREP_DRILL"
+  | "COOLDOWN";
 
 export const DRILL_KIND_LABELS: Record<DrillKind, string> = {
   WARMUP: "Rozcvička",
-  DRILL: "Cvičení",
-  GAME: "Hra",
-  COOLDOWN: "Závěr",
+  MOVEMENT_GAME: "Pohybová hra",
+  GAME_DRILL: "Herní cvičení",
+  PREP_GAME: "Průpravná hra",
+  PREP_DRILL: "Průpravné cvičení",
+  COOLDOWN: "Závěrečné uvolnění",
 };
 
-export const DRILL_KINDS: DrillKind[] = ["WARMUP", "DRILL", "GAME", "COOLDOWN"];
+export const DRILL_KINDS: DrillKind[] = [
+  "WARMUP",
+  "MOVEMENT_GAME",
+  "GAME_DRILL",
+  "PREP_GAME",
+  "PREP_DRILL",
+  "COOLDOWN",
+];
+
+export const DEFAULT_DRILL_KIND: DrillKind = "GAME_DRILL";
 
 export function parseDrillKind(raw: unknown): DrillKind {
   const value = String(raw ?? "");
-  return (DRILL_KINDS as string[]).includes(value) ? (value as DrillKind) : "DRILL";
+  return (DRILL_KINDS as string[]).includes(value)
+    ? (value as DrillKind)
+    : DEFAULT_DRILL_KIND;
+}
+
+/** U her a herních cvičení se nabízí rozdělení do týmů. */
+export function isTeamKind(kind: DrillKind): boolean {
+  return kind === "MOVEMENT_GAME" || kind === "GAME_DRILL" || kind === "PREP_GAME";
+}
+
+/* ------------------------------------------------------------ knihovna */
+
+/**
+ * Štítky z formuláře — píšou se za čárku. Prázdné se zahodí a stejný
+ * štítek jinými písmeny („Hra“, „hra“) se nechá jen jednou.
+ */
+export function parseTags(raw: unknown): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const part of String(raw ?? "").split(",")) {
+    const tag = part.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!tag) continue;
+    const key = tag.toLocaleLowerCase("cs");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
+}
+
+/** Hodí se cvičení pro kategorii? Bez zadaných kategorií se hodí pro všechny. */
+export function suitsGroup(
+  drill: { groupIds: string[] },
+  groupId: string | null,
+): boolean {
+  return groupId == null || drill.groupIds.length === 0 || drill.groupIds.includes(groupId);
+}
+
+/**
+ * Pořadí nabídky při vkládání do plánu: nejdřív cvičení určená přímo
+ * pro kategorii plánu, pak obecná, nakonec ta pro jiné kategorie.
+ * Uvnitř skupiny zůstává pořadí, v jakém přišla (druh, název).
+ */
+export function sortDrillsForGroup<T extends { groupIds: string[] }>(
+  drills: T[],
+  groupId: string | null,
+): T[] {
+  if (groupId == null) return [...drills];
+  const rank = (d: T) =>
+    d.groupIds.includes(groupId) ? 0 : d.groupIds.length === 0 ? 1 : 2;
+  return drills
+    .map((d, i) => ({ d, i }))
+    .sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
+    .map((x) => x.d);
 }
 
 /* ------------------------------------------------------------ časování */

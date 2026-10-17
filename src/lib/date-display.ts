@@ -60,6 +60,22 @@ export function combineDdMmYyyyAndTime24h(dateStr: string, timeStr: string): Dat
   );
 }
 
+/**
+ * Datum z nativního `<input type="date">` (YYYY-MM-DD) nebo ručně psané
+ * DD/MM/YYYY, k tomu čas HH:mm. Na telefonu je nativní výběr pohodlnější,
+ * ruční zápis ale dál projde.
+ */
+export function combineDateInputAndTime(dateStr: string, timeStr: string): Date {
+  const iso = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const ddmm = iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : dateStr;
+  return combineDdMmYyyyAndTime24h(ddmm, timeStr);
+}
+
+/** Datum pro nativní `<input type="date">`: YYYY-MM-DD v místním čase. */
+export function formatDateInputValue(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /** Datum v poledni — pro bezpečné procházení rozsahu dnů (hromadné tréninky). */
 export function parseDdMmYyyyAtNoon(s: string): Date | null {
   const d = parseDdMmYyyy(s);

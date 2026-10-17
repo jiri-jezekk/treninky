@@ -58,6 +58,12 @@
   --color-sky-50: rgba(14, 165, 233, 0.12);
   --color-sky-900: #7dd3fc;
 
+  /* druhy cvičení v plánovači */
+  --color-orange-50: rgba(249, 115, 22, 0.14);
+  --color-orange-900: #fdba74;
+  --color-violet-50: rgba(167, 139, 250, 0.14);
+  --color-violet-800: #c4b5fd;
+
   /* klubová modrá jako akcent */
   --color-club: #0ea5e9;
   --color-club-hover: #0284c7;

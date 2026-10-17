@@ -12,7 +12,7 @@ export type SplitPlayerRow = {
 };
 
 const mini =
-  "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
+  "inline-flex min-h-9 items-center rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
 
 /** Barva týmu — jen odlišení, nic víc. */
 const TEAM_TONE = [
@@ -73,7 +73,7 @@ export function TeamSplit({
           <select
             name="teamCount"
             defaultValue={String(Math.max(2, teams.length || 2))}
-            className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-900"
+            className="min-h-9 rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-900"
             aria-label="Počet týmů"
           >
             {[2, 3, 4].map((n) => (
@@ -100,7 +100,7 @@ export function TeamSplit({
             type="button"
             onClick={persist}
             disabled={pending}
-            className="rounded-full border-2 border-club bg-club px-3 py-1 font-heading text-xs font-semibold text-onclub transition hover:bg-club-hover disabled:opacity-60"
+            className="min-h-9 rounded-full border-2 border-club bg-club px-3 py-1 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover disabled:opacity-60"
           >
             {pending ? "Ukládám…" : "Uložit rozdělení"}
           </button>
@@ -183,7 +183,7 @@ function PlayerChip({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs transition hover:border-club ${
+      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm transition hover:border-club ${
         muted ? "text-slate-500" : "text-slate-800"
       }`}
     >

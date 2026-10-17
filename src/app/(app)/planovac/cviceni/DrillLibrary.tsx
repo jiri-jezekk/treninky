@@ -8,13 +8,27 @@ import {
   updateDrill,
 } from "@/actions/drills";
 import { czPlural } from "@/lib/czech";
-import { DRILL_KIND_LABELS, DRILL_KINDS, type DrillKind } from "@/lib/training-plan";
+import type { GroupOption } from "@/lib/groups";
+import { DRILL_KIND_CLASS } from "@/components/drill-kind-styles";
+import {
+  DEFAULT_DRILL_KIND,
+  DRILL_KIND_LABELS,
+  DRILL_KINDS,
+  suitsGroup,
+  type DrillKind,
+} from "@/lib/training-plan";
 
 export type DrillRow = {
   id: string;
   name: string;
   description: string | null;
   equipment: string | null;
+  focus: string | null;
+  link: string | null;
+  minPlayers: number | null;
+  tags: string[];
+  /** Prázdné = hodí se pro všechny kategorie. */
+  groupIds: string[];
   defaultMinutes: number | null;
   kind: DrillKind;
   archived: boolean;
@@ -25,28 +39,33 @@ export type DrillRow = {
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
 const field =
-  "mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-club";
+  "mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-base text-slate-900 outline-none focus:border-club sm:text-sm";
 const btnPrimary =
   "inline-flex items-center justify-center rounded-full border-2 border-club bg-club px-4 py-2 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover";
 const btnOutline =
   "inline-flex items-center justify-center rounded-full border-2 border-slate-300 px-4 py-2 font-heading text-sm font-semibold text-slate-800 transition hover:border-club hover:bg-club-soft";
-const btnSm = "px-3 py-1.5 text-xs";
+const btnSm = "min-h-10 px-4 py-2 text-sm";
 const btnDanger =
-  "inline-flex items-center justify-center rounded-full border-2 border-red-200 px-3 py-1.5 font-heading text-xs font-semibold text-red-800 transition hover:border-red-600 hover:bg-red-50";
+  "inline-flex min-h-10 items-center justify-center rounded-full border-2 border-red-200 px-4 py-2 font-heading text-sm font-semibold text-red-800 transition hover:border-red-600 hover:bg-red-50";
 const mini =
-  "rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
+  "inline-flex min-h-9 items-center rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
+const filterSelect =
+  "mt-1 w-full min-h-10 rounded-lg border border-slate-200 px-2.5 py-2 text-base text-slate-900 outline-none focus:border-club sm:w-44 sm:text-sm";
+const miniActive =
+  "inline-flex min-h-9 items-center rounded-full border border-club-line bg-club-soft px-3 py-1 text-sm text-slate-900";
 
-const KIND_CLASS: Record<DrillKind, string> = {
-  WARMUP: "bg-amber-50 text-amber-900",
-  DRILL: "bg-club-soft text-club",
-  GAME: "bg-emerald-50 text-emerald-800",
-  COOLDOWN: "bg-slate-50 text-slate-500",
-};
 
-export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
+export function DrillLibrary({
+  drills,
+  groups,
+}: {
+  drills: DrillRow[];
+  groups: GroupOption[];
+}) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<DrillKind | null>(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -55,10 +74,24 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
     return drills.filter((d) => {
       if (!showArchived && d.archived) return false;
       if (kindFilter && d.kind !== kindFilter) return false;
-      if (q && !d.name.toLowerCase().includes(q)) return false;
+      if (groupFilter && !suitsGroup(d, groupFilter)) return false;
+      if (q) {
+        // Hledá se v názvu, zaměření i štítcích.
+        const haystack = [d.name, d.focus ?? "", ...d.tags].join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [drills, kindFilter, showArchived, query]);
+  }, [drills, kindFilter, groupFilter, showArchived, query]);
+
+  const groupById = new Map(groups.map((g) => [g.id, g]));
+  const allTags = useMemo(
+    () =>
+      [...new Set(drills.flatMap((d) => d.tags))].sort((a, b) =>
+        a.localeCompare(b, "cs"),
+      ),
+    [drills],
+  );
 
   const archivedCount = drills.filter((d) => d.archived).length;
 
@@ -70,8 +103,8 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Hledat cvičení…"
-            className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-club sm:max-w-xs"
+            placeholder="Hledat název, zaměření, štítek…"
+            className="min-h-10 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-base text-slate-900 outline-none focus:border-club sm:max-w-xs sm:text-sm"
           />
           {!adding && (
             <button
@@ -84,43 +117,49 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
           )}
         </div>
 
-        <nav className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500">Druh:</span>
-          <button
-            type="button"
-            onClick={() => setKindFilter(null)}
-            className={
-              kindFilter === null
-                ? "rounded-full border border-club-line bg-club-soft px-3 py-1 text-xs text-slate-900"
-                : mini
-            }
-          >
-            Vše
-          </button>
-          {DRILL_KINDS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setKindFilter(k)}
-              className={
-                kindFilter === k
-                  ? "rounded-full border border-club-line bg-club-soft px-3 py-1 text-xs text-slate-900"
-                  : mini
-              }
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
+          <label className="block min-w-0">
+            <span className="text-xs text-slate-500">Druh</span>
+            <select
+              value={kindFilter ?? ""}
+              onChange={(e) => setKindFilter((e.target.value || null) as DrillKind | null)}
+              className={filterSelect}
             >
-              {DRILL_KIND_LABELS[k]}
-            </button>
-          ))}
+              <option value="">Vše</option>
+              {DRILL_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {DRILL_KIND_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {groups.length > 0 && (
+            <label className="block min-w-0">
+              <span className="text-xs text-slate-500">Kategorie</span>
+              <select
+                value={groupFilter ?? ""}
+                onChange={(e) => setGroupFilter(e.target.value || null)}
+                className={filterSelect}
+              >
+                <option value="">Vše</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {archivedCount > 0 && (
             <button
               type="button"
               onClick={() => setShowArchived((v) => !v)}
-              className={mini}
+              className={`${showArchived ? miniActive : mini} col-span-2 justify-center sm:col-span-1`}
             >
               {showArchived ? "Skrýt archiv" : `Archiv (${archivedCount})`}
             </button>
           )}
-        </nav>
+        </div>
       </div>
 
       {adding && (
@@ -131,7 +170,7 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
         >
           <h2 className={label}>Nové cvičení</h2>
           <div className="mt-4">
-            <DrillFields />
+            <DrillFields groups={groups} allTags={allTags} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="submit" className={`${btnPrimary} ${btnSm}`}>
@@ -164,7 +203,7 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
                     action={updateDrill.bind(null, d.id)}
                     onSubmit={() => setEditing(null)}
                   >
-                    <DrillFields drill={d} />
+                    <DrillFields drill={d} groups={groups} allTags={allTags} />
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button type="submit" className={`${btnPrimary} ${btnSm}`}>
                         Uložit
@@ -207,7 +246,7 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span
-                          className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${KIND_CLASS[d.kind]}`}
+                          className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wider ${DRILL_KIND_CLASS[d.kind]}`}
                         >
                           {DRILL_KIND_LABELS[d.kind]}
                         </span>
@@ -216,9 +255,17 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
                         >
                           {d.name}
                         </span>
+                        {d.focus && (
+                          <span className="text-sm text-slate-500">– {d.focus}</span>
+                        )}
                         {d.defaultMinutes != null && (
                           <span className="text-xs tabular-nums text-slate-500">
                             {d.defaultMinutes} min
+                          </span>
+                        )}
+                        {d.minPlayers != null && (
+                          <span className="text-xs tabular-nums text-slate-500">
+                            od {d.minPlayers} hráčů
                           </span>
                         )}
                         {d.archived && (
@@ -232,6 +279,47 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
                         <p className="mt-1 text-xs text-slate-500">
                           Potřeba: {d.equipment}
                         </p>
+                      )}
+                      {(d.groupIds.length > 0 || d.tags.length > 0 || d.link) && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {d.groupIds.map((id) => {
+                            const g = groupById.get(id);
+                            if (!g) return null;
+                            return (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600"
+                              >
+                                <span
+                                  aria-hidden
+                                  className="inline-block h-1.5 w-1.5 rounded-full"
+                                  style={{ backgroundColor: g.color }}
+                                />
+                                {g.name}
+                              </span>
+                            );
+                          })}
+                          {d.tags.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setQuery(t)}
+                              className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600 transition hover:bg-club-soft"
+                            >
+                              #{t}
+                            </button>
+                          ))}
+                          {d.link && (
+                            <a
+                              href={d.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800"
+                            >
+                              odkaz
+                            </a>
+                          )}
+                        </div>
                       )}
                     </div>
                     <button
@@ -252,7 +340,15 @@ export function DrillLibrary({ drills }: { drills: DrillRow[] }) {
   );
 }
 
-function DrillFields({ drill }: { drill?: DrillRow }) {
+function DrillFields({
+  drill,
+  groups,
+  allTags,
+}: {
+  drill?: DrillRow;
+  groups: GroupOption[];
+  allTags: string[];
+}) {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
@@ -268,7 +364,7 @@ function DrillFields({ drill }: { drill?: DrillRow }) {
         </label>
         <label className="block">
           <span className={label}>Druh</span>
-          <select name="kind" defaultValue={drill?.kind ?? "DRILL"} className={field}>
+          <select name="kind" defaultValue={drill?.kind ?? DEFAULT_DRILL_KIND} className={field}>
             {DRILL_KINDS.map((k) => (
               <option key={k} value={k}>
                 {DRILL_KIND_LABELS[k]}
@@ -297,12 +393,79 @@ function DrillFields({ drill }: { drill?: DrillRow }) {
           className={field}
         />
       </label>
+      <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+        <label className="block min-w-0">
+          <span className={label}>Zaměření</span>
+          <input
+            name="focus"
+            defaultValue={drill?.focus ?? ""}
+            placeholder="rychlost obratnost"
+            className={field}
+          />
+        </label>
+        <label className="block min-w-0">
+          <span className={label}>Min. hráčů</span>
+          <input
+            name="minPlayers"
+            inputMode="numeric"
+            defaultValue={drill?.minPlayers ?? ""}
+            placeholder="—"
+            className={`${field} tabular-nums`}
+          />
+        </label>
+      </div>
       <label className="block">
         <span className={label}>Potřeby</span>
         <input
           name="equipment"
           defaultValue={drill?.equipment ?? ""}
           placeholder="6 míčů, kužely"
+          className={field}
+        />
+      </label>
+      {groups.length > 0 && (
+        <fieldset>
+          <legend className={label}>Pro kategorie (nic = pro všechny)</legend>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-2">
+            {groups.map((g) => (
+              <label
+                key={g.id}
+                className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  name="groupIds"
+                  value={g.id}
+                  defaultChecked={drill?.groupIds.includes(g.id)}
+                />
+                {g.name}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      <label className="block">
+        <span className={label}>Štítky (oddělené čárkou)</span>
+        <input
+          name="tags"
+          list="drill-tags"
+          defaultValue={drill?.tags.join(", ") ?? ""}
+          placeholder="úvodní hra, nahrávka"
+          className={field}
+        />
+        <datalist id="drill-tags">
+          {allTags.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+      </label>
+      <label className="block">
+        <span className={label}>Odkaz (video, nákres)</span>
+        <input
+          name="link"
+          type="url"
+          defaultValue={drill?.link ?? ""}
+          placeholder="https://…"
           className={field}
         />
       </label>
