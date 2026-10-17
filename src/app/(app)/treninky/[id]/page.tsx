@@ -20,7 +20,7 @@ import {
 import { createPlanForTraining } from "@/actions/training-plan";
 import { initials } from "@/lib/czech";
 import { PlanEditor } from "@/components/PlanEditor";
-import { loadPlanEditor } from "@/lib/plan-editor-data";
+import { loadPlanEditor, loadPlanRoster } from "@/lib/plan-editor-data";
 
 const label =
   "font-heading text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500";
@@ -60,7 +60,13 @@ export default async function TrainingDetailPage({
       getPrepaidRangesByPlayer(userId),
       prisma.trainingPlan.findUnique({
         where: { trainingId: id },
-        select: { id: true, startsAt: true, durationMinutes: true, groupId: true },
+        select: {
+          id: true,
+          startsAt: true,
+          durationMinutes: true,
+          groupId: true,
+          attendeeIds: true,
+        },
       }),
     ]);
 
@@ -92,8 +98,14 @@ export default async function TrainingDetailPage({
   const prepaidPresent = presentRows.filter((r) => r.prepaid).length;
 
   // --- plán tréninku ---
-  const knownPlayerIds = new Set(rows.map((r) => String(r.id)));
-  const editor = plan ? await loadPlanEditor(userId, plan, knownPlayerIds) : null;
+  const roster = plan ? await loadPlanRoster(userId, plan) : null;
+  const editor = plan
+    ? await loadPlanEditor(
+        userId,
+        plan,
+        roster ? new Set(roster.members.map((m) => m.id)) : undefined,
+      )
+    : null;
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-4xl">
@@ -178,11 +190,7 @@ export default async function TrainingDetailPage({
           <PlanEditor
             planId={plan.id}
             {...editor}
-            players={rows.map((r) => ({
-              id: r.id,
-              name: r.name,
-              present: r.present,
-            }))}
+            roster={roster}
           />
         </>
       ) : (

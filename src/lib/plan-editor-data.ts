@@ -4,6 +4,7 @@ import type {
   CopySource,
   DrillOption,
   PlanBlockRow,
+  PlanRoster,
 } from "@/components/PlanEditor";
 import {
   parseTeams,
@@ -127,5 +128,31 @@ export async function loadPlanEditor(
     sources: copySources,
     plannedMinutes: summary.plannedMinutes,
     differenceMinutes: summary.differenceMinutes,
+  };
+}
+
+/**
+ * Soupiska kategorie plánu pro dělení do týmů. Null, když plán
+ * kategorii nemá — pak se týmy nenabízí.
+ */
+export async function loadPlanRoster(
+  userId: string,
+  plan: { groupId: string | null; attendeeIds: string[] },
+): Promise<PlanRoster | null> {
+  if (!plan.groupId) return null;
+
+  const members = await prisma.rosterMember.findMany({
+    where: { userId, groupId: plan.groupId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, skill: true, active: true },
+  });
+  const known = new Set(members.map((m) => m.id));
+
+  return {
+    groupId: plan.groupId,
+    members: members.map((m) => ({ id: m.id, name: m.name, skill: m.skill })),
+    activeIds: members.filter((m) => m.active).map((m) => m.id),
+    // Smazaní ze soupisky se přeskočí.
+    attendeeIds: plan.attendeeIds.filter((id) => known.has(id)),
   };
 }

@@ -1,37 +1,35 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { clearTeams, saveTeams, shuffleTeams } from "@/actions/training-plan";
-import { initials } from "@/lib/czech";
+import { clearTeams, saveTeams } from "@/actions/training-plan";
+import { TeamBoard, type TeamMember } from "@/components/TeamBoard";
+import { balanceTeams } from "@/lib/team-balance";
 import { moveToNextTeam, teamName, type TeamAssignment } from "@/lib/training-plan";
 
-export type SplitPlayerRow = {
-  id: string;
-  name: string;
-  present: boolean;
-};
-
 const mini =
-  "inline-flex min-h-9 items-center rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
+  "inline-flex min-h-10 items-center justify-center rounded-full border border-slate-200 px-3.5 py-1.5 text-sm text-slate-700 transition hover:border-club hover:bg-club-soft hover:text-slate-900";
+const primary =
+  "inline-flex min-h-10 items-center justify-center rounded-full border-2 border-club bg-club px-4 py-1.5 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover disabled:opacity-60";
 
-/** Barva týmu — jen odlišení, nic víc. */
-const TEAM_TONE = [
-  "border-club-line bg-club-soft text-slate-800",
-  "border-amber-300 bg-amber-50 text-amber-900",
-  "border-emerald-200 bg-emerald-50 text-emerald-800",
-  "border-red-200 bg-red-50 text-red-800",
-];
-
+/**
+ * Rozdělení do týmů u herního bodu plánu. Bere přítomné ze soupisky
+ * kategorie; vyrovnané rozdělení se spočítá rovnou v telefonu a uloží.
+ */
 export function TeamSplit({
   blockId,
-  players,
+  members,
+  present,
   initialTeams,
 }: {
   blockId: string;
-  players: SplitPlayerRow[];
+  /** Celá soupiska kategorie — kvůli jménům v uložených týmech. */
+  members: TeamMember[];
+  /** Kdo dnes přišel. Prázdné = zatím nikdo neoznačen. */
+  present: TeamMember[];
   initialTeams: TeamAssignment[];
 }) {
   const [teams, setTeams] = useState<TeamAssignment[]>(initialTeams);
+  const [teamCount, setTeamCount] = useState(Math.max(2, initialTeams.length || 2));
   const [pending, startTransition] = useTransition();
   const [dirty, setDirty] = useState(false);
 
@@ -43,154 +41,91 @@ export function TeamSplit({
     setDirty(false);
   }
 
-  const byId = new Map(players.map((p) => [p.id, p]));
+  const byId = new Map(members.map((m) => [m.id, m]));
   const assigned = new Set(teams.flatMap((t) => t.playerIds));
-  const pool = players.filter((p) => !assigned.has(p.id));
+  const pool = present.filter((m) => !assigned.has(m.id));
 
-  function cycle(playerId: string) {
+  function persist(next: TeamAssignment[]) {
+    startTransition(async () => {
+      await saveTeams(blockId, next);
+      setDirty(false);
+    });
+  }
+
+  function generate() {
+    const next = balanceTeams(present, teamCount);
+    setTeams(next);
+    persist(next);
+  }
+
+  function cycle(id: string) {
     const base =
       teams.length > 0
         ? teams
-        : [
-            { name: teamName(0), playerIds: [] },
-            { name: teamName(1), playerIds: [] },
-          ];
-    setTeams(moveToNextTeam(base, playerId));
+        : Array.from({ length: teamCount }, (_, i) => ({
+            name: teamName(i),
+            playerIds: [] as string[],
+          }));
+    setTeams(moveToNextTeam(base, id));
     setDirty(true);
   }
 
-  function persist() {
-    startTransition(async () => {
-      await saveTeams(blockId, teams);
-      setDirty(false);
-    });
+  if (present.length === 0 && teams.length === 0) {
+    return (
+      <p className="mt-3 rounded-xl border border-dashed border-slate-200 px-3 py-2.5 text-sm text-slate-500">
+        Pro týmy označ nahoře, kdo dnes přišel.
+      </p>
+    );
   }
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <form action={shuffleTeams.bind(null, blockId)} className="flex gap-2">
-          <select
-            name="teamCount"
-            defaultValue={String(Math.max(2, teams.length || 2))}
-            className="min-h-9 rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-900"
-            aria-label="Počet týmů"
-          >
-            {[2, 3, 4].map((n) => (
-              <option key={n} value={n}>
-                {n} týmy
-              </option>
-            ))}
-          </select>
-          <button type="submit" className={mini}>
-            Rozdělit náhodně
-          </button>
-        </form>
-
-        {teams.length > 0 && (
-          <form action={clearTeams.bind(null, blockId)}>
-            <button type="submit" className={mini}>
-              Vymazat
-            </button>
-          </form>
-        )}
-
+        <select
+          value={teamCount}
+          onChange={(e) => setTeamCount(Number(e.target.value))}
+          className="min-h-10 rounded-lg border border-slate-200 px-2.5 py-1.5 text-base text-slate-900 sm:text-sm"
+          aria-label="Počet týmů"
+        >
+          {[2, 3, 4].map((n) => (
+            <option key={n} value={n}>
+              {n} týmy
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={generate}
+          disabled={pending || present.length < 2}
+          className={primary}
+        >
+          {teams.length > 0 ? "Zamíchat znovu" : "Vyrovnané týmy"}
+        </button>
         {dirty && (
           <button
             type="button"
-            onClick={persist}
+            onClick={() => persist(teams)}
             disabled={pending}
-            className="min-h-9 rounded-full border-2 border-club bg-club px-3 py-1 font-heading text-sm font-semibold text-onclub transition hover:bg-club-hover disabled:opacity-60"
+            className={mini}
           >
-            {pending ? "Ukládám…" : "Uložit rozdělení"}
+            {pending ? "Ukládám…" : "Uložit úpravy"}
           </button>
+        )}
+        {teams.length > 0 && !dirty && (
+          <form action={clearTeams.bind(null, blockId)}>
+            <button type="submit" className={mini}>
+              Zrušit týmy
+            </button>
+          </form>
         )}
       </div>
 
-      {teams.length === 0 ? (
-        <p className="mt-3 text-xs italic text-slate-500">
-          Rozděl náhodně, nebo klepni na hráče níž a rozřaď je sám.
-        </p>
-      ) : (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {teams.map((t, i) => (
-            <div
-              key={t.name}
-              className={`rounded-lg border p-2.5 ${TEAM_TONE[i] ?? TEAM_TONE[0]}`}
-            >
-              <div className="mb-2 flex items-baseline justify-between">
-                <span className="font-heading text-[11px] font-bold uppercase tracking-wider">
-                  {t.name}
-                </span>
-                <span className="text-xs tabular-nums opacity-70">
-                  {t.playerIds.length}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {t.playerIds.map((id) => (
-                  <PlayerChip
-                    key={id}
-                    name={byId.get(id)?.name ?? "?"}
-                    onClick={() => cycle(id)}
-                  />
-                ))}
-                {t.playerIds.length === 0 && (
-                  <span className="text-xs opacity-70">prázdný</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {pool.length > 0 && (
-        <div className="mt-3">
-          <span className="font-heading text-[11px] font-bold uppercase tracking-wider text-slate-500">
-            Nezařazení
-          </span>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {pool.map((p) => (
-              <PlayerChip
-                key={p.id}
-                name={p.name}
-                muted={!p.present}
-                onClick={() => cycle(p.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      <TeamBoard teams={teams} members={byId} pool={pool} onCycle={cycle} />
 
       <p className="mt-3 text-xs italic text-slate-500">
-        Klepnutím na hráče ho přesuneš do dalšího týmu, z posledního zase mezi
-        nezařazené. Náhodné rozdělení bere přítomné — dokud není zapsaná
-        docházka, počítá se všemi.
+        Týmy se skládají tak, aby měly co nejpodobnější součet dovedností.
+        Klepnutím na hráče ho přesuneš do dalšího týmu.
       </p>
     </div>
-  );
-}
-
-function PlayerChip({
-  name,
-  muted,
-  onClick,
-}: {
-  name: string;
-  muted?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm transition hover:border-club ${
-        muted ? "text-slate-500" : "text-slate-800"
-      }`}
-    >
-      <span className="font-heading text-[9px] font-extrabold opacity-60">
-        {initials(name)}
-      </span>
-      {name}
-    </button>
   );
 }

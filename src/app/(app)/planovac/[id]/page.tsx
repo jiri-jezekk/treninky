@@ -8,7 +8,7 @@ import {
   formatDateInputValue,
   formatTime24h,
 } from "@/lib/date-display";
-import { loadPlanEditor } from "@/lib/plan-editor-data";
+import { loadPlanEditor, loadPlanRoster } from "@/lib/plan-editor-data";
 import { diarySummary } from "@/lib/training-plan";
 import { DAY_NAMES } from "@/lib/training-slots";
 import { prisma } from "@/lib/prisma";
@@ -29,34 +29,13 @@ export default async function PlanDetailPage({
   });
   if (!plan) notFound();
 
-  // Týmy jdou dělit jen u tréninku z rozvrhu — tam je soupiska s docházkou.
-  const players = plan.trainingId
-    ? (
-        await prisma.player.findMany({
-          where: { userId, active: true },
-          orderBy: { name: "asc" },
-          select: {
-            id: true,
-            name: true,
-            attendances: {
-              where: { trainingId: plan.trainingId },
-              select: { status: true },
-            },
-          },
-        })
-      ).map((p) => ({
-        id: p.id,
-        name: p.name,
-        present: p.attendances[0]?.status === "PRESENT",
-      }))
-    : null;
-
+  const roster = await loadPlanRoster(userId, plan);
   const [groups, editor] = await Promise.all([
     listGroups(userId),
     loadPlanEditor(
       userId,
       plan,
-      players ? new Set(players.map((p) => String(p.id))) : undefined,
+      roster ? new Set(roster.members.map((m) => m.id)) : undefined,
     ),
   ]);
 
@@ -94,7 +73,7 @@ export default async function PlanDetailPage({
         />
       </div>
 
-      <PlanEditor planId={plan.id} {...editor} players={players} />
+      <PlanEditor planId={plan.id} {...editor} roster={roster} />
 
       <DiarySummary summary={diarySummary(editor.blocks)} />
     </>

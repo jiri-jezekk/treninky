@@ -9,11 +9,9 @@ import {
   parseTags,
   parseTeams,
   sortDrillsForGroup,
-  splitIntoTeams,
   suitsGroup,
   summarizePlan,
   withTimes,
-  type SplitPlayer,
   type TeamAssignment,
 } from "../src/lib/training-plan.ts";
 
@@ -84,89 +82,6 @@ console.log("\nSouhrn proti délce tréninku:");
   const s = summarizePlan([{ id: "a", minutes: 30 }], start, null);
   eq("bez konce se nedá porovnat", s.differenceMinutes, null);
   eq("součet ale platí", s.plannedMinutes, 30);
-}
-
-console.log("\nDělení do týmů:");
-/** Předvídatelný „náhodný“ generátor, ať jde výsledek zkontrolovat. */
-function seeded(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 1664525 + 1013904223) % 4294967296;
-    return s / 4294967296;
-  };
-}
-
-const muzi = (n: number): SplitPlayer[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `m${i}`, groupKey: "muzi" }));
-const juniori = (n: number): SplitPlayer[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `j${i}`, groupKey: "juniori" }));
-
-{
-  const players = [...muzi(6), ...juniori(4)];
-  const teams = splitIntoTeams(players, 2, seeded(1));
-  eq("dva týmy", teams.length, 2);
-  eq(
-    "všech deset je rozdělených",
-    teams.flatMap((t) => t.playerIds).length,
-    10,
-  );
-  eq("po pěti", teams.map((t) => t.playerIds.length), [5, 5]);
-  const all = new Set(teams.flatMap((t) => t.playerIds));
-  eq("nikdo není dvakrát", all.size, 10);
-}
-{
-  // Tohle je ten důvod, proč se dělí po kategoriích: junioři se mají
-  // rozprostřít, ne skončit všichni v jednom týmu.
-  const players = [...muzi(6), ...juniori(4)];
-  const teams = splitIntoTeams(players, 2, seeded(7));
-  const juniorsPerTeam = teams.map(
-    (t) => t.playerIds.filter((id) => id.startsWith("j")).length,
-  );
-  eq("junioři rozprostření", juniorsPerTeam, [2, 2]);
-}
-{
-  // Na tom, který tým dostane přebývajícího, nezáleží — jen na tom,
-  // že se velikosti neliší o víc než o jednoho.
-  const teams = splitIntoTeams([...muzi(7)], 2, seeded(3));
-  const sizes = teams.map((t) => t.playerIds.length).sort();
-  eq("lichý počet se liší nejvýš o jednoho", sizes, [3, 4]);
-  eq("a nikdo nechybí", sizes[0]! + sizes[1]!, 7);
-}
-{
-  // Totéž napříč počty hráčů i týmů — vlastnost, ne konkrétní výsledek.
-  let worst = 0;
-  for (let n = 2; n <= 30; n++) {
-    for (let t = 2; t <= 4; t++) {
-      const teams = splitIntoTeams(muzi(n), t, seeded(n * 31 + t));
-      const sizes = teams.map((x) => x.playerIds.length);
-      worst = Math.max(worst, Math.max(...sizes) - Math.min(...sizes));
-      if (sizes.reduce((a, b) => a + b, 0) !== n) worst = 99;
-    }
-  }
-  eq("velikosti se nikdy neliší o víc než o jednoho", worst <= 1, true);
-}
-{
-  const teams = splitIntoTeams([...muzi(9)], 3, seeded(3));
-  eq("tři týmy po třech", teams.map((t) => t.playerIds.length), [3, 3, 3]);
-}
-{
-  const teams = splitIntoTeams([], 2, seeded(1));
-  eq("bez hráčů vzniknou prázdné týmy", teams.map((t) => t.playerIds.length), [0, 0]);
-}
-{
-  eq("míň než dva týmy nejde", splitIntoTeams(muzi(4), 1, seeded(1)).length, 2);
-  eq("víc než čtyři taky ne", splitIntoTeams(muzi(4), 9, seeded(1)).length, 4);
-}
-{
-  // Dvakrát po sobě se stejným semínkem musí vyjít totéž.
-  const a = splitIntoTeams(muzi(8), 2, seeded(42));
-  const b = splitIntoTeams(muzi(8), 2, seeded(42));
-  eq("stejné semínko, stejný výsledek", a, b);
-}
-{
-  const a = splitIntoTeams(muzi(8), 2, seeded(1));
-  const b = splitIntoTeams(muzi(8), 2, seeded(999));
-  eq("jiné semínko, jiné rozdělení", JSON.stringify(a) !== JSON.stringify(b), true);
 }
 
 console.log("\nRuční přesouvání:");

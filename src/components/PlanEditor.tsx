@@ -13,7 +13,9 @@ import {
   updatePlanBlock,
 } from "@/actions/training-plan";
 import { DRILL_KIND_CLASS } from "@/components/drill-kind-styles";
-import { TeamSplit, type SplitPlayerRow } from "@/components/TeamSplit";
+import { PlanAttendees } from "@/components/PlanAttendees";
+import type { TeamMember } from "@/components/TeamBoard";
+import { TeamSplit } from "@/components/TeamSplit";
 import {
   DEFAULT_DRILL_KIND,
   DRILL_KIND_LABELS,
@@ -48,6 +50,16 @@ export type DrillOption = {
   forPlanGroup: boolean;
 };
 
+/** Soupiska kategorie plánu — pro dělení do týmů. */
+export type PlanRoster = {
+  groupId: string;
+  /** Celá soupiska včetně neaktivních (jména v uložených týmech). */
+  members: TeamMember[];
+  /** Aktivní — ti se nabízí k označení. */
+  activeIds: string[];
+  attendeeIds: string[];
+};
+
 export type CopySource = {
   id: string;
   label: string;
@@ -76,7 +88,7 @@ export function PlanEditor({
   planId,
   blocks,
   drills,
-  players,
+  roster,
   sources,
   plannedMinutes,
   differenceMinutes,
@@ -84,11 +96,8 @@ export function PlanEditor({
   planId: string;
   blocks: PlanBlockRow[];
   drills: DrillOption[];
-  /**
-   * Hráči pro dělení do týmů. Jen u plánu navázaného na trénink
-   * z rozvrhu, kde je docházka; jinak null a týmy se nenabízí.
-   */
-  players: SplitPlayerRow[] | null;
+  /** Soupiska kategorie plánu. Null = plán nemá kategorii, týmy se nenabízí. */
+  roster: PlanRoster | null;
   sources: CopySource[];
   plannedMinutes: number;
   differenceMinutes: number | null;
@@ -98,8 +107,18 @@ export function PlanEditor({
 
   const available =
     differenceMinutes == null ? null : plannedMinutes + differenceMinutes;
+  const hasTeamBlock = blocks.some((b) => isTeamKind(b.kind));
 
   return (
+    <>
+    {roster && hasTeamBlock && (
+      <PlanAttendees
+        planId={planId}
+        groupId={roster.groupId}
+        members={roster.members.filter((m) => roster.activeIds.includes(m.id))}
+        initialIds={roster.attendeeIds}
+      />
+    )}
     <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -137,7 +156,7 @@ export function PlanEditor({
                   block={b}
                   isFirst={i === 0}
                   isLast={i === blocks.length - 1}
-                  players={players}
+                  roster={roster}
                   onEdit={() => {
                     setAdding(false);
                     setEditing(b.id);
@@ -209,6 +228,7 @@ export function PlanEditor({
         </div>
       )}
     </section>
+    </>
   );
 }
 
@@ -266,13 +286,13 @@ function BlockCard({
   block: b,
   isFirst,
   isLast,
-  players,
+  roster,
   onEdit,
 }: {
   block: PlanBlockRow;
   isFirst: boolean;
   isLast: boolean;
-  players: SplitPlayerRow[] | null;
+  roster: PlanRoster | null;
   onEdit: () => void;
 }) {
   return (
@@ -361,8 +381,13 @@ function BlockCard({
         </form>
       </div>
 
-      {isTeamKind(b.kind) && players && (
-        <TeamSplit blockId={b.id} players={players} initialTeams={b.teams} />
+      {isTeamKind(b.kind) && roster && (
+        <TeamSplit
+          blockId={b.id}
+          members={roster.members}
+          present={roster.members.filter((m) => roster.attendeeIds.includes(m.id))}
+          initialTeams={b.teams}
+        />
       )}
     </>
   );

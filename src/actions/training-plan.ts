@@ -10,7 +10,6 @@ import { checkboxOn } from "@/lib/form-values";
 import {
   parseDrillKind,
   parseTeams,
-  splitIntoTeams,
   type DrillKind,
   type TeamAssignment,
 } from "@/lib/training-plan";
@@ -228,10 +227,22 @@ export async function createPlanForTraining(trainingId: string) {
   });
   if (!training || training.plan) return;
 
+  // Rozvrh je pro dospělé — kategorie A-tým, pokud ji trenér má
+  // (stejně jako u plánů převedených migrací).
+  const groups = await prisma.group.findMany({
+    where: { userId },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, name: true },
+  });
+  const adults = groups.find((g) =>
+    ["a-tým", "a-tym"].includes(g.name.toLowerCase().replace(/\s+/g, "-")),
+  );
+
   await prisma.trainingPlan.create({
     data: {
       userId,
       trainingId,
+      groupId: adults?.id ?? null,
       startsAt: training.startsAt,
       durationMinutes: training.endsAt
         ? Math.round((training.endsAt.getTime() - training.startsAt.getTime()) / 60_000)
@@ -426,64 +437,24 @@ export async function saveBlockToLibrary(blockId: string) {
 
 /* --------------------------------------------------------------- týmy */
 
-/**
- * Rozdělí do týmů náhodně. Jen u plánu navázaného na trénink z rozvrhu —
- * bere hráče označené jako přítomné; dokud není zapsaná docházka, vezme
- * všechny aktivní, připravit se dá i dopředu.
+/*
+ * Týmy se dělí v prohlížeči (vyrovnaně podle dovednosti nebo ručně)
+ * a sem se jen ukládají. Rozdělení je momentka jednoho tréninku.
  */
-export async function shuffleTeams(blockId: string, formData: FormData) {
-  const userId = await requireUserId();
-  const block = await ownedBlock(blockId, userId);
-  const trainingId = block?.plan.trainingId;
-  if (!block || !trainingId) return;
 
-  const teamCount = Number(String(formData.get("teamCount") ?? "2")) || 2;
-
-  const players = await prisma.player.findMany({
-    where: { userId, active: true },
-    select: {
-      id: true,
-      attendances: { where: { trainingId } },
-      groupMembers: {
-        select: { group: { select: { name: true } } },
-        orderBy: { group: { sortOrder: "asc" } },
-        take: 1,
-      },
-    },
-  });
-
-  const present = players.filter((p) => p.attendances[0]?.status === "PRESENT");
-  const pool = present.length > 0 ? present : players;
-
-  const teams = splitIntoTeams(
-    pool.map((p) => ({
-      id: String(p.id),
-      groupKey: p.groupMembers[0]?.group.name ?? "",
-    })),
-    teamCount,
-  );
-
-  await prisma.trainingBlock.update({
-    where: { id: blockId },
-    data: { teams },
-  });
-  revalidatePlan(block.plan);
-}
-
-/** Uloží rozdělení upravené ručně v prohlížeči. */
+/** Uloží rozdělení do týmů u bodu plánu. */
 export async function saveTeams(blockId: string, teams: TeamAssignment[]) {
   const userId = await requireUserId();
   const block = await ownedBlock(blockId, userId);
   if (!block) return;
 
   // Z prohlížeče přijde cokoli — projde jen to, co má správný tvar,
-  // a jen hráči, kteří opravdu patří tomuhle trenérovi.
-  const known = await prisma.player.findMany({
+  // a jen lidé ze soupisek tohoto trenéra.
+  const known = await prisma.rosterMember.findMany({
     where: { userId },
     select: { id: true },
   });
-  const knownIds = new Set(known.map((p) => String(p.id)));
-  const clean = parseTeams(teams, knownIds);
+  const clean = parseTeams(teams, new Set(known.map((m) => m.id)));
 
   await prisma.trainingBlock.update({
     where: { id: blockId },

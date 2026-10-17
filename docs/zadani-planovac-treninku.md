@@ -152,7 +152,7 @@ Podsekce (záložky): **Plány** · **Cvičení** · **Soupisky** · **Šablony*
 1. ✅ Datový model + migrace stávajících plánů, plány a knihovna v `/planovac`.
    (Migrace `20261017090000_planovac_treninku`; „kdy naposledy“ z kap. 2 patří do kroku 4.)
 2. ✅ Shrnutí do deníku.
-3. Soupisky a generátor vyrovnaných týmů.
+3. ✅ Soupisky a generátor vyrovnaných týmů (záložky Soupisky a Týmy, u plánu „Kdo dnes přišel“).
 4. Šablony, „kdy naposledy“, poznámka po tréninku.
 
 Každý krok jde nasadit samostatně.
